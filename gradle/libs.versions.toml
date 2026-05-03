@@ -46,7 +46,6 @@ mockk = "1.14.9"
 material3 = "1.5.0-alpha18"
 markdownRenderer = "0.40.2"
 annotationJvm = "1.10.0"
-securityCrypto = "1.1.0"
 datastorePreferences = "1.2.1"
 
 [libraries]
@@ -104,7 +103,6 @@ mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 multiplatform-markdown-renderer = { group = "com.mikepenz", name = "multiplatform-markdown-renderer", version.ref = "markdownRenderer" }
 multiplatform-markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
 androidx-annotation-jvm = { group = "androidx.annotation", name = "annotation-jvm", version.ref = "annotationJvm" }
-androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastorePreferences" }
 
 [plugins]

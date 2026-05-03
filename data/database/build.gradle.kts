@@ -34,9 +34,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
-    // === Security ===
-    implementation(libs.androidx.security.crypto)
-
     // === Room ===
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

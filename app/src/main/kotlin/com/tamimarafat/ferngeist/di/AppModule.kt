@@ -450,7 +450,7 @@ private val MIGRATION_10_11 =
             // Credentials are now encrypted at the repository layer via CredentialEncryptor.
             // No schema changes; existing plaintext credentials remain unencrypted in Room
             // until the corresponding server/gateway row is next written (add/update), at
-            // which point CredentialEncryptor.encrypt() rewrites them to EncryptedSharedPreferences.
+            // which point CredentialEncryptor.encrypt() encrypts and persists them.
             // Users who never edit a saved server after this migration will retain plaintext
             // credentials in the database backup.
         }

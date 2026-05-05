@@ -64,6 +64,12 @@ import com.tamimarafat.ferngeist.service.BatteryOptimizationPreferences
 import com.tamimarafat.ferngeist.ui.theme.FerngeistTheme
 import dagger.hilt.android.AndroidEntryPoint
 
+/**
+ * The single-activity entry point for Ferngeist.
+ *
+ * Configures edge-to-edge rendering, installs the splash screen, and hosts
+ * [FerngeistNavHost] inside the app theme.
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,12 +100,54 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Top-level navigation host composable.
+ *
+ * Manages the [NavHost] for all app screens and renders the
+ * [BatteryOptimizationDialog] above the navigation layer so it persists
+ * across destination changes. The dialog appears when the ACP connection is
+ * established and battery optimisations have not been disabled (unless
+ * previously dismissed).
+ *
+ * Also wires shared-element transition specs (spring-based slide + fade)
+ * and suppresses transitions for session↔chat navigation via
+ * [isSessionChatTransition].
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun FerngeistNavHost() {
     val navController = rememberNavController()
     val navSpring = spring<IntOffset>()
     val navFadeSpring = spring<Float>()
+
+    val context = LocalContext.current
+    val batteryPrefs = remember(context) { BatteryOptimizationPreferences(context) }
+    val isDismissed by batteryPrefs.isDismissed.collectAsState()
+    var showBatteryDialog by remember { mutableStateOf(false) }
+    val connectionManager = (context.applicationContext as FerngeistApplication).connectionManager
+    val connectionState by connectionManager.connectionState.collectAsState()
+
+    LaunchedEffect(connectionState, isDismissed) {
+        val shouldShow =
+            connectionState is AcpConnectionState.Connected &&
+                !isDismissed &&
+                !BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+        showBatteryDialog = shouldShow
+    }
+
+    if (showBatteryDialog) {
+        BatteryOptimizationDialog(
+            onDismiss = {
+                showBatteryDialog = false
+                batteryPrefs.markDismissed()
+            },
+            onBackFromSettings = {
+                if (BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
+                    batteryPrefs.markDismissed()
+                }
+            },
+        )
+    }
 
     SharedTransitionLayout {
         NavHost(
@@ -148,35 +196,8 @@ fun FerngeistNavHost() {
         ) {
             composable("server_list") {
                 val viewModel: ServerListViewModel = hiltViewModel()
-                val uiState by viewModel.uiState.collectAsState()
-                val context = LocalContext.current
-                val batteryPrefs = remember(context) { BatteryOptimizationPreferences(context) }
-                val isDismissed by batteryPrefs.isDismissed.collectAsState()
-                var showBatteryDialog by remember { mutableStateOf(false) }
 
                 NotificationPermissionEffect()
-
-                LaunchedEffect(uiState.connectionState, isDismissed) {
-                    val shouldShow =
-                        uiState.connectionState is AcpConnectionState.Connected &&
-                            !isDismissed &&
-                            !BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
-                    showBatteryDialog = shouldShow
-                }
-
-                if (showBatteryDialog) {
-                    BatteryOptimizationDialog(
-                        onDismiss = {
-                            showBatteryDialog = false
-                            batteryPrefs.markDismissed()
-                        },
-                        onBackFromSettings = {
-                            if (BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
-                                batteryPrefs.markDismissed()
-                            }
-                        },
-                    )
-                }
 
                 ServerListScreen(
                     onNavigateToAddServer = { navController.navigate("add_server") },
@@ -348,6 +369,10 @@ fun FerngeistNavHost() {
     }
 }
 
+/**
+ * Requests the `POST_NOTIFICATIONS` permission (Android 13+) on first composition
+ * if it has not been granted yet. Runs once via [LaunchedEffect].
+ */
 @Composable
 private fun NotificationPermissionEffect() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -369,6 +394,12 @@ private fun NotificationPermissionEffect() {
     }
 }
 
+/**
+ * Returns `true` when navigating between `sessions/{id}` and `chat/{id}`.
+ *
+ * Used to suppress the default slide/fade animation so the shared-element
+ * transition defined inside the two screens drives the visual change instead.
+ */
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.isSessionChatTransition(): Boolean {
     val fromRoute = initialState.destination.route ?: return false
     val toRoute = targetState.destination.route ?: return false

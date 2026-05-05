@@ -752,7 +752,7 @@ private fun SessionCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = session.title ?: "Untitled Session",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier =

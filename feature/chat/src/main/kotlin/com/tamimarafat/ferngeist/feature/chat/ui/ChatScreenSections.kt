@@ -181,6 +181,7 @@ internal fun ChatScreenBody(
     listState: LazyListState,
     userScrollDetector: NestedScrollConnection,
     renderedLastMessageId: String?,
+    listTopPadding: Dp,
     listBottomPadding: Dp,
     onRetryLoad: () -> Unit,
     onThoughtClick: (String) -> Unit,
@@ -209,6 +210,7 @@ internal fun ChatScreenBody(
                 listState = listState,
                 userScrollDetector = userScrollDetector,
                 renderedLastMessageId = renderedLastMessageId,
+                listTopPadding = listTopPadding,
                 listBottomPadding = listBottomPadding,
                 onThoughtClick = onThoughtClick,
                 onToolCallClick = onToolCallClick,
@@ -253,6 +255,7 @@ private fun ChatMessageList(
     listState: LazyListState,
     userScrollDetector: NestedScrollConnection,
     renderedLastMessageId: String?,
+    listTopPadding: Dp,
     listBottomPadding: Dp,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
@@ -263,7 +266,7 @@ private fun ChatMessageList(
             Modifier
                 .fillMaxSize()
                 .nestedScroll(userScrollDetector),
-        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 0.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = listTopPadding + 8.dp, end = 16.dp, bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(items = state.messages, key = { it.id }) { message ->

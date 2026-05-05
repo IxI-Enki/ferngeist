@@ -9,9 +9,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,7 +59,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.material3.TwoRowsTopAppBar
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,9 +77,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -541,8 +547,21 @@ private fun LazyListState.isAtBottom(tolerancePx: Int = 2): Boolean {
 }
 // endregion
 
-// region: Remember Composable
+// region: Scroll State Composable
 
+/**
+ * Owns the [LazyListState] and [AutoScrollManager] for the chat message list.
+ *
+ * Orchestrates three concerns in parallel LaunchedEffects:
+ * 1. Side-effect execution (scroll-to-bottom commands from the manager)
+ * 2. User-idle timeout → auto-resume auto-scroll
+ * 3. Manual bottom-reach → resume auto-scroll during streaming
+ * 4. Streaming follow flow (continuously scrolls during streaming)
+ * 5. Content-anchor changes → trigger scroll-to-bottom if following
+ * 6. Composer/IME insets → trigger follow with settle delay
+ * 7. Scroll snapshot persistence (debounced)
+ * 8. Scroll snapshot restoration with retry
+ */
 @Composable
 private fun rememberChatScrollState(
     sessionId: String,
@@ -674,6 +693,8 @@ private fun rememberChatScrollState(
                 ?.takeIf { it >= 0 }
                 ?: snapshot.firstVisibleItemIndex.coerceIn(0, renderedMessages.lastIndex)
 
+        // Repeat scroll twice: the first pass may land before LazyColumn has measured all
+        // items (scrollOffset gets clamped), the second pass re-applies the precise offset.
         repeat(2) {
             withFrameNanos { }
             listState.scrollToItem(
@@ -691,6 +712,20 @@ private fun rememberChatScrollState(
 
 // region: Main ChatScreen Composable
 
+/**
+ * Full-screen chat session view.
+ *
+ * Layout hierarchy:
+ * - [sharedTransitionScope] Box (shared element bounds for session list transition)
+ *   - [Scaffold] with [TwoRowsTopAppBar] via [ChatTopBar]
+ *     - [ChatScreenBody] (message list + loading/error states)
+ *     - [ChatComposerBar] (floating bottom composer)
+ *     - [SnackbarHost]
+ *     - Dialogs: thought, tool call, config picker, connection status, commands
+ *
+ * Auto-scroll is managed by [rememberChatScrollState] which combines a
+ * [LazyListState] with an [AutoScrollManager] state machine.
+ */
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalMaterial3ExpressiveApi::class,
@@ -722,6 +757,9 @@ fun ChatScreen(
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val navBottomPx = WindowInsets.navigationBars.getBottom(density)
     val systemBottomInsetPx = if (imeBottomPx > navBottomPx) imeBottomPx else navBottomPx
+    // Larger of the two: IME (keyboard) when open, nav bar when closed.
+    // This gives list padding the correct "above keyboard" offset during input.
+    // Composer is hidden during initial loading or when error + empty state
     val showComposerToolbar = !state.isLoading && !(state.error != null && state.messages.isEmpty())
     val composerContentHeightDp = with(density) { composerContentHeightPx.toDp() }
     val screenWidthDp =
@@ -730,6 +768,8 @@ fun ChatScreen(
                 .toDp()
         }
     val systemBottomInsetDp = with(density) { systemBottomInsetPx.toDp() }
+    // Bottom padding for message list: composer height + system insets + floating offset + 36dp
+    // extra breathing room below the floating composer bar.
     val listBottomPadding =
         if (!showComposerToolbar) {
             0.dp
@@ -739,6 +779,7 @@ fun ChatScreen(
                 FloatingToolbarDefaults.ScreenOffset +
                 36.dp
         }
+    // Snackbar also needs to sit above the composer bar but with less extra padding (16dp).
     val snackbarBottomPadding =
         if (!showComposerToolbar) {
             0.dp
@@ -748,6 +789,10 @@ fun ChatScreen(
                 FloatingToolbarDefaults.ScreenOffset +
                 16.dp
         }
+    // Caches model option metadata (used below for activeModel / modeOption lookups).
+    // The expression result is intentionally discarded — the `firstOrNull` call forces
+    // Material recomposition when configOptions change without reading the full list.
+    @Suppress("UNUSED_EXPRESSION")
     remember(state.configOptions) {
         state.configOptions
             .filterIsInstance<SessionConfigOption.Select>()
@@ -774,6 +819,9 @@ fun ChatScreen(
         }
     val canCancelStreaming = state.canCancelStreaming
     val hasStreamingBubble = state.messages.lastOrNull()?.isStreaming == true
+    // Dual-flag: ViewModel-level streaming flag OR last message still streaming.
+    // Auto-scroll and following respond to either, but the stop button requires both
+    // (ViewModel must consider it cancellable AND an active bubble must exist).
     val activelyStreaming = state.isStreaming || hasStreamingBubble
     val showStopAction = state.isStreaming && hasStreamingBubble
     val showModeButton = modeOption != null
@@ -798,6 +846,9 @@ fun ChatScreen(
     val contentAnchor =
         remember(renderedMessages, state.isStreaming) {
             val last = renderedMessages.lastOrNull()
+            // Track last tool-output length as a fine-grained change detector:
+            // auto-scroll triggers on contentAnchor changes, and tool output is the
+            // most volatile field during streaming (frequently appended characters).
             val lastToolOutputLength =
                 last
                     ?.segments
@@ -893,16 +944,24 @@ fun ChatScreen(
                         enter = fadeIn(),
                         exit = fadeOut(),
                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
-                    ).fillMaxSize(),
+                    ).fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface),
         ) {
+            val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
             Scaffold(
-                modifier = Modifier.fillMaxSize(),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .nestedScroll(scrollBehavior.nestedScrollConnection),
+                containerColor = Color.Transparent,
                 topBar = {
                     ChatTopBar(
                         sessionId = sessionId,
                         sessionTitle = sessionTitle,
                         activeModel = activeModel,
                         connectionState = state.connectionState,
+                        scrollBehavior = scrollBehavior,
                         onNavigateBack = onNavigateBack,
                         onConnectionStatusClick = { showConnectionStatusDialog = true },
                         sharedTransitionScope = sharedTransitionScope,
@@ -914,7 +973,7 @@ fun ChatScreen(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .padding(innerPadding),
+                            .padding(bottom = innerPadding.calculateBottomPadding()),
                 ) {
                     ChatScreenDialogs(
                         selectedConfigPickerOption = selectedConfigPickerOption,
@@ -961,6 +1020,7 @@ fun ChatScreen(
                         listState = listState,
                         userScrollDetector = scrollManager.createUserScrollDetector(),
                         renderedLastMessageId = renderedLastMessageId,
+                        listTopPadding = innerPadding.calculateTopPadding(),
                         listBottomPadding = listBottomPadding,
                         onRetryLoad = { viewModel.dispatch(ChatIntent.RetryLoad) },
                         onThoughtClick = { segmentId ->
@@ -1040,6 +1100,13 @@ fun ChatScreen(
 
 // region: Helper Composables
 
+/**
+ * Wraps [TwoRowsTopAppBar] with a gradient surface-fade background.
+ *
+ * The background gradient goes from opaque surface (top) to transparent (bottom).
+ * As [scrollBehavior.state.collapsedFraction] approaches 1.0, the base surface
+ * fades out completely, leaving only the pill elements visible.
+ */
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalMaterial3ExpressiveApi::class,
@@ -1051,101 +1118,242 @@ private fun ChatTopBar(
     sessionTitle: String,
     activeModel: String?,
     connectionState: AcpConnectionState,
+    scrollBehavior: TopAppBarScrollBehavior,
     onNavigateBack: () -> Unit,
     onConnectionStatusClick: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedContentScope: AnimatedContentScope,
 ) {
-    TopAppBar(title = {
-        Column {
+    val collapsedFraction = scrollBehavior.state.collapsedFraction.coerceIn(0f, 1f)
+    val expandedBackground = MaterialTheme.colorScheme.surface.copy(alpha = 1f - collapsedFraction)
+    val topShadow = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+    val middleShadow = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+    val bottomShadow = Color.Transparent
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(expandedBackground)
+                .background(
+                    brush =
+                        Brush.verticalGradient(
+                            colors =
+                                listOf(
+                                    topShadow,
+                                    middleShadow,
+                                    bottomShadow,
+                                ),
+                        ),
+                ),
+    ) {
+        TwoRowsTopAppBar(
+            navigationIcon = {
+                FilledTonalIconButton(
+                    onClick = onNavigateBack,
+                    shape = RoundedCornerShape(percent = 50),
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                    )
+                }
+            },
+            title = { expanded ->
+                ChatTopBarTitle(
+                    expanded = expanded,
+                    collapsedFraction = collapsedFraction,
+                    sessionId = sessionId,
+                    sessionTitle = sessionTitle,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedContentScope = animatedContentScope,
+                )
+            },
+            subtitle =
+                activeModel?.takeIf { it.isNotBlank() }?.let { model ->
+                    { expanded ->
+                        if (expanded) {
+                            Text(
+                                text = model,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                },
+            actions = {
+                ConnectionStatusPill(
+                    connectionState = connectionState,
+                    onClick = onConnectionStatusClick,
+                )
+            },
+            collapsedHeight = TopAppBarDefaults.LargeAppBarCollapsedHeight,
+            expandedHeight =
+                if (activeModel.isNullOrBlank()) {
+                    TopAppBarDefaults.MediumFlexibleAppBarWithoutSubtitleExpandedHeight
+                } else {
+                    TopAppBarDefaults.MediumFlexibleAppBarWithSubtitleExpandedHeight
+                },
+            scrollBehavior = scrollBehavior,
+            colors =
+                TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+        )
+    }
+}
+
+/**
+ * Renders the session title in either expanded (plain large text) or collapsed
+ * (Surface pill) form, depending on [expanded] and [collapsedFraction].
+ *
+ * The shared-bounds transition for the session title is assigned to whichever
+ * visual form owns the majority of the crossfade — ownership flips at 50%.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun ChatTopBarTitle(
+    expanded: Boolean,
+    collapsedFraction: Float,
+    sessionId: String,
+    sessionTitle: String,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedContentScope: AnimatedContentScope,
+) {
+    val ownsSharedTitleBounds =
+        if (expanded) {
+            collapsedFraction < 0.5f
+        } else {
+            collapsedFraction >= 0.5f
+        }
+
+    if (expanded) {
+        with(sharedTransitionScope) {
+            Text(
+                text = sessionTitle,
+                style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier =
+                    Modifier.then(
+                        if (ownsSharedTitleBounds) {
+                            Modifier.sharedBounds(
+                                sharedContentState =
+                                    rememberSharedContentState(
+                                        key = SessionTitleSharedBoundsKey(sessionId),
+                                    ),
+                                animatedVisibilityScope = animatedContentScope,
+                                enter = fadeIn(),
+                                exit = fadeOut(),
+                                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+            )
+        }
+    } else {
+        Surface(
+            shape = RoundedCornerShape(percent = 50),
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             with(sharedTransitionScope) {
                 Text(
                     text = sessionTitle,
-                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                    style = MaterialTheme.typography.titleSmall.copy(fontFamily = FontFamily.Monospace),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier =
-                        Modifier.sharedBounds(
-                            sharedContentState =
-                                rememberSharedContentState(
-                                    key = SessionTitleSharedBoundsKey(sessionId),
-                                ),
-                            animatedVisibilityScope = animatedContentScope,
-                            enter = fadeIn(),
-                            exit = fadeOut(),
-                            resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
-                        ),
-                )
-            }
-            activeModel?.takeIf { it.isNotBlank() }?.let { model ->
-                Text(
-                    text = model,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                        Modifier
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .then(
+                                if (ownsSharedTitleBounds) {
+                                    Modifier.sharedBounds(
+                                        sharedContentState =
+                                            rememberSharedContentState(
+                                                key = SessionTitleSharedBoundsKey(sessionId),
+                                            ),
+                                        animatedVisibilityScope = animatedContentScope,
+                                        enter = fadeIn(),
+                                        exit = fadeOut(),
+                                        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
                 )
             }
         }
-    }, navigationIcon = {
-        FilledTonalIconButton(onClick = onNavigateBack) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Back",
-            )
-        }
-    }, actions = {
-        val connectionLabel = connectionStateLabel(connectionState)
-        TooltipBox(
-            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-            tooltip = { PlainTooltip { Text("Connection: $connectionLabel") } },
-            state = rememberTooltipState(),
+    }
+}
+
+/**
+ * Floating pill showing the ACP connection state as a colored dot (or loading spinner).
+ *
+ * State colors: Connecting = spinner, Connected = green (0xFF2E7D32),
+ * Failed = error, Disconnected = outlineVariant.
+ * Long-press shows a tooltip with the connection label.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConnectionStatusPill(
+    connectionState: AcpConnectionState,
+    onClick: () -> Unit,
+) {
+    val connectionLabel = connectionStateLabel(connectionState)
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text("Connection: $connectionLabel") } },
+        state = rememberTooltipState(),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(percent = 50),
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier =
+                Modifier
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Connection status"
+                        stateDescription = connectionLabel
+                    }.clickable(onClick = onClick),
         ) {
             Box(
-                modifier =
-                    Modifier
-                        .padding(horizontal = 8.dp)
-                        .semantics {
-                            role = Role.Button
-                            contentDescription = "Connection status"
-                            stateDescription = connectionLabel
-                        }.clickable(onClick = onConnectionStatusClick),
+                modifier = Modifier.padding(12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 when (connectionState) {
-                    is AcpConnectionState.Connecting -> {
-                        LoadingIndicator(
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-
-                    is AcpConnectionState.Connected -> {
+                    is AcpConnectionState.Connecting -> LoadingIndicator(modifier = Modifier.size(12.dp))
+                    is AcpConnectionState.Connected ->
                         Surface(
-                            shape = MaterialTheme.shapes.small,
+                            shape = RoundedCornerShape(percent = 50),
                             color = Color(0xFF2E7D32),
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(10.dp),
                         ) {}
-                    }
-
-                    is AcpConnectionState.Failed -> {
+                    is AcpConnectionState.Failed ->
                         Surface(
-                            shape = MaterialTheme.shapes.small,
+                            shape = RoundedCornerShape(percent = 50),
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(10.dp),
                         ) {}
-                    }
-
-                    is AcpConnectionState.Disconnected -> {
+                    is AcpConnectionState.Disconnected ->
                         Surface(
-                            shape = MaterialTheme.shapes.small,
+                            shape = RoundedCornerShape(percent = 50),
                             color = MaterialTheme.colorScheme.outlineVariant,
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(10.dp),
                         ) {}
-                    }
                 }
             }
         }
-    })
+    }
 }
 
 @Composable

@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -70,15 +69,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -91,9 +84,9 @@ import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthMethodInfo
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionDiagnosticsDialog
+import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
 import com.tamimarafat.ferngeist.core.common.ui.SessionSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.SessionTitleSharedBoundsKey
-import com.tamimarafat.ferngeist.core.common.ui.connectionStateLabel
 import com.tamimarafat.ferngeist.core.model.SessionSummary
 import com.tamimarafat.ferngeist.feature.sessionlist.SessionListEvent
 import com.tamimarafat.ferngeist.feature.sessionlist.SessionListPendingAuthentication
@@ -105,6 +98,16 @@ import java.time.ZoneId
 import java.util.Date
 import kotlin.math.max
 
+/**
+ * Full-screen session list for an ACP agent server.
+ *
+ * Shows sessions grouped by date ("Today", "Yesterday", formatted date, "Unknown").
+ * Supports pull-to-refresh (when the agent advertises session listing capability),
+ * a scroll-responsive title (lerps between headlineMedium and titleLarge),
+ * and a FAB to create new sessions.
+ *
+ * Three content states: loading spinner → empty state → grouped session cards.
+ */
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalMaterial3ExpressiveApi::class,
@@ -151,6 +154,8 @@ fun SessionListScreen(
     val showRefreshingIndicator = isLoading && sessions.isNotEmpty()
     val supportsSessionList = agentCapabilities?.session?.list != false
 
+    // Re-populate envValues from persisted values whenever the pending auth changes.
+    // This ensures the dialog reflects the most recent server-saved env vars.
     LaunchedEffect(
         pendingAuthentication?.serverId,
         pendingAuthentication?.pendingAction,
@@ -255,6 +260,8 @@ fun SessionListScreen(
     }
 
     val collapse = scrollBehavior.state.collapsedFraction.coerceIn(0f, 1f)
+    // Interpolate title size between expanded (headlineMedium) and collapsed (titleLarge)
+    // as the user scrolls — gives a smooth visual transition in the top bar.
     val titleStyle =
         lerp(
             MaterialTheme.typography.headlineMedium, // expanded
@@ -345,29 +352,10 @@ fun SessionListScreen(
                                 )
                             }
                         }
-                        val connectionLabel = connectionStateLabel(connectionState)
-                        TooltipBox(
-                            positionProvider =
-                                TooltipDefaults.rememberTooltipPositionProvider(
-                                    TooltipAnchorPosition.Above,
-                                ),
-                            tooltip = { PlainTooltip { Text("Connection: $connectionLabel") } },
-                            state = rememberTooltipState(),
-                        ) {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .padding(horizontal = 8.dp)
-                                        .semantics {
-                                            role = Role.Button
-                                            contentDescription = "Connection status"
-                                            stateDescription = connectionLabel
-                                        }.clickable(onClick = { showConnectionStatusDialog = true }),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                ConnectionStatusDot(connectionState = connectionState)
-                            }
-                        }
+                        ConnectionStatusPill(
+                            connectionState = connectionState,
+                            onClick = { showConnectionStatusDialog = true },
+                        )
                     },
                     scrollBehavior = scrollBehavior,
                 )
@@ -423,6 +411,9 @@ fun SessionListScreen(
                                 .thenByDescending { it.id },
                         )
                     val groupedSessions = linkedMapOf<String, List<SessionSummary>>()
+                    // Group sessions by calendar date, sorted newest-first.
+                    // Sessions with updatedAt are bucketed by local date; those without
+                    // go into a final "Unknown" bucket.
                     val withDate =
                         sortedSessions.filter { it.updatedAt != null }.groupBy { session ->
                             val updatedAt = session.updatedAt ?: 0L
@@ -431,6 +422,7 @@ fun SessionListScreen(
                     withDate.entries
                         .sortedByDescending { it.key }
                         .forEach { (sessionDate, groupSessions) ->
+                            // Show "Today" / "Yesterday" for recent dates, formatted date otherwise.
                             val label =
                                 when (sessionDate) {
                                     today -> "Today"
@@ -518,6 +510,14 @@ fun SessionListScreen(
     }
 }
 
+/**
+ * Dialog for ACP authentication with method selection, env var input, and reconnect.
+ *
+ * Supports three auth flows:
+ * 1. **Gateway env auth**: user fills env var fields inline → `onSubmit`
+ * 2. **Manual env auth**: user sets env vars manually → "Reconnect" → `onReconnect`
+ * 3. **Other methods** (token, etc.): `onSubmit` immediately
+ */
 @Composable
 private fun PendingAuthenticationDialog(
     pendingAuthentication: SessionListPendingAuthentication,
@@ -535,6 +535,7 @@ private fun PendingAuthenticationDialog(
             ?: pendingAuthentication.authMethods.firstOrNull()
     val isGatewayEnvAuth = selectedMethod?.type == "env" && pendingAuthentication.gatewayRuntimeId != null
     val isManualEnvAuth = selectedMethod?.type == "env" && pendingAuthentication.gatewayRuntimeId == null
+    // All non-optional env vars must be filled before the button is enabled.
     val requiredEnvVarsFilled =
         selectedMethod
             ?.envVars
@@ -611,6 +612,7 @@ private fun PendingAuthenticationDialog(
         },
         confirmButton = {
             TextButton(
+                // Enabled: method selected; for gateway env auth all required vars must be filled.
                 enabled =
                     when {
                         selectedMethod == null -> false
@@ -636,6 +638,14 @@ private fun PendingAuthenticationDialog(
     )
 }
 
+/**
+ * Renders auth method-specific details below the selected method.
+ *
+ * Three branches:
+ * 1. Method has a link → `TextButton` to open it
+ * 2. Method is manual-env ("env" but not gateway-backed) → lists required env vars with instructions
+ * 3. Method is gateway-env ("env" + gateway-backed) → inline `OutlinedTextField` per env var
+ */
 @Composable
 private fun AuthenticationMethodDetails(
     method: AcpAuthMethodInfo,
@@ -713,6 +723,12 @@ private fun AuthenticationMethodDetails(
     }
 }
 
+/**
+ * Tappable card for a single session in the list.
+ *
+ * Uses [sharedBounds] for a shared-element transition to the chat screen,
+ * keyed by [SessionSharedBoundsKey] (outer card) and [SessionTitleSharedBoundsKey] (title text).
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SessionCard(
@@ -782,6 +798,10 @@ private fun SessionCard(
     }
 }
 
+/**
+ * Shown when there are no sessions.
+ * Text adapts based on whether the agent supports session listing.
+ */
 @Composable
 private fun EmptySessionList(
     modifier: Modifier = Modifier,
@@ -814,60 +834,6 @@ private fun EmptySessionList(
             Spacer(modifier = Modifier.height(16.dp))
             TextButton(onClick = onCreateSession) {
                 Text("Create new session")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConnectionStatusDot(connectionState: AcpConnectionState) {
-    when (connectionState) {
-        is AcpConnectionState.Connecting -> {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-            )
-        }
-
-        is AcpConnectionState.Connected -> {
-            Box(
-                modifier =
-                    Modifier
-                        .size(12.dp)
-                        .padding(1.dp),
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxSize(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2E7D32)),
-                ) {}
-            }
-        }
-
-        is AcpConnectionState.Failed -> {
-            Box(
-                modifier =
-                    Modifier
-                        .size(12.dp)
-                        .padding(1.dp),
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxSize(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error),
-                ) {}
-            }
-        }
-
-        is AcpConnectionState.Disconnected -> {
-            Box(
-                modifier =
-                    Modifier
-                        .size(12.dp)
-                        .padding(1.dp),
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxSize(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.outlineVariant),
-                ) {}
             }
         }
     }

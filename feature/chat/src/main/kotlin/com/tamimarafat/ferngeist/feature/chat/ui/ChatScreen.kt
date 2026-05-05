@@ -45,10 +45,8 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -56,13 +54,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.TwoRowsTopAppBar
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,11 +79,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -102,9 +91,10 @@ import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigOption
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
 import com.tamimarafat.ferngeist.acp.bridge.session.allChoices
 import com.tamimarafat.ferngeist.acp.bridge.session.displayValueLabel
+import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
+import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
 import com.tamimarafat.ferngeist.core.common.ui.SessionSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.SessionTitleSharedBoundsKey
-import com.tamimarafat.ferngeist.core.common.ui.connectionStateLabel
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.feature.chat.ChatIntent
 import com.tamimarafat.ferngeist.feature.chat.ChatScrollSnapshot
@@ -1290,67 +1280,6 @@ private fun ChatTopBarTitle(
                                 },
                             ),
                 )
-            }
-        }
-    }
-}
-
-/**
- * Floating pill showing the ACP connection state as a colored dot (or loading spinner).
- *
- * State colors: Connecting = spinner, Connected = green (0xFF2E7D32),
- * Failed = error, Disconnected = outlineVariant.
- * Long-press shows a tooltip with the connection label.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ConnectionStatusPill(
-    connectionState: AcpConnectionState,
-    onClick: () -> Unit,
-) {
-    val connectionLabel = connectionStateLabel(connectionState)
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-        tooltip = { PlainTooltip { Text("Connection: $connectionLabel") } },
-        state = rememberTooltipState(),
-    ) {
-        Surface(
-            shape = RoundedCornerShape(percent = 50),
-            tonalElevation = 0.dp,
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            modifier =
-                Modifier
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = "Connection status"
-                        stateDescription = connectionLabel
-                    }.clickable(onClick = onClick),
-        ) {
-            Box(
-                modifier = Modifier.padding(12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                when (connectionState) {
-                    is AcpConnectionState.Connecting -> LoadingIndicator(modifier = Modifier.size(12.dp))
-                    is AcpConnectionState.Connected ->
-                        Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = Color(0xFF2E7D32),
-                            modifier = Modifier.size(10.dp),
-                        ) {}
-                    is AcpConnectionState.Failed ->
-                        Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(10.dp),
-                        ) {}
-                    is AcpConnectionState.Disconnected ->
-                        Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            modifier = Modifier.size(10.dp),
-                        ) {}
-                }
             }
         }
     }

@@ -69,6 +69,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -937,7 +938,7 @@ fun ChatScreen(
                     ).fillMaxSize()
                     .background(MaterialTheme.colorScheme.surface),
         ) {
-            val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+            val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
             Scaffold(
                 modifier =
@@ -954,6 +955,12 @@ fun ChatScreen(
                         scrollBehavior = scrollBehavior,
                         onNavigateBack = onNavigateBack,
                         onConnectionStatusClick = { showConnectionStatusDialog = true },
+                        onTitleClick = {
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(0)
+                                scrollBehavior.state.heightOffset = 0f
+                            }
+                        },
                         sharedTransitionScope = sharedTransitionScope,
                         animatedContentScope = animatedContentScope,
                     )
@@ -1111,6 +1118,7 @@ private fun ChatTopBar(
     scrollBehavior: TopAppBarScrollBehavior,
     onNavigateBack: () -> Unit,
     onConnectionStatusClick: () -> Unit,
+    onTitleClick: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedContentScope: AnimatedContentScope,
 ) {
@@ -1156,6 +1164,7 @@ private fun ChatTopBar(
                     collapsedFraction = collapsedFraction,
                     sessionId = sessionId,
                     sessionTitle = sessionTitle,
+                    onTitleClick = onTitleClick,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedContentScope = animatedContentScope,
                 )
@@ -1170,6 +1179,7 @@ private fun ChatTopBar(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = 12.dp),
                             )
                         }
                     }
@@ -1183,9 +1193,9 @@ private fun ChatTopBar(
             collapsedHeight = TopAppBarDefaults.LargeAppBarCollapsedHeight,
             expandedHeight =
                 if (activeModel.isNullOrBlank()) {
-                    TopAppBarDefaults.MediumFlexibleAppBarWithoutSubtitleExpandedHeight
+                    TopAppBarDefaults.MediumFlexibleAppBarWithoutSubtitleExpandedHeight + 24.dp
                 } else {
-                    TopAppBarDefaults.MediumFlexibleAppBarWithSubtitleExpandedHeight
+                    TopAppBarDefaults.MediumFlexibleAppBarWithSubtitleExpandedHeight + 24.dp
                 },
             scrollBehavior = scrollBehavior,
             colors =
@@ -1211,6 +1221,7 @@ private fun ChatTopBarTitle(
     collapsedFraction: Float,
     sessionId: String,
     sessionTitle: String,
+    onTitleClick: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedContentScope: AnimatedContentScope,
 ) {
@@ -1229,22 +1240,24 @@ private fun ChatTopBarTitle(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier =
-                    Modifier.then(
-                        if (ownsSharedTitleBounds) {
-                            Modifier.sharedBounds(
-                                sharedContentState =
-                                    rememberSharedContentState(
-                                        key = SessionTitleSharedBoundsKey(sessionId),
-                                    ),
-                                animatedVisibilityScope = animatedContentScope,
-                                enter = fadeIn(),
-                                exit = fadeOut(),
-                                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
-                            )
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    Modifier
+                        .then(
+                            if (ownsSharedTitleBounds) {
+                                Modifier.sharedBounds(
+                                    sharedContentState =
+                                        rememberSharedContentState(
+                                            key = SessionTitleSharedBoundsKey(sessionId),
+                                        ),
+                                    animatedVisibilityScope = animatedContentScope,
+                                    enter = fadeIn(),
+                                    exit = fadeOut(),
+                                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .clickable(onClick = onTitleClick),
             )
         }
     } else {
@@ -1252,7 +1265,7 @@ private fun ChatTopBarTitle(
             shape = RoundedCornerShape(percent = 50),
             tonalElevation = 0.dp,
             color = MaterialTheme.colorScheme.secondaryContainer,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(percent = 50)).clickable(onClick = onTitleClick),
         ) {
             with(sharedTransitionScope) {
                 Text(

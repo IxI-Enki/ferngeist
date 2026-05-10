@@ -17,11 +17,15 @@ suspend fun refreshGatewaySourceIfNeeded(
         return gatewaySource
     }
     val refreshed =
-        gatewayRepository.refreshCredential(
-            scheme = gatewaySource.scheme,
-            host = gatewaySource.host,
-            gatewayCredential = gatewaySource.gatewayCredential,
-        )
+        try {
+            gatewayRepository.refreshCredential(
+                scheme = gatewaySource.scheme,
+                host = gatewaySource.host,
+                gatewayCredential = gatewaySource.gatewayCredential,
+            )
+        } catch (_: IllegalStateException) {
+            return gatewaySource
+        }
     val updated =
         gatewaySource.copy(
             gatewayCredential = refreshed.gatewayCredential,

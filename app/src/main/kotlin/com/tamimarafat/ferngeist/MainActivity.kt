@@ -154,43 +154,47 @@ fun FerngeistNavHost() {
             navController = navController,
             startDestination = "server_list",
             enterTransition = {
-                if (isSessionChatTransition()) {
-                    EnterTransition.None
-                } else {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = navSpring,
-                    ) + fadeIn(animationSpec = navFadeSpring)
+                when {
+                    isSessionChatTransition() -> EnterTransition.None
+                    isServerListSessionsTransition() -> fadeIn(animationSpec = navFadeSpring)
+                    else ->
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = navSpring,
+                        ) + fadeIn(animationSpec = navFadeSpring)
                 }
             },
             exitTransition = {
-                if (isSessionChatTransition()) {
-                    ExitTransition.None
-                } else {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = navSpring,
-                    ) + fadeOut(animationSpec = navFadeSpring)
+                when {
+                    isSessionChatTransition() -> ExitTransition.None
+                    isServerListSessionsTransition() -> fadeOut(animationSpec = navFadeSpring)
+                    else ->
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = navSpring,
+                        ) + fadeOut(animationSpec = navFadeSpring)
                 }
             },
             popEnterTransition = {
-                if (isSessionChatTransition()) {
-                    EnterTransition.None
-                } else {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = navSpring,
-                    ) + fadeIn(animationSpec = navFadeSpring)
+                when {
+                    isSessionChatTransition() -> EnterTransition.None
+                    isServerListSessionsTransition() -> fadeIn(animationSpec = navFadeSpring)
+                    else ->
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = navSpring,
+                        ) + fadeIn(animationSpec = navFadeSpring)
                 }
             },
             popExitTransition = {
-                if (isSessionChatTransition()) {
-                    ExitTransition.None
-                } else {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = navSpring,
-                    ) + fadeOut(animationSpec = navFadeSpring)
+                when {
+                    isSessionChatTransition() -> ExitTransition.None
+                    isServerListSessionsTransition() -> fadeOut(animationSpec = navFadeSpring)
+                    else ->
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = navSpring,
+                        ) + fadeOut(animationSpec = navFadeSpring)
                 }
             },
         ) {
@@ -212,10 +216,15 @@ fun FerngeistNavHost() {
                             is LaunchableTarget.Manual -> navController.navigate("edit_server/${server.id}")
                         }
                     },
-                    onNavigateToSessions = { serverId, _, openCreateSessionDialog ->
-                        navController.navigate("sessions/$serverId?create=$openCreateSessionDialog")
+                    onNavigateToSessions = { serverId, serverName, _, openCreateSessionDialog ->
+                        val encodedName = Uri.encode(serverName)
+                        navController.navigate(
+                            "sessions/$serverId?create=$openCreateSessionDialog&name=$encodedName",
+                        )
                     },
                     viewModel = viewModel,
+                    sharedTransitionScope = this@SharedTransitionLayout,
+                    animatedContentScope = this@composable,
                 )
             }
 
@@ -300,7 +309,7 @@ fun FerngeistNavHost() {
             }
 
             composable(
-                route = "sessions/{serverId}?create={create}",
+                route = "sessions/{serverId}?create={create}&name={name}",
                 arguments =
                     listOf(
                         navArgument("serverId") { type = NavType.StringType },
@@ -308,15 +317,23 @@ fun FerngeistNavHost() {
                             type = NavType.BoolType
                             defaultValue = false
                         },
+                        navArgument("name") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
                     ),
             ) { backStackEntry ->
                 val serverId = backStackEntry.arguments?.getString("serverId") ?: return@composable
+                val serverNameArg = backStackEntry.arguments?.getString("name")
                 val openCreateSessionDialog = backStackEntry.arguments?.getBoolean("create") == true
                 val viewModel: SessionListViewModel = hiltViewModel()
 
                 val server by viewModel.server.collectAsState()
                 SessionListScreen(
-                    serverName = server?.name ?: "Sessions",
+                    navArgName = serverNameArg,
+                    loadedName = server?.name,
+                    serverId = serverId,
                     openCreateSessionDialogOnLaunch = openCreateSessionDialog,
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToChat = { sessionId, cwd, updatedAt, title ->
@@ -405,4 +422,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.isSessionChatTrans
     val toRoute = targetState.destination.route ?: return false
     return (fromRoute.startsWith("sessions/") && toRoute.startsWith("chat/")) ||
         (fromRoute.startsWith("chat/") && toRoute.startsWith("sessions/"))
+}
+
+/**
+ * Returns `true` when navigating between `server_list` and `sessions/{id}`.
+ */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isServerListSessionsTransition(): Boolean {
+    val fromRoute = initialState.destination.route ?: return false
+    val toRoute = targetState.destination.route ?: return false
+    return (fromRoute == "server_list" && toRoute.startsWith("sessions/")) ||
+        (fromRoute.startsWith("sessions/") && toRoute == "server_list")
 }

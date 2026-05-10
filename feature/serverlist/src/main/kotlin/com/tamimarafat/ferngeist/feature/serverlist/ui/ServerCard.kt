@@ -1,6 +1,9 @@
 package com.tamimarafat.ferngeist.feature.serverlist.ui
 
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -61,10 +64,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
+import com.tamimarafat.ferngeist.core.common.ui.ServerNameSharedBoundsKey
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.feature.serverlist.ServerListUiState
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalSharedTransitionApi::class,
+)
 @Composable
 internal fun ServerCard(
     server: LaunchableTarget,
@@ -72,6 +80,8 @@ internal fun ServerCard(
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedContentScope: AnimatedContentScope,
 ) {
     val connectionState =
         remember(
@@ -158,13 +168,24 @@ internal fun ServerCard(
                     ConnectingTitleIndicator(visible = connectionState.isConnecting)
 
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = server.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        with(sharedTransitionScope) {
+                            Text(
+                                text = server.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.sharedBounds(
+                                    sharedContentState = rememberSharedContentState(
+                                        key = ServerNameSharedBoundsKey(server.id),
+                                    ),
+                                    animatedVisibilityScope = animatedContentScope,
+                                    enter = fadeIn(),
+                                    exit = fadeOut(),
+                                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                                ),
+                            )
+                        }
                         Spacer(modifier = Modifier.height(2.dp))
                         ServerSubtitle(
                             server = server,

@@ -148,7 +148,7 @@ class ServerListViewModel
                     connectionManager.isConnected &&
                     _uiState.value.pendingAuthentication == null
                 ) {
-                    openConnectedServer(server.id)
+                    openConnectedServer(server.id, server.name)
                     return@launch
                 }
 
@@ -301,7 +301,7 @@ class ServerListViewModel
                                     ),
                             )
                         }
-                        openConnectedServer(server.id)
+                        openConnectedServer(server.id, server.name)
                     }
 
                     is AcpInitializeResult.AuthenticationRequired -> {
@@ -394,7 +394,8 @@ class ServerListViewModel
                         connectedServerState = it.connectedServerState?.copy(isInitializing = false),
                     )
                 }
-                openConnectedServer(serverId)
+                val serverName = pending.serverName
+                openConnectedServer(serverId, serverName)
             }
         }
 
@@ -673,7 +674,7 @@ class ServerListViewModel
                     connectedServerState = it.connectedServerState?.copy(isInitializing = false),
                 )
             }
-            openConnectedServer(server.id)
+            openConnectedServer(server.id, server.name)
         }
 
         private fun buildEnvPayload(
@@ -894,10 +895,11 @@ class ServerListViewModel
             }
         }
 
-        private suspend fun openConnectedServer(serverId: String) {
+        private suspend fun openConnectedServer(serverId: String, serverName: String) {
             _events.emit(
                 ServerListEvent.NavigateToSessions(
                     serverId = serverId,
+                    serverName = serverName,
                     openCreateSessionDialog = false,
                 ),
             )
@@ -912,6 +914,7 @@ private fun buildLaunchConsentKey(
 sealed interface ServerListEvent {
     data class NavigateToSessions(
         val serverId: String,
+        val serverName: String,
         val sessions: List<SessionSummary> = emptyList(),
         val openCreateSessionDialog: Boolean = false,
     ) : ServerListEvent

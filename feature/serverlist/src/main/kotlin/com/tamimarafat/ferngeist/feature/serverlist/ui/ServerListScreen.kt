@@ -1,7 +1,10 @@
 package com.tamimarafat.ferngeist.feature.serverlist.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
@@ -83,15 +86,21 @@ import com.tamimarafat.ferngeist.feature.serverlist.R
 import com.tamimarafat.ferngeist.feature.serverlist.ServerListEvent
 import com.tamimarafat.ferngeist.feature.serverlist.ServerListViewModel
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalSharedTransitionApi::class,
+)
 @Composable
 fun ServerListScreen(
     onNavigateToAddServer: () -> Unit,
     onNavigateToPairGateway: () -> Unit,
     onNavigateToGateways: () -> Unit,
     onNavigateToEditServer: (LaunchableTarget) -> Unit,
-    onNavigateToSessions: (String, List<SessionSummary>, Boolean) -> Unit,
+    onNavigateToSessions: (String, String, List<SessionSummary>, Boolean) -> Unit,
     viewModel: ServerListViewModel,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedContentScope: AnimatedContentScope,
 ) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val hasGateways by viewModel.hasGateways.collectAsStateWithLifecycle()
@@ -118,6 +127,7 @@ fun ServerListScreen(
                 is ServerListEvent.NavigateToSessions ->
                     onNavigateToSessions(
                         event.serverId,
+                        event.serverName,
                         event.sessions,
                         event.openCreateSessionDialog,
                     )
@@ -245,6 +255,8 @@ fun ServerListScreen(
                         onClick = { viewModel.connectAndOpenServer(server) },
                         onEdit = { onNavigateToEditServer(server) },
                         onDelete = { viewModel.deleteServer(server.id) },
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedContentScope = animatedContentScope,
                     )
                 }
             }

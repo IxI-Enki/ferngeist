@@ -3,12 +3,12 @@ package com.tamimarafat.ferngeist.feature.sessionlist.ui
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -39,7 +39,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +54,7 @@ import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TwoRowsTopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -70,6 +70,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalUriHandler
@@ -81,11 +83,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.lerp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthMethodInfo
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionDiagnosticsDialog
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
+import com.tamimarafat.ferngeist.core.common.ui.ServerNameSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.SessionSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.SessionTitleSharedBoundsKey
 import com.tamimarafat.ferngeist.core.model.SessionSummary
@@ -116,7 +120,9 @@ import kotlin.math.max
 )
 @Composable
 fun SessionListScreen(
-    serverName: String,
+    navArgName: String?,
+    loadedName: String?,
+    serverId: String,
     openCreateSessionDialogOnLaunch: Boolean = false,
     onNavigateBack: () -> Unit,
     onNavigateToChat: (String, String, Long?, String?) -> Unit,
@@ -154,6 +160,12 @@ fun SessionListScreen(
     val pullToRefreshState = rememberPullToRefreshState()
     val showRefreshingIndicator = isLoading && sessions.isNotEmpty()
     val supportsSessionList = agentCapabilities?.session?.list != false
+    val serverName = resolveServerDisplayName(navArgName, loadedName)
+    val hasCwd = !currentCwd.isNullOrBlank()
+    val cwdAlpha by animateFloatAsState(
+        targetValue = if (hasCwd) 1f else 0f,
+        label = "cwdAlpha",
+    )
 
     // Re-populate envValues from persisted values whenever the pending auth changes.
     // This ensures the dialog reflects the most recent server-saved env vars.
@@ -292,35 +304,41 @@ fun SessionListScreen(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
-                LargeTopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = serverName,
-                                style = titleStyle,
-                            )
-                            currentCwd?.let { cwd ->
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.FolderOpen,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(
-                                        text = cwd,
-                                        style =
-                                            MaterialTheme.typography.bodyMedium.copy(
-                                                fontFamily = FontFamily.Monospace,
-                                            ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
+                TwoRowsTopAppBar(
+                    title = { expanded ->
+                        SessionListTopBarTitle(
+                            expanded = expanded,
+                            collapsedFraction = collapse,
+                            serverId = serverId,
+                            serverName = serverName,
+                            titleStyle = titleStyle,
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedContentScope = animatedContentScope,
+                        )
+                    },
+                    subtitle = { expanded ->
+                        if (expanded) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.heightIn(min = 20.dp).alpha(cwdAlpha),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = currentCwd.orEmpty(),
+                                    style =
+                                        MaterialTheme.typography.bodyMedium.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                        ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     },
@@ -358,6 +376,8 @@ fun SessionListScreen(
                             onClick = { showConnectionStatusDialog = true },
                         )
                     },
+                    collapsedHeight = TopAppBarDefaults.LargeAppBarCollapsedHeight,
+                    expandedHeight = TopAppBarDefaults.LargeAppBarExpandedHeight,
                     scrollBehavior = scrollBehavior,
                 )
             },
@@ -406,6 +426,10 @@ fun SessionListScreen(
                 else -> {
                     val zoneId = ZoneId.systemDefault()
                     val today = LocalDate.now(zoneId)
+                    val locale = LocalLocale.current
+                    val dateFormatter = remember(locale) {
+                        SimpleDateFormat("MMMM d, yyyy", locale.platformLocale)
+                    }
                     val sortedSessions =
                         sessions.sortedWith(
                             compareByDescending<SessionSummary> { it.updatedAt ?: Long.MIN_VALUE }
@@ -434,8 +458,7 @@ fun SessionListScreen(
                                                 groupSessions.firstOrNull()?.updatedAt ?: 0L,
                                                 0L,
                                             )
-                                        SimpleDateFormat("MMMM d, yyyy", LocalLocale.current.platformLocale)
-                                            .format(Date(epoch))
+                                        dateFormatter.format(Date(epoch))
                                     }
                                 }
                             groupedSessions[label] = groupSessions
@@ -751,7 +774,8 @@ private fun SessionCard(
                         enter = fadeIn(),
                         exit = fadeOut(),
                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
-                    )                    .fillMaxWidth()
+                    )
+                    .fillMaxWidth()
                     .clip(CardDefaults.shape)
                     .clickable(onClick = onClick),
             colors =
@@ -839,4 +863,62 @@ private fun EmptySessionList(
             }
         }
     }
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun SessionListTopBarTitle(
+    expanded: Boolean,
+    collapsedFraction: Float,
+    serverId: String,
+    serverName: String,
+    titleStyle: TextStyle,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedContentScope: AnimatedContentScope,
+) {
+    val sharedContentState = with(sharedTransitionScope) {
+        rememberSharedContentState(key = ServerNameSharedBoundsKey(serverId))
+    }
+    val ownsSharedTitleBounds =
+        if (expanded) {
+            collapsedFraction < 0.5f
+        } else {
+            collapsedFraction >= 0.5f
+        }
+    val baseModifier =
+        if (ownsSharedTitleBounds) {
+            with(sharedTransitionScope) {
+                Modifier.sharedBounds(
+                    sharedContentState = sharedContentState,
+                    animatedVisibilityScope = animatedContentScope,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                )
+            }
+        } else {
+            Modifier
+        }
+
+    Text(
+        text = serverName,
+        style = titleStyle,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = baseModifier,
+    )
+}
+
+/**
+ * Resolves the display name for the session list top bar.
+ *
+ * Priority order:
+ * 1. [loadedName] if non-blank (server-provided name from the session list response)
+ * 2. [navArgName] if non-blank (fallback name passed as a navigation argument)
+ * 3. "Sessions" (default)
+ */
+internal fun resolveServerDisplayName(navArgName: String?, loadedName: String?): String {
+    if (!loadedName.isNullOrBlank()) return loadedName
+    if (!navArgName.isNullOrBlank()) return navArgName
+    return "Sessions"
 }

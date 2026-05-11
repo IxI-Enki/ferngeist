@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.tamimarafat.ferngeist.MainActivity
@@ -21,14 +23,29 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Foreground service that owns the persistent connection notification.
+ *
+ * Lifecycle is driven by [AcpConnectionState]:
+ * - [AcpConnectionState.Connecting] / [AcpConnectionState.Connected] → keeps running
+ * - [AcpConnectionState.Disconnected] → calls [stopSelf] immediately
+ * - [AcpConnectionState.Failed] → posts a persistent error notification via
+ *   [postErrorNotification], then calls [stopSelf]
+ *
+ * On [onDestroy] the service disconnects [AcpConnectionManager] if not already
+ * disconnected, ensuring clean teardown even on system-kill.
+ */
 @AndroidEntryPoint
 class FerngeistForegroundService : Service() {
+
     companion object {
+
         const val CHANNEL_ID = "ferngeist_connection"
         const val NOTIFICATION_ID = 1
         const val ACTION_START = "com.tamimarafat.ferngeist.ACTION_START_FOREGROUND"
         const val ACTION_STOP = "com.tamimarafat.ferngeist.ACTION_STOP_FOREGROUND"
         const val ACTION_DISCONNECT = "com.tamimarafat.ferngeist.ACTION_DISCONNECT"
+        const val ERROR_NOTIFICATION_ID = 2
     }
 
     @Inject
@@ -67,7 +84,13 @@ class FerngeistForegroundService : Service() {
             isStarted = true
             val notification =
                 buildNotification(connectionManager.connectionState.value, connectionManager.agentInfo.value?.name)
-            startForeground(NOTIFICATION_ID, notification)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            getSystemService(NotificationManager::class.java)
+                .cancel(ERROR_NOTIFICATION_ID)
             observeConnectionState()
         }
 
@@ -79,6 +102,11 @@ class FerngeistForegroundService : Service() {
     override fun onDestroy() {
         observationJob?.cancel()
         scope.cancel()
+
+        if (connectionManager.connectionState.value !is AcpConnectionState.Disconnected) {
+            connectionManager.disconnect()
+        }
+
         isStarted = false
         super.onDestroy()
     }
@@ -92,8 +120,14 @@ class FerngeistForegroundService : Service() {
                         .collect { state ->
                             if (!isStarted) return@collect
                             updateNotification(state)
-                            if (state is AcpConnectionState.Disconnected) {
-                                stopSelf()
+
+                            when (state) {
+                                is AcpConnectionState.Disconnected -> stopSelf()
+                                is AcpConnectionState.Failed -> {
+                                    postErrorNotification(state)
+                                    stopSelf()
+                                }
+                                else -> { /* active states, no stop */ }
                             }
                         }
                 }
@@ -112,6 +146,38 @@ class FerngeistForegroundService : Service() {
         val notification = buildNotification(state, connectionManager.agentInfo.value?.name)
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * Posts a regular (non-foreground) notification with the failure error,
+     * then immediately stops the service. The notification persists via
+     * [setAutoCancel] so the user can read the error after the service dies.
+     *
+     * Cleared on next service start via [ERROR_NOTIFICATION_ID] cancel in
+     * [onStartCommand].
+     */
+    private fun postErrorNotification(state: AcpConnectionState.Failed) {
+        val displayName = connectionManager.currentConnectionConfig()?.serverDisplayName
+            ?: connectionManager.agentInfo.value?.name
+        val errorText = state.error.message ?: getString(R.string.notification_failed_text)
+        val contentIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE,
+            )
+        val notification =
+            NotificationCompat
+                .Builder(this, CHANNEL_ID)
+                .setContentTitle(getString(R.string.notification_failed_title))
+                .setContentText(errorText)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentIntent(contentIntent)
+                .setAutoCancel(true)
+                .build()
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(ERROR_NOTIFICATION_ID, notification)
     }
 
     private fun buildNotification(

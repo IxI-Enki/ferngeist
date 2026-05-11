@@ -10,9 +10,22 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Application entry point that wires Hilt and manages foreground service lifecycle.
+ *
+ * Observes [AcpConnectionManager.connectionState] to request the foreground
+ * service start on active states ([Connecting][AcpConnectionState.Connecting],
+ * [Connected][AcpConnectionState.Connected]) and reset the tracking flag on
+ * terminal states ([Disconnected][AcpConnectionState.Disconnected],
+ * [Failed][AcpConnectionState.Failed]).
+ *
+ * A delayed [ForegroundServiceController.stop] backstop ensures the service is
+ * torn down even if its internal observation coroutine died before self-stopping.
+ */
 @HiltAndroidApp
 class FerngeistApplication : Application() {
     @Inject
@@ -20,6 +33,10 @@ class FerngeistApplication : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var isServiceRunning = false
+
+    companion object {
+        private const val SERVICE_STOP_BACKSTOP_MS = 10_000L
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -33,18 +50,20 @@ class FerngeistApplication : Application() {
             connectionManager.connectionState
                 .collect { state ->
                     when (state) {
-                        is AcpConnectionState.Connected,
                         is AcpConnectionState.Connecting,
-                        is AcpConnectionState.Failed,
+                        is AcpConnectionState.Connected,
                         -> {
                             if (!isServiceRunning) {
                                 isServiceRunning = true
                                 ForegroundServiceController.start(this@FerngeistApplication)
                             }
                         }
-                        is AcpConnectionState.Disconnected -> {
-                            if (isServiceRunning) {
-                                isServiceRunning = false
+                        is AcpConnectionState.Disconnected,
+                        is AcpConnectionState.Failed,
+                        -> {
+                            isServiceRunning = false
+                            appScope.launch {
+                                delay(SERVICE_STOP_BACKSTOP_MS)
                                 ForegroundServiceController.stop(this@FerngeistApplication)
                             }
                         }

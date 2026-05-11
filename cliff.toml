@@ -1,16 +1,19 @@
 [changelog]
 header = ""
 body = """
-## What Changed
-
-{% for commit in commits %}
-* {{ commit.message | split(pat="\n") | first }} \
-  ([{{ commit.id | truncate(length=7, end="") }}]({{ repository }}/commit/{{ commit.id }}))
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+    ## [unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | striptags | trim | upper_first }}
+    {% for commit in commits %}
+        - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
+            {% if commit.breaking %}[**breaking**] {% endif %}\
+            {{ commit.message | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/arafatamim/Ferngeist/commit/{{ commit.id }}))\
+    {% endfor %}
 {% endfor %}
-
-{% if previous.version %}
-**Full diff**: [{{ previous.version }}...{{ version }}]({{ repository }}/compare/{{ previous.version }}...{{ version }})
-{% endif %}
 """
 trim = true
 

@@ -139,6 +139,7 @@ fun SessionListScreen(
     val pendingAuthentication by viewModel.pendingAuthentication.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val snackbarHostState = remember { SnackbarHostState() }
+    val recentCwds by viewModel.recentCwds.collectAsState()
     val currentCwd = sessionSettings.cwd
     var showCwdDialog by remember { mutableStateOf(false) }
     var cwdDialogValue by remember(currentCwd) { mutableStateOf(currentCwd.orEmpty()) }
@@ -207,47 +208,22 @@ fun SessionListScreen(
     }
 
     if (showCwdDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showCwdDialog = false },
-            title = { Text("Working Directory") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Set the current working directory for this agent. Leave empty to show all sessions.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    OutlinedTextField(
-                        value = cwdDialogValue,
-                        onValueChange = { cwdDialogValue = it },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Leave empty for no filter") },
-                    )
-                }
+        CwdDialog(
+            recentCwds = recentCwds,
+            cwdDialogValue = cwdDialogValue,
+            onCwdDialogValueChange = { cwdDialogValue = it },
+            onSave = {
+                showCwdDialog = false
+                viewModel.updateCurrentCwd(cwdDialogValue)
             },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            showCwdDialog = false
-                            viewModel.updateCurrentCwd(cwdDialogValue)
-                        },
-                    ) { Text("Save") }
-                    if (currentCwd != null) {
-                        TextButton(
-                            onClick = {
-                                showCwdDialog = false
-                                viewModel.updateCurrentCwd("")
-                            },
-                        ) { Text("Clear") }
-                    }
+            onClear = if (currentCwd != null) {
+                {
+                    showCwdDialog = false
+                    viewModel.updateCurrentCwd("")
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCwdDialog = false }) {
-                    Text("Cancel")
-                }
-            },
+            } else null,
+            onDismiss = { showCwdDialog = false },
+            onRemoveRecentCwd = viewModel::removeRecentCwd,
         )
     }
 

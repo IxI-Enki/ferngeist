@@ -20,6 +20,7 @@ import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepositor
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetSessionSettingsRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.feature.serverlist.auth.AuthEnvValueStore
+import com.tamimarafat.ferngeist.feature.sessionlist.cwd.RecentCwdStore
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.refreshGatewaySourceIfNeeded
 import com.tamimarafat.ferngeist.gateway.resolveGatewayWebSocketUrl
@@ -74,6 +75,7 @@ class SessionListViewModel
         private val gatewayRepository: GatewayRepository,
         private val authEnvValueStore: AuthEnvValueStore,
         private val sessionSettingsRepository: LaunchableTargetSessionSettingsRepository,
+        private val recentCwdStore: RecentCwdStore,
     ) : ViewModel() {
         val serverId: String = savedStateHandle.get<String>("serverId") ?: ""
 
@@ -91,6 +93,12 @@ class SessionListViewModel
                     SharingStarted.WhileSubscribed(5000),
                     LaunchableTargetSessionSettings(targetId = serverId),
                 )
+
+        /** Per-target recent working directories, ordered MRU-first. */
+        val recentCwds: StateFlow<List<String>> =
+            recentCwdStore
+                .getRecentCwds(serverId)
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
         val sessions: StateFlow<List<SessionSummary>> =
             sessionRepository
@@ -197,14 +205,26 @@ class SessionListViewModel
             createSession(normalizedCwd)
         }
 
-        fun updateCurrentCwd(cwd: String) {
-            viewModelScope.launch {
-                sessionSettingsRepository.updateCwd(serverId, cwd)
-                refreshSessions()
+    /** Persists [cwd] to settings, records it in the recent list, then refreshes sessions. */
+    fun updateCurrentCwd(cwd: String) {
+        viewModelScope.launch {
+            sessionSettingsRepository.updateCwd(serverId, cwd)
+            val normalized = cwd.trim().ifBlank { "" }
+            if (normalized.isNotBlank()) {
+                recentCwdStore.addCwd(serverId, normalized)
             }
+            refreshSessions()
         }
+    }
 
-        /**
+    /** Removes [cwd] from the recent list without affecting the current filter. */
+    fun removeRecentCwd(cwd: String) {
+        viewModelScope.launch {
+            recentCwdStore.removeCwd(serverId, cwd)
+        }
+    }
+
+    /**
          * Completes the currently pending ACP auth challenge, then retries the
          * session action that originally failed.
          */

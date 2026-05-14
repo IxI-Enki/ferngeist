@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,13 +37,15 @@ internal fun ContentBlockRenderer(block: ContentBlock) {
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = block.text,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(12.dp),
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                )
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = block.text,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        )
+                    }
             }
         }
 

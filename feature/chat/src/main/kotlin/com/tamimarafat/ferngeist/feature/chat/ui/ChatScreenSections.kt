@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -39,8 +36,11 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.agentclientprotocol.model.ContentBlock
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolKind
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectionDiagnostics
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigOption
@@ -408,6 +408,17 @@ private fun ToolCallDetailsSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
+            if (toolCall.kind == ToolKind.EXECUTE) {
+                val rawInput = toolCall.rawInput
+                val displayText = rawInput?.toString()
+                if (!displayText.isNullOrBlank()) {
+                    ContentBlockRenderer(
+                        block = ContentBlock.Text(displayText),
+                    )
+                }
+            }
+
             val content = toolCall.content
             if (!content.isNullOrEmpty()) {
                 content.forEach { tc ->
@@ -419,20 +430,10 @@ private fun ToolCallDetailsSheet(
                 }
             } else {
                 val rawOutput = toolCall.rawOutput
-                if (!rawOutput.isNullOrBlank()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = rawOutput,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(12.dp),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        )
-                    }
+                if (rawOutput != null) {
+                    ContentBlockRenderer(
+                        block = ContentBlock.Text(rawOutput.toString()),
+                    )
                 } else {
                     Text(
                         text = "No tool output.",
@@ -469,26 +470,9 @@ private fun ThoughtDetailsSheet(
                 )
             }
 
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                SelectionContainer {
-                    Text(
-                        text = thought,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 420.dp)
-                                .verticalScroll(rememberScrollState())
-                                .padding(12.dp),
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                    )
-                }
-            }
+            ContentBlockRenderer(
+                block = ContentBlock.Text(thought),
+            )
         }
     }
 }

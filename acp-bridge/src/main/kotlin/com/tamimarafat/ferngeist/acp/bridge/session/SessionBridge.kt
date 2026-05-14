@@ -3,6 +3,7 @@ package com.tamimarafat.ferngeist.acp.bridge.session
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
+import kotlinx.serialization.json.JsonElement
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -147,6 +148,7 @@ sealed interface AppSessionEvent {
         val title: String,
         val kind: ToolKind?,
         val status: ToolCallStatus?,
+        val rawInput: JsonElement? = null,
     ) : AppSessionEvent
 
     data class ToolCallUpdated(
@@ -155,7 +157,8 @@ sealed interface AppSessionEvent {
         val title: String?,
         val kind: ToolKind?,
         val content: List<ToolCallContent>? = null,
-        val rawOutput: String? = null,
+        val rawInput: JsonElement? = null,
+        val rawOutput: JsonElement? = null,
     ) : AppSessionEvent
 
     data class ToolPermissionRequested(

@@ -57,7 +57,6 @@ import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.agentclientprotocol.model.ToolCallStatus
-import com.agentclientprotocol.model.ToolKind
 import kotlin.random.Random
 import com.mikepenz.markdown.model.State as MarkdownRenderState
 
@@ -360,7 +359,7 @@ private fun ToolCallCard(
                     Text(
                         text = toolCall.title.ifBlank { "Tool Call" },
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        overflow = TextOverflow.MiddleEllipsis,
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     )

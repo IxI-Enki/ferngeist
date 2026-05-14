@@ -29,6 +29,7 @@ internal object AcpSessionUpdateMapper {
                     title = update.title,
                     kind = update.kind,
                     status = update.status,
+                    rawInput = update.rawInput,
                 )
             is SessionUpdate.ToolCallUpdate ->
                 AppSessionEvent.ToolCallUpdated(
@@ -37,7 +38,8 @@ internal object AcpSessionUpdateMapper {
                     title = update.title,
                     kind = update.kind,
                     content = update.content,
-                    rawOutput = update.rawOutput?.toString(),
+                    rawInput = update.rawInput,
+                    rawOutput = update.rawOutput,
                 )
             is SessionUpdate.PlanUpdate ->
                 AppSessionEvent.PlanUpdated(
@@ -143,17 +145,6 @@ internal object AcpSessionUpdateMapper {
                     description = sdkOption.description,
                     origin = SessionConfigOrigin.NativeConfigOption,
                     currentValue = sdkOption.currentValue,
-                )
-            }
-
-            else -> {
-                SessionConfigOption.Unknown(
-                    id = sdkOption.id.value,
-                    name = sdkOption.name,
-                    description = sdkOption.description,
-                    origin = SessionConfigOrigin.NativeConfigOption,
-                    kind = sdkOption::class.simpleName,
-                    currentValue = null,
                 )
             }
         }

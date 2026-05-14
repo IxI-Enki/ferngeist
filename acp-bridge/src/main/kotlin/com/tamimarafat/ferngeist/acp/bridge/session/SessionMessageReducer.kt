@@ -236,6 +236,7 @@ object SessionMessageReducer {
                         title = event.title.ifBlank { "Tool Call" },
                         kind = event.kind,
                         status = event.status,
+                        rawInput = event.rawInput,
                     ),
             )
         segments.add(newSegment)
@@ -262,6 +263,7 @@ object SessionMessageReducer {
                     title = event.title ?: "Tool Call",
                     kind = event.kind,
                     status = event.status,
+                    rawInput = event.rawInput,
                 ),
             ).let { withTool ->
                 updateToolCall(withTool, event.copy(toolCallId = incomingToolCallId))
@@ -288,6 +290,7 @@ object SessionMessageReducer {
                             status = event.status ?: oldToolCall.status,
                             title = event.title ?: oldToolCall.title.ifBlank { "Tool Call" },
                             kind = event.kind ?: oldToolCall.kind,
+                            rawInput = event.rawInput ?: oldToolCall.rawInput,
                             rawOutput = event.rawOutput ?: oldToolCall.rawOutput,
                         ),
                 )

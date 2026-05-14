@@ -4,6 +4,7 @@ import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import java.util.UUID
 
 @Serializable
@@ -48,7 +49,8 @@ data class ToolCallDisplay(
     val kind: ToolKind? = null,
     val status: ToolCallStatus? = null,
     val content: List<ToolCallContent>? = null,
-    val rawOutput: String? = null,
+    val rawInput: JsonElement? = null,
+    val rawOutput: JsonElement? = null,
     val permissionOptions: List<AcpPermissionOption>? = null,
     val permissionRequestId: String? = null,
 )

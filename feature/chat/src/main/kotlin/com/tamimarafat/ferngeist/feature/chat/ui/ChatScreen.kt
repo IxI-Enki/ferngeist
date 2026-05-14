@@ -837,16 +837,16 @@ fun ChatScreen(
     val contentAnchor =
         remember(renderedMessages, state.isStreaming) {
             val last = renderedMessages.lastOrNull()
-            // Track last tool-output length as a fine-grained change detector:
-            // auto-scroll triggers on contentAnchor changes, and tool output is the
+            // Track last tool-content size as a fine-grained change detector:
+            // auto-scroll triggers on contentAnchor changes, and tool content is the
             // most volatile field during streaming (frequently appended characters).
             val lastToolOutputLength =
                 last
                     ?.segments
                     ?.lastOrNull { it.toolCall != null }
                     ?.toolCall
-                    ?.output
-                    ?.length ?: 0
+                    ?.content
+                    ?.sumOf { it.toString().length } ?: 0
             ContentAnchor(
                 messageCount = renderedMessages.size,
                 lastMessageId = last?.id,

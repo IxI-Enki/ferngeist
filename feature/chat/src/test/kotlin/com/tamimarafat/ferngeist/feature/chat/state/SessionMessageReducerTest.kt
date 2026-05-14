@@ -7,6 +7,7 @@ import com.tamimarafat.ferngeist.core.model.ChatMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SessionMessageReducerTest {
@@ -31,7 +32,7 @@ class SessionMessageReducerTest {
                     status = "completed",
                     title = null,
                     kind = null,
-                    output = null,
+                    content = null,
                     rawOutput = "{\"ok\":true}",
                 ),
             )
@@ -43,7 +44,8 @@ class SessionMessageReducerTest {
                 .first { it.kind == AssistantSegment.Kind.TOOL_CALL }
                 .toolCall
         assertNotNull(toolCall)
-        assertEquals("{\"ok\":true}", toolCall?.output)
+        assertNull(toolCall?.content)
+        assertEquals("{\"ok\":true}", toolCall?.rawOutput)
     }
 
     @Test

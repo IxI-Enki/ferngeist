@@ -1,5 +1,7 @@
 package com.tamimarafat.ferngeist.acp.bridge.session
 
+import com.agentclientprotocol.model.ContentBlock
+import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import kotlinx.coroutines.test.runTest
@@ -87,7 +89,7 @@ class SessionRuntimeTest {
                     status = "completed",
                     title = null,
                     kind = null,
-                    output = "ok",
+                    content = listOf(ToolCallContent.Content(ContentBlock.Text("ok"))),
                 ),
             )
             runtime.onEvent(AppSessionEvent.TurnComplete("end_turn"))
@@ -107,7 +109,7 @@ class SessionRuntimeTest {
 
             val tool = segments[1].toolCall
             assertEquals("completed", tool?.status)
-            assertEquals("ok", tool?.output)
+            assertEquals("ok", (tool?.content?.first() as? ToolCallContent.Content)?.content?.let { (it as? ContentBlock.Text)?.text })
             assertFalse(message.isStreaming)
         }
 

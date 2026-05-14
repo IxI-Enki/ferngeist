@@ -59,6 +59,9 @@ dependencies {
     implementation(libs.multiplatform.markdown.renderer)
     implementation(libs.multiplatform.markdown.renderer.m3)
 
+    // Diff
+    implementation("io.github.baole:diff-kotlin:0.0.4")
+
     // Hilt Setup
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

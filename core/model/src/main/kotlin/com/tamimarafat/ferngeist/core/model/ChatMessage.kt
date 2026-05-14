@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.core.model
 
+import com.agentclientprotocol.model.ToolCallContent
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
@@ -44,7 +45,7 @@ data class ToolCallDisplay(
     val title: String = "",
     val kind: String? = null,
     val status: String? = null,
-    val output: String? = null,
+    val content: List<ToolCallContent>? = null,
     val rawOutput: String? = null,
     val permissionOptions: List<AcpPermissionOption>? = null,
     val permissionRequestId: String? = null,

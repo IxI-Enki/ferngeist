@@ -282,10 +282,10 @@ object SessionMessageReducer {
                 oldSegment.copy(
                     toolCall =
                         oldToolCall?.copy(
+                            content = event.content ?: oldToolCall.content,
                             status = event.status ?: oldToolCall.status,
                             title = event.title ?: oldToolCall.title.ifBlank { "Tool Call" },
                             kind = event.kind ?: oldToolCall.kind,
-                            output = event.output ?: event.rawOutput ?: oldToolCall.output,
                             rawOutput = event.rawOutput ?: oldToolCall.rawOutput,
                         ),
                 )

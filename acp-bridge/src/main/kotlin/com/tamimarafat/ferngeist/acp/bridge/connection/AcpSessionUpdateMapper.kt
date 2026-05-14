@@ -36,7 +36,7 @@ internal object AcpSessionUpdateMapper {
                     status = update.status?.toString()?.lowercase(),
                     title = update.title,
                     kind = update.kind?.toString()?.lowercase(),
-                    output = update.content?.joinToString("\n") { it.toString() },
+                    content = update.content,
                     rawOutput = update.rawOutput?.toString(),
                 )
             is SessionUpdate.PlanUpdate ->

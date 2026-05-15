@@ -477,17 +477,29 @@ internal fun ModeMenuButton(
                     )
                 } else {
                     availableModes.forEachIndexed { index, mode ->
-                        DropdownMenuItem(
-                            text = { Text(mode.label.uppercase()) },
-                            shapes = MenuDefaults.itemShape(index, modeCount),
-                            checked = mode.value == modeOption.currentValue,
-                            onCheckedChange = { checked ->
-                                if (checked && mode.value != modeOption.currentValue) {
-                                    onExpandedChange(false)
-                                    onSetConfigOption(modeOption.id, mode.value)
-                                }
-                            },
-                        )
+                        val item: @Composable () -> Unit = {
+                            DropdownMenuItem(
+                                text = { Text(mode.label.uppercase()) },
+                                shapes = MenuDefaults.itemShape(index, modeCount),
+                                checked = mode.value == modeOption.currentValue,
+                                onCheckedChange = { checked ->
+                                    if (checked && mode.value != modeOption.currentValue) {
+                                        onExpandedChange(false)
+                                        onSetConfigOption(modeOption.id, mode.value)
+                                    }
+                                },
+                            )
+                        }
+                        val description = mode.description
+                        if (!description.isNullOrBlank()) {
+                            TooltipBox(
+                                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                                tooltip = { PlainTooltip { Text(description) } },
+                                state = rememberTooltipState(),
+                            ) { item() }
+                        } else {
+                            item()
+                        }
                     }
                 }
             }

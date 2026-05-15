@@ -254,7 +254,8 @@ class ChatViewModel
                 totalTokens = usage.totalTokens,
                 cachedReadTokens = usage.cachedReadTokens,
                 contextWindowTokens = usage.contextWindowTokens,
-                costUsd = usage.costUsd,
+                costAmount = usage.costAmount,
+                costCurrency = usage.costCurrency,
             )
         }
 
@@ -332,7 +333,8 @@ data class UsageState(
     val totalTokens: Int? = null,
     val cachedReadTokens: Int? = null,
     val contextWindowTokens: Int? = null,
-    val costUsd: Double? = null,
+    val costAmount: Double? = null,
+    val costCurrency: String? = null,
 )
 
 sealed interface ChatIntent {

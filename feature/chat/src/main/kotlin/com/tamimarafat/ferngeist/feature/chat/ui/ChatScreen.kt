@@ -93,7 +93,6 @@ import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
 import com.tamimarafat.ferngeist.acp.bridge.session.allChoices
 import com.tamimarafat.ferngeist.acp.bridge.session.displayValueLabel
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
-import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
 import com.tamimarafat.ferngeist.core.common.ui.SessionSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.SessionTitleSharedBoundsKey
 import com.tamimarafat.ferngeist.core.model.ChatMessage
@@ -951,8 +950,12 @@ fun ChatScreen(
                         sessionId = sessionId,
                         sessionTitle = sessionTitle,
                         activeModel = activeModel,
-                        connectionState = state.connectionState,
-                        scrollBehavior = scrollBehavior,
+                    connectionState = state.connectionState,
+                    totalTokens = state.usage?.totalTokens,
+                    contextWindowTokens = state.usage?.contextWindowTokens,
+                    costAmount = state.usage?.costAmount,
+                    costCurrency = state.usage?.costCurrency,
+                    scrollBehavior = scrollBehavior,
                         onNavigateBack = onNavigateBack,
                         onConnectionStatusClick = { showConnectionStatusDialog = true },
                         onTitleClick = {
@@ -1115,6 +1118,10 @@ private fun ChatTopBar(
     sessionTitle: String,
     activeModel: String?,
     connectionState: AcpConnectionState,
+    totalTokens: Int?,
+    contextWindowTokens: Int?,
+    costAmount: Double?,
+    costCurrency: String?,
     scrollBehavior: TopAppBarScrollBehavior,
     onNavigateBack: () -> Unit,
     onConnectionStatusClick: () -> Unit,
@@ -1187,6 +1194,10 @@ private fun ChatTopBar(
             actions = {
                 ConnectionStatusPill(
                     connectionState = connectionState,
+                    totalTokens = totalTokens,
+                    contextWindowTokens = contextWindowTokens,
+                    costAmount = costAmount,
+                    costCurrency = costCurrency,
                     onClick = onConnectionStatusClick,
                 )
             },

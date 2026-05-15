@@ -27,10 +27,10 @@ fun ConnectionDiagnosticsDialog(
     connectionState: AcpConnectionState,
     diagnostics: ConnectionDiagnostics,
     onDismiss: () -> Unit,
-    totalTokens: Int? = diagnostics.lastTotalTokens,
-    contextWindowTokens: Int? = diagnostics.lastContextWindowTokens,
-    costAmount: Double? = diagnostics.lastCostAmount,
-    costCurrency: String? = diagnostics.lastCostCurrency,
+    totalTokens: Int? = null,
+    contextWindowTokens: Int? = null,
+    costAmount: Double? = null,
+    costCurrency: String? = null,
     showCancelSupport: Boolean = false,
 ) {
     val scrollState = rememberScrollState()
@@ -172,7 +172,7 @@ private fun formatCurrency(
             maximumFractionDigits = 2
         }.format(amount)
 
-private fun formatCompactTokens(
+internal fun formatCompactTokens(
     tokens: Int,
     locale: Locale,
 ): String {

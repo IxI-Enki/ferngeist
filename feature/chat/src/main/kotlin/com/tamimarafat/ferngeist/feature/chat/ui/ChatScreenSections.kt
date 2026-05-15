@@ -108,10 +108,10 @@ internal fun ChatScreenDialogs(
         ConnectionDiagnosticsDialog(
             connectionState = connectionState,
             diagnostics = diagnostics,
-            totalTokens = usage?.totalTokens ?: diagnostics.lastTotalTokens,
-            contextWindowTokens = usage?.contextWindowTokens ?: diagnostics.lastContextWindowTokens,
-            costAmount = usage?.costUsd ?: diagnostics.lastCostAmount,
-            costCurrency = if (usage?.costUsd != null) "USD" else diagnostics.lastCostCurrency,
+            totalTokens = usage?.totalTokens,
+            contextWindowTokens = usage?.contextWindowTokens,
+            costAmount = usage?.costAmount,
+            costCurrency = usage?.costCurrency,
             onDismiss = onDismissConnectionStatus,
         )
     }

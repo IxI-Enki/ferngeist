@@ -17,12 +17,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
@@ -30,10 +27,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -46,8 +40,6 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -984,7 +976,6 @@ fun ChatScreen(
                                     value = SessionConfigValue.StringValue(value),
                                 ),
                             )
-                            selectedConfigPickerOptionId = null
                         },
                         onDismissConfigPicker = { selectedConfigPickerOptionId = null },
                         selectedThought = selectedThought,
@@ -1360,102 +1351,4 @@ internal fun CommandsDialog(
     )
 }
 
-@Composable
-internal fun SelectConfigOptionDialog(
-    option: SessionConfigOption.Select,
-    onOptionSelected: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var query by remember(option) { mutableStateOf("") }
-    val filteredOptions =
-        remember(option, query) {
-            val options = option.allChoices()
-            val trimmedQuery = query.trim()
-            if (trimmedQuery.isBlank()) {
-                options
-            } else {
-                options.filter { choice ->
-                    choice.label.contains(trimmedQuery, ignoreCase = true) ||
-                        choice.value.contains(
-                            trimmedQuery,
-                            ignoreCase = true,
-                        ) ||
-                        (choice.description?.contains(trimmedQuery, ignoreCase = true) == true)
-                }
-            }
-        }
-
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(option.name) }, text = {
-        if (option.allChoices().isEmpty()) {
-            Text(
-                text = "No values available from agent.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Search ${option.name.lowercase()}") },
-                    placeholder = { Text("Type a value") },
-                )
-
-                if (filteredOptions.isEmpty()) {
-                    Text(
-                        text = "No matching models.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    LazyColumn(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 320.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        items(
-                            items = filteredOptions,
-                            key = { it.id },
-                        ) { choice ->
-                            Row(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onOptionSelected(choice.value) }
-                                        .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = choice.value == option.currentValue,
-                                    onClick = { onOptionSelected(choice.value) },
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = choice.label,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    choice.description?.let { description ->
-                                        Text(
-                                            text = description,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }, confirmButton = {
-        TextButton(onClick = onDismiss) {
-            Text("Close")
-        }
-    })
-}
 // endregion

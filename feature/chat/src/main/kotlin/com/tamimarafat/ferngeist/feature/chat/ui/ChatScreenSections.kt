@@ -11,24 +11,37 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -36,12 +49,15 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+
 import com.agentclientprotocol.model.ContentBlock
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectionDiagnostics
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigOption
+import com.tamimarafat.ferngeist.acp.bridge.session.allChoices
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionDiagnosticsDialog
 import com.tamimarafat.ferngeist.core.model.AcpPermissionOption
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
@@ -73,7 +89,7 @@ internal fun ChatScreenDialogs(
     onCommandClick: (String) -> Unit,
 ) {
     if (selectedConfigPickerOption != null) {
-        SelectConfigOptionDialog(
+        SelectConfigOptionSheet(
             option = selectedConfigPickerOption,
             onOptionSelected = { value ->
                 onConfigOptionSelected(selectedConfigPickerOption.id, value)
@@ -474,6 +490,129 @@ private fun ThoughtDetailsSheet(
             ContentBlockRenderer(
                 block = ContentBlock.Text(thought),
             )
+        }
+    }
+}
+
+@Composable
+private fun SelectConfigOptionSheet(
+    option: SessionConfigOption.Select,
+    onOptionSelected: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // skipPartiallyExpanded ensures the sheet opens to full height immediately,
+    // which is better for lists and search interactions.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    // Extract all available choices from the session config option
+    val allChoices = remember(option) { option.allChoices() }
+
+    // Only show the search bar if there are enough items to justify filtering
+    val showSearch = allChoices.size >= 10
+
+    // Filter the options based on the user's search query across labels, values, and descriptions
+    var query by remember(option) { mutableStateOf("") }
+    val filteredOptions =
+        remember(allChoices, query) {
+            if (!showSearch || query.trim().isBlank()) {
+                allChoices
+            } else {
+                val trimmedQuery = query.trim()
+                allChoices.filter { choice ->
+                    // Match against any relevant text field in the choice object
+                    choice.label.contains(trimmedQuery, ignoreCase = true) ||
+                        choice.value.contains(trimmedQuery, ignoreCase = true) ||
+                        (choice.description?.contains(trimmedQuery, ignoreCase = true) == true)
+                }
+            }
+        }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = option.name,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            if (allChoices.isEmpty()) {
+                Text(
+                    text = "No values available from agent.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                if (showSearch) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                        placeholder = { Text("Search ${option.name.lowercase()}") },
+                        shape = RoundedCornerShape(28.dp),
+                    )
+                }
+
+                if (filteredOptions.isEmpty()) {
+                    Text(
+                        text = "No matching models.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(
+                            items = filteredOptions,
+                            key = { it.id },
+                        ) { choice ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onOptionSelected(choice.value)
+                                        scope.launch {
+                                            sheetState.hide()
+                                            onDismiss()
+                                        }
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = choice.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    choice.description?.let { description ->
+                                        Text(
+                                            text = description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                if (choice.value == option.currentValue) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = "Selected",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

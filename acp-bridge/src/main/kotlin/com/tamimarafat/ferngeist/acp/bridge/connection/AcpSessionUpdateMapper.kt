@@ -51,11 +51,11 @@ internal object AcpSessionUpdateMapper {
                 )
             is SessionUpdate.CurrentModeUpdate -> AppSessionEvent.ModeChanged(update.currentModeId.value)
             is SessionUpdate.UsageUpdate -> {
-                val costUsd = update.cost?.takeIf { it.currency.equals("USD", ignoreCase = true) }?.amount
                 AppSessionEvent.UsageUpdated(
                     totalTokens = update.used.toInt(),
                     contextWindowTokens = update.size.toInt(),
-                    costUsd = costUsd,
+                    costAmount = update.cost?.amount,
+                    costCurrency = update.cost?.currency,
                 )
             }
             is SessionUpdate.ConfigOptionUpdate -> {

@@ -15,7 +15,8 @@ data class SessionUsage(
     val totalTokens: Int? = null,
     val cachedReadTokens: Int? = null,
     val contextWindowTokens: Int? = null,
-    val costUsd: Double? = null,
+    val costAmount: Double? = null,
+    val costCurrency: String? = null,
 )
 
 data class SessionSnapshot(

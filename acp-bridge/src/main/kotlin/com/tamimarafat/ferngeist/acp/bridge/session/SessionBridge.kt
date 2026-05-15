@@ -210,7 +210,8 @@ sealed interface AppSessionEvent {
         val totalTokens: Int? = null,
         val cachedReadTokens: Int? = null,
         val contextWindowTokens: Int? = null,
-        val costUsd: Double? = null,
+        val costAmount: Double? = null,
+        val costCurrency: String? = null,
     ) : AppSessionEvent
 
     data class CommandsUpdated(

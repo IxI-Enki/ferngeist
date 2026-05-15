@@ -141,7 +141,7 @@ class SessionRuntimeTest {
             runtime.beginHydration()
 
             runtime.onEvent(AppSessionEvent.CommandsUpdated(listOf("init", "status")))
-            runtime.onEvent(AppSessionEvent.UsageUpdated(totalTokens = 99, contextWindowTokens = 4096, costUsd = 0.12))
+            runtime.onEvent(AppSessionEvent.UsageUpdated(totalTokens = 99, contextWindowTokens = 4096, costAmount = 0.12, costCurrency = "USD"))
 
             runtime.completeHydration()
 
@@ -150,7 +150,7 @@ class SessionRuntimeTest {
             assertEquals(listOf("init", "status"), snapshot.availableCommands)
             assertEquals(99, snapshot.usage?.totalTokens)
             assertEquals(4096, snapshot.usage?.contextWindowTokens)
-            assertEquals(0.12, snapshot.usage?.costUsd ?: 0.0, 0.0001)
+            assertEquals(0.12, snapshot.usage?.costAmount ?: 0.0, 0.0001)
         }
 
     @Test

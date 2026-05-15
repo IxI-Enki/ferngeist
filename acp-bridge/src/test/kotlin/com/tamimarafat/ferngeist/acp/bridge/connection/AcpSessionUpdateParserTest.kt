@@ -22,7 +22,8 @@ class AcpSessionUpdateParserTest {
         val usage = event as AppSessionEvent.UsageUpdated
         assertEquals(2048, usage.totalTokens)
         assertEquals(8192, usage.contextWindowTokens)
-        assertEquals(0.52, usage.costUsd ?: 0.0, 0.0001)
+        assertEquals(0.52, usage.costAmount ?: 0.0, 0.0001)
+        assertEquals("USD", usage.costCurrency)
     }
 
     @Test

@@ -202,7 +202,8 @@ class SessionRuntime(
                         totalTokens = event.totalTokens,
                         cachedReadTokens = event.cachedReadTokens,
                         contextWindowTokens = event.contextWindowTokens,
-                        costUsd = event.costUsd,
+                        costAmount = event.costAmount,
+                        costCurrency = event.costCurrency,
                     )
             }
             is AppSessionEvent.CommandsUpdated -> {

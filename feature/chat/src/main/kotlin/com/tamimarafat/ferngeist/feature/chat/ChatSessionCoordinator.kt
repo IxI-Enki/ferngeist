@@ -163,23 +163,6 @@ internal class ChatSessionCoordinator(
                 return
             }
 
-            if (loadTimedOut) {
-                val fallbackBridge =
-                    runCatching {
-                        connectionManager.createSession(cwd)
-                    }.getOrNull()
-                if (fallbackBridge != null) {
-                    trace("loadSession:fallbackCreated active=${fallbackBridge.sessionId}")
-                    attachSessionBridge(fallbackBridge)
-                    callbacks.onSessionReady()
-                    callbacks.onOperationError(
-                        message = "Server did not acknowledge session/load. Opened a new live session.",
-                        stopStreaming = false,
-                    )
-                    return
-                }
-            }
-
             val errorMessage =
                 if (loadTimedOut) {
                     "Session load timed out. Check server connection and retry."

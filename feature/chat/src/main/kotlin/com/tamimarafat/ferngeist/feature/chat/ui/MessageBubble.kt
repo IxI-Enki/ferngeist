@@ -7,7 +7,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,6 +46,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mikepenz.markdown.m3.Markdown
@@ -68,13 +68,19 @@ fun MessageBubble(
     showStreamingIndicator: Boolean,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
+    onStreamLayoutSettled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.role == ChatMessage.Role.USER
     val contentColor = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
 
     Box(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (showStreamingIndicator) Modifier.onSizeChanged { onStreamLayoutSettled() }
+                else Modifier
+            ),
         contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         if (isUser) {

@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- About & Legal -->
+    <string name="about">О Ferngeist</string>
+    <string name="privacy_policy">Политика конфиденциальности</string>
+    <string name="privacy_policy_url">https://arafatamim.github.io/Ferngeist/privacy_policy.html</string>
+    <string name="report_issue">Сообщить о проблеме</string>
+    <string name="github_repo_url">https://github.com/arafatamim/ferngeist/issues</string>
+
+    <!-- Common -->
+    <string name="serverlist_back_desc">Назад</string>
+    <string name="serverlist_ok">ОК</string>
+    <string name="serverlist_cancel">Отмена</string>
+    <string name="serverlist_continue">Продолжить</string>
+
+    <!-- Server List -->
+    <string name="serverlist_title">Ferngeist</string>
+    <string name="serverlist_about_body">Ferngeist — это Android-клиент для серверов Agent Client Protocol (ACP), позволяющий взаимодействовать с агентами кодирования прямо с вашего мобильного устройства.</string>
+    <string name="serverlist_add_gateway_btn">Сопрячь Ferngeist Gateway</string>
+    <string name="serverlist_add_agent_btn">Добавить агента вручную</string>
+    <string name="serverlist_add_paired_btn">Добавить через сопряженный шлюз</string>
+    <string name="serverlist_launch_risk_title">Запустить агента на шлюзе?</string>
+    <string name="serverlist_launch_risk_accept">Я понимаю и хочу продолжить.</string>
+    <string name="serverlist_empty_title">Агенты отсутствуют</string>
+    <string name="serverlist_empty_body">Добавьте агента вручную или сопрягите шлюз, чтобы создать свой список запуска.</string>
+    <string name="serverlist_empty_action">Добавить агента</string>
+
+    <!-- Auth dialog (server list) -->
+    <string name="serverlist_auth_title">Аутентификация %1$s</string>
+    <string name="serverlist_auth_body">Агент \"%1$s\" требует ACP-аутентификацию перед открытием сессий.</string>
+    <string name="serverlist_auth_method_fallback">Тип: %1$s</string>
+    <string name="serverlist_auth_reconnect">Переподключиться</string>
+    <string name="serverlist_auth_authenticate">Аутентифицировать</string>
+    <string name="serverlist_auth_cancel">Отмена</string>
+    <string name="serverlist_auth_cmd">Команда: %1$s</string>
+    <string name="serverlist_auth_env_instructions">Установите эти переменные окружения перед запуском агента, затем переподключитесь, чтобы повторить попытку аутентификации.</string>
+    <string name="serverlist_auth_optional_suffix"> (опционально)</string>
+
+    <!-- Server Card -->
+    <string name="serverlist_card_delete_title">Удалить сервер</string>
+    <string name="serverlist_card_delete_body">Удалить \"%1$s\" и все его сохраненные сессии?</string>
+    <string name="serverlist_card_delete">Удалить</string>
+    <string name="serverlist_card_manage">Управление</string>
+    <string name="serverlist_card_edit">Редактировать</string>
+
+    <!-- Add Server -->
+    <string name="serverlist_add_server_title_edit">Редактировать ACP-агента</string>
+    <string name="serverlist_add_server_title_new">Новый ACP-агент</string>
+    <string name="serverlist_add_server_details_title">Детали ACP-агента</string>
+    <string name="serverlist_add_server_name_label">Имя</string>
+    <string name="serverlist_add_server_name_placeholder">Мой сервер</string>
+    <string name="serverlist_add_server_protocol_label">Протокол</string>
+    <string name="serverlist_add_server_ws_warning">Используйте это только для доверенных локальных сетей, так как соединение не зашифровано.</string>
+    <string name="serverlist_add_server_host_label">Хост</string>
+    <string name="serverlist_add_server_host_hint">Укажите IP вашего ПК в локальной сети (не localhost). Пример: 192.168.1.42:6000</string>
+    <string name="serverlist_add_server_stdio_hint">Перед подключением запустите ACP-агента через обертку (wrapper) stdio-to-ws. Пример:</string>
+    <string name="serverlist_add_server_docs_hint">Проверьте документацию вашего ACP-агента для получения точной команды запуска в режиме ACP.</string>
+    <string name="serverlist_add_server_auth_title">Аутентификация</string>
+    <string name="serverlist_add_server_auth_subtitle">ACP-агент</string>
+    <string name="serverlist_add_server_auth_desc">Ferngeist выполняет ACP-аутентификацию после подключения, используя методы, заявленные агентом.</string>
+    <string name="serverlist_add_server_stored_auth">Сохраненный метод аутентификации</string>
+    <string name="serverlist_add_server_btn_update">Обновить сервер</string>
+    <string name="serverlist_add_server_btn_add">Добавить сервер</string>
+    <string name="serverlist_add_server_ws">WebSocket</string>
+    <string name="serverlist_add_server_wss">Безопасный</string>
+
+    <!-- Add Gateway -->
+    <string name="serverlist_add_gateway_title">Сопряжение Ferngeist Gateway</string>
+    <string name="serverlist_add_gateway_step_run_title">Запустите ferngeist pair</string>
+    <string name="serverlist_add_gateway_step_run_body">Установите и запустите Ferngeist Gateway на компьютере, затем начните сопряжение.</string>
+    <string name="serverlist_add_gateway_step_scan_title">Сканировать QR</string>
+    <string name="serverlist_add_gateway_step_scan_body">Отсканируйте QR-код или вставьте пелоуд из терминала.</string>
+    <string name="serverlist_add_gateway_step_add_title">Добавить шлюз</string>
+    <string name="serverlist_add_gateway_step_add_body">Проверьте данные, укажите имя шлюза и сохраните.</string>
+    <string name="serverlist_add_gateway_step_count">Шаг %1$d из %2$d</string>
+    <string name="serverlist_add_gateway_next">Далее</string>
+    <string name="serverlist_add_gateway_pair">Сопрячь</string>
+    <string name="serverlist_add_gateway_skip">Пропустить и добавить вручную</string>
+    <string name="serverlist_add_gateway_pairing_code_title">Введите код сопряжения</string>
+    <string name="serverlist_add_gateway_pairing_code_label">Код сопряжения</string>
+    <string name="serverlist_add_gateway_command_label">Команда запуска</string>
+    <string name="serverlist_add_gateway_scan_instruction">Как только QR-код появится, перейдите к следующему шагу.</string>
+    <string name="serverlist_add_gateway_edit_title">Редактировать шлюз</string>
+    <string name="serverlist_add_gateway_details_title">Детали шлюза</string>
+    <string name="serverlist_add_gateway_details_subtitle">Обновите настройки сохранения шлюза в Ferngeist.</string>
+    <string name="serverlist_add_gateway_name_label">Имя</string>
+    <string name="serverlist_add_gateway_name_placeholder">Рабочая станция</string>
+    <string name="serverlist_add_gateway_host_label">Хост шлюза</string>
+    <string name="serverlist_add_gateway_payload_label">Пелоуд сопряжения</string>
+    <string name="serverlist_add_gateway_or">ИЛИ</string>
+    <string name="serverlist_add_gateway_device_label">Имя этого устройства</string>
+    <string name="serverlist_add_gateway_manual_hint">Пелоуд обычно заполняет эти поля автоматически.</string>
+    <string name="serverlist_add_gateway_http">HTTP</string>
+    <string name="serverlist_add_gateway_https">HTTPS</string>
+
+    <string name="serverlist_add_gateway_placeholder_code">000000</string>
+    <string name="serverlist_add_gateway_pair_save">Сопрячь и сохранить</string>
+    <string name="serverlist_add_gateway_cancel">Отмена</string>
+    <string name="serverlist_add_gateway_check">Проверить шлюз</string>
+    <string name="serverlist_add_gateway_save">Сохранить шлюз</string>
+    <string name="serverlist_add_gateway_host_placeholder">192.168.1.42:5788</string>
+    <string name="serverlist_add_gateway_payload_placeholder">ferngeist-gateway://pair?scheme=…</string>
+    <string name="serverlist_add_gateway_imported_title">Данные сопряжения (пелоуд) загружены</string>
+    <string name="serverlist_add_gateway_challenge_label">Вызов (challenge) %1$s…</string>
+    <string name="serverlist_add_gateway_instruction_1">Если у вас еще нет Ferngeist Gateway, скачайте его с https://github.com/arafatamim/ferngeist-acp-gateway.</string>
+    <string name="serverlist_add_gateway_instruction_2">Откройте терминал на компьютере, где запущен Ferngeist Gateway.</string>
+    <string name="serverlist_add_gateway_instruction_3">Запустите `ferngeist-gateway pair`.</string>
+    <string name="serverlist_add_gateway_instruction_4">Не закрывайте терминал.</string>
+
+    <!-- Gateway Payload -->
+    <string name="serverlist_payload_code_label">Код %1$s</string>
+    <string name="serverlist_payload_version_label">Версия %1$s</string>
+    <string name="serverlist_payload_remote_label">Удаленный: %1$s</string>
+    <string name="serverlist_payload_remote_local_only">Только локально</string>
+
+    <!-- Add Server - extra -->
+    <string name="serverlist_add_server_host_placeholder">localhost:8080</string>
+    <string name="serverlist_add_server_clear_auth">Очистить сохраненный метод</string>
+
+    <!-- Gateway Agents -->
+    <string name="serverlist_gateway_agents_title">Агенты шлюза</string>
+    <string name="serverlist_gateway_agents_add_title">Добавить агента в список?</string>
+    <string name="serverlist_gateway_agents_detected">Обнаружено</string>
+    <string name="serverlist_gateway_agents_not_detected">Не обнаружено</string>
+    <string name="serverlist_gateway_agents_valid">Валидно</string>
+    <string name="serverlist_gateway_agents_invalid">Невалидно</string>
+    <string name="serverlist_gateway_agents_added">Добавлено</string>
+    <string name="serverlist_gateway_agents_invalid_body">Агент не может быть добавлен, так как шлюз пометил его как невалидный.</string>
+    <string name="serverlist_gateway_agents_add_body">%1$s будет добавлен в ваш основной список агентов и станет доступен для запуска на экране серверов.</string>
+    <string name="serverlist_gateway_agents_acknowledge_risk">Я понимаю, что это может привести к загрузке и выполнению бинарных файлов агента на моем хосте шлюза.</string>
+    <string name="serverlist_gateway_agents_add_btn">Добавить агента</string>
+    <string name="serverlist_gateway_agents_cancel">Отмена</string>
+    <string name="serverlist_gateway_agents_retry">Повторить</string>
+
+    <!-- Gateway List -->
+    <string name="serverlist_gateway_list_title">Ferngeist Шлюзы</string>
+    <string name="serverlist_gateway_list_remote_mode">Удаленный режим: %1$s</string>
+    <string name="serverlist_gateway_list_edit">Редактировать</string>
+    <string name="serverlist_gateway_list_delete">Удалить</string>
+
+    <!-- Serverlist error messages -->
+    <string name="serverlist_error_invalid_payload">Невалидный пелоуд сопряжения. Отсканируйте QR или вставьте полный пелоуд.</string>
+    <string name="serverlist_error_gateway_host_required">Требуется хост шлюза</string>
+    <string name="serverlist_error_gateway_reach">Не удалось подключиться к шлюзу: %1$s</string>
+    <string name="serverlist_error_name_required">Требуется имя</string>
+    <string name="serverlist_error_host_required">Требуется хост</string>
+    <string name="serverlist_error_pairing_code_required">Требуется код сопряжения</string>
+    <string name="serverlist_error_start_pairing">Ошибка запуска сопряжения: %1$s</string>
+    <string name="serverlist_error_complete_pairing">Ошибка завершения сопряжения: %1$s</string>
+    <string name="serverlist_error_gateway_loaded">Ошибка загрузки шлюза</string>
+    <string name="serverlist_error_save_gateway">Ошибка сохранения шлюза: %1$s</string>
+    <string name="serverlist_error_scan_or_paste">Сначала отсканируйте QR, вставьте пелоуд или введите код сопряжения</string>
+    <string name="serverlist_error_corrupted_gateway">Ошибка загрузки шлюза. Креденциалы могут быть повреждены. Удалите и сопрягите снова.</string>
+    <string name="serverlist_error_corrupted_server">Ошибка загрузки сервера. Креденциалы могут быть повреждены. Удалите и добавьте сервер снова.</string>
+    <string name="serverlist_error_launch">Ошибка запуска %1$s</string>
+    <string name="serverlist_error_connect">Ошибка подключения к %1$s</string>
+    <string name="serverlist_error_reconnect">Ошибка переподключения к %1$s</string>
+    <string name="serverlist_error_server_removed">Сервер был удален до завершения аутентификации.</string>
+    <string name="serverlist_error_gateway_not_found">Шлюз для %1$s не найден.</string>
+    <string name="serverlist_error_gateway_unpaired">Шлюз не сопряжен.</string>
+    <string name="serverlist_error_restart">Ошибка перезапуска %1$s.</string>
+    <string name="serverlist_error_init_session">Ошибка инициализации сессии с %1$s</string>
+    <string name="serverlist_error_init_session_detail">Ошибка инициализации сессии с %1$s. Подробности см. в logcat.</string>
+    <string name="serverlist_error_gateway_not_found_vm">Шлюз не найден</string>
+    <string name="serverlist_error_connect_gateway">Ошибка подключения к шлюзу: %1$s</string>
+    <string name="serverlist_error_added_agent">%1$s добавлен</string>
+    <string name="serverlist_device_default">Ferngeist Android</string>
+
+    <!-- Risk Disclosure Lines -->
+    <string name="serverlist_risk_gateway_host_fallback">ваш хост шлюза</string>
+    <string name="serverlist_risk_add_agent_line1">Это действие добавит %1$s (%2$s) с вашего шлюза.</string>
+    <string name="serverlist_risk_add_agent_line2">Запуск этого агента выполнит код на %1$s.</string>
+    <string name="serverlist_risk_add_agent_line3">Если бинарный файл не установлен, шлюз может загрузить его из ACP реестра (registry source).</string>
+    <string name="serverlist_risk_add_agent_line4">Добавляйте только доверенные агенты и источники.</string>
+    <string name="serverlist_risk_launch_agent_line1">Запуск %1$s начнет агента \'%2$s\' через ваш шлюз.</string>
+    <string name="serverlist_risk_launch_agent_line2">Это может выполнить бинарные файлы на %1$s.</string>
+    <string name="serverlist_risk_launch_agent_line3">При необходимости шлюз может загрузить бинарные файлы агента из ACP реестра.</string>
+    <string name="serverlist_risk_launch_agent_line4">Продолжайте, только если доверяете этому агенту и его источнику.</string>
+
+    <!-- QR Scanner Errors -->
+    <string name="serverlist_qr_error_no_activity">Ошибка сканера: отсутствует контекст активности</string>
+    <string name="serverlist_qr_error_play_services">Google Play Services недоступны: %1$s</string>
+    <string name="serverlist_qr_error_no_scanner">Сканер недоступен на этом устройстве. Вставьте пелоуд сопряжения вручную.</string>
+    <string name="serverlist_qr_error_empty">Пустой QR-код</string>
+    <string name="serverlist_qr_error_invalid">QR-код не содержит валидного пелоуда сопряжения</string>
+    <string name="serverlist_qr_error_scan_failed">Ошибка сканирования QR: %1$s</string>
+    <string name="serverlist_qr_error_cannot_start">Сканер не может быть запущен. Вставьте пелоуд сопряжения вручную.</string>
+
+    <!-- Fallback / Default Values -->
+    <string name="serverlist_error_unknown">неизвестная ошибка</string>
+    <string name="serverlist_gateway_default_name">Шлюз</string>
+
+    <!-- URL Format -->
+    <string name="serverlist_gateway_url_format">%1$s://%2$s</string>
+
+    <!-- Add Server - CLI Example -->
+    <string name="serverlist_add_server_stdio_example">npx -y stdio-to-ws \"npx @qwen-code/qwen-code@latest --acp\" --port 8769</string>
+</resources>

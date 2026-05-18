@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="common_back">Назад</string>
+    <string name="common_cancel">Отмена</string>
+    <string name="common_retry">Повторить</string>
+    <string name="common_delete">Удалить</string>
+    <string name="common_save">Сохранить</string>
+    <string name="common_close">Закрыть</string>
+    <string name="common_ok">ОК</string>
+    <string name="common_edit">Изменить</string>
+
+    <!-- Connection status labels -->
+    <string name="common_connecting">Подключение</string>
+    <string name="common_connected">Подключено</string>
+    <string name="common_disconnected">Отключено</string>
+    <string name="common_failed">Ошибка</string>
+    <string name="common_na">Н/Д</string>
+    <string name="common_unknown">Неизвестно</string>
+    <string name="common_unsupported">Не поддерживается</string>
+    <string name="common_supported">Поддерживается</string>
+
+    <!-- Connection diagnostics -->
+    <string name="common_connection_status">Статус подключения: %1$s</string>
+    <string name="common_connection_diagnostics">Диагностика подключения</string>
+    <string name="common_connection">Подключение: %1$s</string>
+    <string name="common_websocket">WebSocket: %1$s</string>
+    <string name="common_server">Сервер: %1$s</string>
+    <string name="common_server_info">Информация о сервере: %1$s (%2$s)</string>
+    <string name="common_pending_rpc">Ожидающие RPC запросы: %1$d</string>
+    <string name="common_cancel_support">Поддержка отмены: %1$s</string>
+    <string name="common_total_tokens">Всего токенов: %1$s</string>
+    <string name="common_usage_percentage">Процент использования: %1$s</string>
+    <string name="common_cost_spent">Затрачено: %1$s</string>
+    <string name="common_recent_rpc">Недавние RPC</string>
+    <string name="common_no_recent_rpc">Нет недавних RPC</string>
+    <string name="common_recent_errors">Недавние ошибки</string>
+    <string name="common_no_recent_errors">Нет недавних ошибок</string>
+    <string name="common_connection_status_desc">Статус подключения</string>
+
+    <!-- Context usage tooltip -->
+    <string name="common_context_used">%1$s использовано из %2$s</string>
+    <string name="common_cost_amount">%1$s потрачено</string>
+
+    <!-- RPC direction labels -->
+    <string name="common_rpc_direction_req">ЗАПР</string>
+    <string name="common_rpc_direction_res">ОТВ</string>
+    <string name="common_rpc_direction_err">ОШИБ</string>
+    <string name="common_rpc_direction_ntf">УВЕД</string>
+</resources>

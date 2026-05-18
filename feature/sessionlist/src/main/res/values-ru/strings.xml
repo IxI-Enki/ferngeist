@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sessionlist_back_desc">Назад</string>
+    <string name="sessionlist_cwd_tooltip">Изменить рабочую директорию</string>
+    <string name="sessionlist_cwd_desc">Изменить рабочую директорию</string>
+    <string name="sessionlist_new_session_desc">Новая сессия</string>
+    <string name="sessionlist_today">Сегодня</string>
+    <string name="sessionlist_yesterday">Вчера</string>
+    <string name="sessionlist_unknown_date">Неизвестно</string>
+
+    <plurals name="sessionlist_session_count">
+        <item quantity="one">%d сессия</item>
+        <item quantity="few">%d сессии</item>
+        <item quantity="many">%d сессий</item>
+        <item quantity="other">%d сессий</item>
+    </plurals>
+
+    <string name="sessionlist_auth_title">Аутентификация %1$s</string>
+    <string name="sessionlist_auth_body">Агент \"%1$s\" требует ACP-аутентификацию перед открытием сессий.</string>
+    <string name="sessionlist_auth_method_fallback">Тип: %1$s</string>
+    <string name="sessionlist_auth_reconnect">Переподключиться</string>
+    <string name="sessionlist_auth_authenticate">Аутентифицировать</string>
+    <string name="sessionlist_auth_cancel">Отмена</string>
+    <string name="sessionlist_auth_terminal_cmd">Команда: %1$s</string>
+    <string name="sessionlist_auth_env_instructions">Установите эти переменные окружения перед запуском агента, затем переподключитесь, чтобы повторить попытку аутентификации.</string>
+    <string name="sessionlist_auth_optional_suffix"> (опционально)</string>
+    <string name="sessionlist_untitled">Сессия без названия</string>
+    <string name="sessionlist_empty_title">Сессии отсутствуют</string>
+    <string name="sessionlist_empty_subtitle_listed">Здесь появятся сессии с сервера</string>
+    <string name="sessionlist_empty_subtitle_offline">Здесь появятся сессии, созданные на этом устройстве</string>
+    <string name="sessionlist_empty_action">Создать сессию</string>
+    <string name="sessionlist_topbar_title">Сессии</string>
+
+    <!-- CWD Dialog -->
+    <string name="sessionlist_cwd_title">Рабочая директория</string>
+    <string name="sessionlist_cwd_body">Укажите рабочую директорию для этого агента. Оставьте пустым, чтобы показать все сессии.</string>
+    <string name="sessionlist_cwd_placeholder">Оставьте пустым для отображения всех</string>
+    <string name="sessionlist_cwd_clear">Очистить</string>
+    <string name="sessionlist_cwd_cancel">Отмена</string>
+    <string name="sessionlist_cwd_save">Сохранить</string>
+
+    <!-- Error messages -->
+    <string name="sessionlist_error_load">Ошибка загрузки сессий</string>
+    <string name="sessionlist_error_create">Не удалось создать сессию</string>
+    <string name="sessionlist_error_reconnect">Ошибка переподключения к %1$s</string>
+    <string name="sessionlist_error_init">Ошибка инициализации %1$s</string>
+    <string name="sessionlist_error_removed">Сервер был удален до завершения аутентификации.</string>
+    <string name="sessionlist_error_gateway_not_found">Шлюз для %1$s не найден.</string>
+    <string name="sessionlist_error_gateway_unpaired">Шлюз не сопряжен.</string>
+    <string name="sessionlist_error_gateway_runtime_missing">Контекст выполнения (runtime context) шлюза отсутствует для %1$s.</string>
+    <string name="sessionlist_error_restart">Не удалось перезапустить %1$s.</string>
+    <string name="sessionlist_error_reconnect_gateway">Ошибка переподключения к %1$s</string>
+    <string name="sessionlist_error_init_gateway">Ошибка инициализации %1$s</string>
+</resources>

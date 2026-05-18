@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Chat Composer -->
+    <string name="chat_composer_hint">Введите сообщение…</string>
+    <string name="chat_composer_close_desc">Закрыть</string>
+    <string name="chat_stop">Стоп</string>
+    <string name="chat_cancel_unavailable">Отмена недоступна</string>
+    <string name="chat_chat">Чат</string>
+    <string name="chat_mode">Режим</string>
+    <string name="chat_no_modes_available">Режимы недоступны</string>
+    <string name="chat_options">Опции</string>
+    <string name="chat_commands">Команды</string>
+    <string name="chat_no_options_available">Опции недоступны</string>
+    <string name="chat_enabled">Вкл</string>
+    <string name="chat_disabled">Выкл</string>
+    <string name="chat_not_selected">Не выбрано</string>
+    <string name="chat_send_desc">Отправить</string>
+    <string name="chat_stop_desc">Стоп</string>
+
+    <!-- Chat Top Bar -->
+    <string name="chat_back_desc">Назад</string>
+
+    <!-- Message Bubble -->
+    <string name="chat_reasoning">Рассуждение</string>
+    <string name="chat_show_reasoning">Показать рассуждение</string>
+    <string name="chat_reasoning_desc">Показать рассуждение</string>
+    <string name="chat_plan_desc">План</string>
+    <string name="chat_completed_desc">Завершено</string>
+    <string name="chat_error_desc">Ошибка</string>
+    <string name="chat_tool_call">Вызов инструмента</string>
+    <string name="chat_tool_call_details_desc">Детали вызова</string>
+    <string name="chat_awaiting_permission">Ожидание разрешения</string>
+    <string name="chat_tool_kind_read">Чтение</string>
+    <string name="chat_tool_kind_edit">Правка</string>
+    <string name="chat_tool_kind_delete">Удаление</string>
+    <string name="chat_tool_kind_move">Перемещение</string>
+    <string name="chat_tool_kind_search">Поиск</string>
+    <string name="chat_tool_kind_execute">Выполнение</string>
+    <string name="chat_tool_kind_think">Размышление</string>
+    <string name="chat_tool_kind_fetch">Загрузка</string>
+    <string name="chat_tool_kind_switch_mode">Смена режима</string>
+    <string name="chat_tool_kind_other">Другое</string>
+    <string name="chat_tool_status_pending">Ожидание</string>
+    <string name="chat_tool_status_in_progress">Выполняется</string>
+    <string name="chat_tool_status_completed">Завершено</string>
+    <string name="chat_tool_status_failed">Ошибка</string>
+    <string name="chat_image_label">Изображение (%1$s)</string>
+    <string name="chat_image_desc">Изображение</string>
+    <string name="chat_streaming_indicator">%1$s…</string>
+    <string name="chat_permission_request">Запрос разрешения</string>
+    <string name="chat_permission_kind_allow_once">Разрешить один раз</string>
+    <string name="chat_permission_kind_allow_always">Разрешить всегда</string>
+    <string name="chat_permission_kind_reject_once">Отклонить один раз</string>
+    <string name="chat_permission_kind_reject_always">Отклонить всегда</string>
+
+    <!-- Chat Screen -->
+    <string name="chat_mode_label">РЕЖИМ</string>
+
+    <string name="chat_retry">Повторить</string>
+    <string name="chat_permission_title">Требуется разрешение</string>
+    <string name="chat_permission_body">Агент ожидает вашего разрешения перед продолжением.</string>
+    <string name="chat_deny">Отклонить</string>
+    <string name="chat_no_tool_output">Нет вывода инструмента.</string>
+    <string name="chat_picker_empty">Пусто.</string>
+    <string name="chat_picker_no_results">Ничего не найдено.</string>
+    <string name="chat_search_desc">Поиск</string>
+    <string name="chat_recent">Недавние</string>
+    <string name="chat_all_items">Все</string>
+    <string name="chat_selected_desc">Выбрано</string>
+    <string name="chat_picker_no_values">Нет данных от агента.</string>
+    <string name="chat_picker_no_models">Модели не найдены.</string>
+    <string name="chat_search_placeholder">Поиск %1$s</string>
+    <string name="chat_commands_sheet_title">Команды</string>
+    <string name="chat_commands_empty">Сервер не предоставил команд.</string>
+    <string name="chat_commands_no_results">Команды не найдены.</string>
+    <string name="chat_commands_search_hint">поиск команд</string>
+
+    <string name="chat_tool_output_image">Изображение (%1$s)</string>
+    <string name="chat_failed_decode_image">Ошибка декодирования (%1$s)</string>
+    <string name="chat_audio_content">Аудио (%1$s)</string>
+    <string name="chat_binary_resource">Бинарный ресурс (%1$s)</string>
+    <string name="chat_terminal_output">Вывод терминала (%1$s)</string>
+
+    <string name="chat_cancel_not_supported">Отмена не поддерживается сервером</string>
+    <string name="chat_model_updated">Модель обновлена</string>
+    <string name="chat_error_load_session">Не удалось загрузить сессию. Проверьте соединение.</string>
+
+    <string name="chat_session_error_disconnected">Отключено. Переподключитесь для обновления.</string>
+    <string name="chat_session_error_no_load">Агент не поддерживает session/load.</string>
+    <string name="chat_session_error_auth_required">Требуется ACP аутентификация. Перейдите в список сессий для аутентификации.</string>
+    <string name="chat_session_error_bridge_restarted">ACP мост был перезагружен. Открыта новая сессия.</string>
+    <string name="chat_session_error_load_timeout">Время загрузки сессии истекло.</string>
+    <string name="chat_session_error_could_not_load">Не удалось загрузить сессию.</string>
+    <string name="chat_session_error_not_ready">Сессия не готова.</string>
+    <string name="chat_session_error_no_image">Агент не поддерживает изображения в запросах.</string>
+    <string name="chat_session_error_cancel_failed">Не удалось отменить операцию.</string>
+    <string name="chat_session_error_auth_reconnect">Требуется ACP аутентификация. Переподключитесь через список серверов.</string>
+    <string name="chat_session_error_gateway_unpaired">Шлюз не сопряжен для %1$s.</string>
+    <string name="chat_session_error_reconnect">Ошибка переподключения к %1$s: %2$s</string>
+    <string name="chat_session_error_timeout">Время запроса истекло.</string>
+    <string name="chat_session_error_invalid_request">Ошибка формата запроса.</string>
+    <string name="chat_session_error_unknown">Неизвестная ошибка.</string>
+
+    <string name="chat_error_unknown">неизвестная ошибка</string>
+    <string name="chat_error_send_failed">Ошибка отправки</string>
+</resources>

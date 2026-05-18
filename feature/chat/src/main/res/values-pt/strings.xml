@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_composer_hint">Digite uma mensagem…</string>
+    <string name="chat_composer_close_desc">Fechar o compositor</string>
+    <string name="chat_stop">Parar</string>
+    <string name="chat_cancel_unavailable">Cancelar indisponível</string>
+    <string name="chat_chat">Chat</string>
+    <string name="chat_mode">Modo</string>
+    <string name="chat_no_modes_available">Nenhum modo disponível</string>
+    <string name="chat_options">Opções</string>
+    <string name="chat_commands">Comandos</string>
+    <string name="chat_no_options_available">Nenhuma opção disponível</string>
+    <string name="chat_enabled">Ativado</string>
+    <string name="chat_disabled">Desativado</string>
+    <string name="chat_not_selected">Não selecionado</string>
+    <string name="chat_send_desc">Enviar</string>
+    <string name="chat_stop_desc">Parar</string>
+
+    <string name="chat_back_desc">Voltar</string>
+
+    <string name="chat_reasoning">Raciocínio</string>
+    <string name="chat_show_reasoning">Mostrar raciocínio</string>
+    <string name="chat_reasoning_desc">Mostrar raciocínio</string>
+    <string name="chat_plan_desc">Plano</string>
+    <string name="chat_completed_desc">Concluído</string>
+    <string name="chat_error_desc">Erro</string>
+    <string name="chat_tool_call">Chamada de ferramenta</string>
+    <string name="chat_tool_call_details_desc">Mostrar detalhes da chamada de ferramenta</string>
+    <string name="chat_awaiting_permission">Aguardando resposta de permissão</string>
+    <string name="chat_tool_kind_read">Ler</string>
+    <string name="chat_tool_kind_edit">Editar</string>
+    <string name="chat_tool_kind_delete">Excluir</string>
+    <string name="chat_tool_kind_move">Mover</string>
+    <string name="chat_tool_kind_search">Buscar</string>
+    <string name="chat_tool_kind_execute">Executar</string>
+    <string name="chat_tool_kind_think">Pensar</string>
+    <string name="chat_tool_kind_fetch">Buscar</string>
+    <string name="chat_tool_kind_switch_mode">Mudar modo</string>
+    <string name="chat_tool_kind_other">Outro</string>
+    <string name="chat_tool_status_pending">Pendente</string>
+    <string name="chat_tool_status_in_progress">Em andamento</string>
+    <string name="chat_tool_status_completed">Concluído</string>
+    <string name="chat_tool_status_failed">Falhou</string>
+    <string name="chat_image_label">Imagem (%1$s)</string>
+    <string name="chat_image_desc">Imagem</string>
+    <string name="chat_streaming_indicator">%1$s…</string>
+    <string name="chat_permission_request">Solicitação de permissão</string>
+    <string name="chat_permission_kind_allow_once">Permitir uma vez</string>
+    <string name="chat_permission_kind_allow_always">Permitir sempre</string>
+    <string name="chat_permission_kind_reject_once">Recusar uma vez</string>
+    <string name="chat_permission_kind_reject_always">Recusar sempre</string>
+
+    <string name="chat_spinner_verb_01">Concluindo</string>
+    <string name="chat_spinner_verb_02">Agindo</string>
+    <string name="chat_spinner_verb_03">Atualizando</string>
+    <string name="chat_spinner_verb_04">Assando</string>
+    <string name="chat_spinner_verb_05">Preparando</string>
+    <string name="chat_spinner_verb_06">Calculando</string>
+    <string name="chat_spinner_verb_07">Cerebrando</string>
+    <string name="chat_spinner_verb_08">Mexendo</string>
+    <string name="chat_spinner_verb_09">Coalescendo</string>
+    <string name="chat_spinner_verb_10">Cogitando</string>
+    <string name="chat_spinner_verb_11">Computando</string>
+    <string name="chat_spinner_verb_12">Conjurando</string>
+    <string name="chat_spinner_verb_13">Considerando</string>
+    <string name="chat_spinner_verb_14">Cozinhando</string>
+    <string name="chat_spinner_verb_15">Criando</string>
+    <string name="chat_spinner_verb_16">Criando</string>
+    <string name="chat_spinner_verb_17">Triturando</string>
+    <string name="chat_spinner_verb_18">Deliberando</string>
+    <string name="chat_spinner_verb_19">Determinando</string>
+    <string name="chat_spinner_verb_20">Fazendo</string>
+    <string name="chat_spinner_verb_21">Efetuando</string>
+    <string name="chat_spinner_verb_22">Improvisando</string>
+    <string name="chat_spinner_verb_23">Forjando</string>
+    <string name="chat_spinner_verb_24">Formando</string>
+    <string name="chat_spinner_verb_25">Gerando</string>
+    <string name="chat_spinner_verb_26">Eclodindo</string>
+    <string name="chat_spinner_verb_27">Conduzindo</string>
+    <string name="chat_spinner_verb_28">Buzinando</string>
+    <string name="chat_spinner_verb_29">Acelerando</string>
+    <string name="chat_spinner_verb_30">Idealizando</string>
+    <string name="chat_spinner_verb_31">Inferindo</string>
+    <string name="chat_spinner_verb_32">Manifestando</string>
+    <string name="chat_spinner_verb_33">Marinando</string>
+    <string name="chat_spinner_verb_34">Passeando</string>
+    <string name="chat_spinner_verb_35">Matutando</string>
+    <string name="chat_spinner_verb_36">Reunindo</string>
+    <string name="chat_spinner_verb_37">Meditando</string>
+    <string name="chat_spinner_verb_38">Remexendo</string>
+    <string name="chat_spinner_verb_39">Percolando</string>
+    <string name="chat_spinner_verb_40">Refletindo</string>
+    <string name="chat_spinner_verb_41">Processando</string>
+    <string name="chat_spinner_verb_42">Remexendo</string>
+    <string name="chat_spinner_verb_43">Reticulando</string>
+    <string name="chat_spinner_verb_44">Rumegando</string>
+    <string name="chat_spinner_verb_45">Arrastando</string>
+    <string name="chat_spinner_verb_46">Descascando</string>
+    <string name="chat_spinner_verb_47">Cozinhando em fogo brando</string>
+    <string name="chat_spinner_verb_48">Amassando</string>
+    <string name="chat_spinner_verb_49">Girando</string>
+    <string name="chat_spinner_verb_50">Ensopando</string>
+    <string name="chat_spinner_verb_51">Sintetizando</string>
+    <string name="chat_spinner_verb_52">Pensando</string>
+    <string name="chat_spinner_verb_53">Transmutando</string>
+    <string name="chat_spinner_verb_54">Vibrando</string>
+    <string name="chat_spinner_verb_55">Trabalhando</string>
+
+    <string-array name="chat_spinner_verbs">
+        <item>@string/chat_spinner_verb_01</item>
+        <item>@string/chat_spinner_verb_02</item>
+        <item>@string/chat_spinner_verb_03</item>
+        <item>@string/chat_spinner_verb_04</item>
+        <item>@string/chat_spinner_verb_05</item>
+        <item>@string/chat_spinner_verb_06</item>
+        <item>@string/chat_spinner_verb_07</item>
+        <item>@string/chat_spinner_verb_08</item>
+        <item>@string/chat_spinner_verb_09</item>
+        <item>@string/chat_spinner_verb_10</item>
+        <item>@string/chat_spinner_verb_11</item>
+        <item>@string/chat_spinner_verb_12</item>
+        <item>@string/chat_spinner_verb_13</item>
+        <item>@string/chat_spinner_verb_14</item>
+        <item>@string/chat_spinner_verb_15</item>
+        <item>@string/chat_spinner_verb_16</item>
+        <item>@string/chat_spinner_verb_17</item>
+        <item>@string/chat_spinner_verb_18</item>
+        <item>@string/chat_spinner_verb_19</item>
+        <item>@string/chat_spinner_verb_20</item>
+        <item>@string/chat_spinner_verb_21</item>
+        <item>@string/chat_spinner_verb_22</item>
+        <item>@string/chat_spinner_verb_23</item>
+        <item>@string/chat_spinner_verb_24</item>
+        <item>@string/chat_spinner_verb_25</item>
+        <item>@string/chat_spinner_verb_26</item>
+        <item>@string/chat_spinner_verb_27</item>
+        <item>@string/chat_spinner_verb_28</item>
+        <item>@string/chat_spinner_verb_29</item>
+        <item>@string/chat_spinner_verb_30</item>
+        <item>@string/chat_spinner_verb_31</item>
+        <item>@string/chat_spinner_verb_32</item>
+        <item>@string/chat_spinner_verb_33</item>
+        <item>@string/chat_spinner_verb_34</item>
+        <item>@string/chat_spinner_verb_35</item>
+        <item>@string/chat_spinner_verb_36</item>
+        <item>@string/chat_spinner_verb_37</item>
+        <item>@string/chat_spinner_verb_38</item>
+        <item>@string/chat_spinner_verb_39</item>
+        <item>@string/chat_spinner_verb_40</item>
+        <item>@string/chat_spinner_verb_41</item>
+        <item>@string/chat_spinner_verb_42</item>
+        <item>@string/chat_spinner_verb_43</item>
+        <item>@string/chat_spinner_verb_44</item>
+        <item>@string/chat_spinner_verb_45</item>
+        <item>@string/chat_spinner_verb_46</item>
+        <item>@string/chat_spinner_verb_47</item>
+        <item>@string/chat_spinner_verb_48</item>
+        <item>@string/chat_spinner_verb_49</item>
+        <item>@string/chat_spinner_verb_50</item>
+        <item>@string/chat_spinner_verb_51</item>
+        <item>@string/chat_spinner_verb_52</item>
+        <item>@string/chat_spinner_verb_53</item>
+        <item>@string/chat_spinner_verb_54</item>
+        <item>@string/chat_spinner_verb_55</item>
+    </string-array>
+
+    <string name="chat_mode_label">MODO</string>
+
+    <string name="chat_retry">Tentar novamente</string>
+    <string name="chat_permission_title">Permissão necessária</string>
+    <string name="chat_permission_body">O agente está aguardando sua aprovação antes de continuar.</string>
+    <string name="chat_deny">Negar</string>
+    <string name="chat_no_tool_output">Sem saída da ferramenta.</string>
+    <string name="chat_picker_empty">Sem itens.</string>
+    <string name="chat_picker_no_results">Nenhum item correspondente.</string>
+    <string name="chat_search_desc">Pesquisar</string>
+    <string name="chat_recent">Recentes</string>
+    <string name="chat_all_items">Todos os itens</string>
+    <string name="chat_selected_desc">Selecionado</string>
+    <string name="chat_picker_no_values">Nenhum valor disponível do agente.</string>
+    <string name="chat_picker_no_models">Nenhum modelo correspondente.</string>
+    <string name="chat_search_placeholder">Pesquisar %1$s</string>
+    <string name="chat_commands_sheet_title">Comandos</string>
+    <string name="chat_commands_empty">Nenhum comando anunciado pelo servidor.</string>
+    <string name="chat_commands_no_results">Nenhum comando correspondente.</string>
+    <string name="chat_commands_search_hint">pesquisar comandos</string>
+
+    <string name="chat_tool_output_image">Imagem de saída da ferramenta (%1$s)</string>
+    <string name="chat_failed_decode_image">Falha ao decodificar a imagem (%1$s)</string>
+    <string name="chat_audio_content">Conteúdo de áudio (%1$s)</string>
+    <string name="chat_binary_resource">Recurso binário (%1$s)</string>
+    <string name="chat_terminal_output">Saída do terminal (%1$s)</string>
+
+    <string name="chat_cancel_not_supported">Este servidor não oferece suporte a cancelamento</string>
+    <string name="chat_model_updated">Modelo atualizado</string>
+    <string name="chat_error_load_session">Não foi possível carregar esta sessão. Verifique a conexão e tente novamente.</string>
+
+    <string name="chat_session_error_disconnected">Desconectado. Reconecte para atualizar esta sessão.</string>
+    <string name="chat_session_error_no_load">Este agente não anuncia suporte a session/load.</string>
+    <string name="chat_session_error_auth_required">A autenticação ACP é necessária para este servidor. Volte para a lista de sessões e autentique primeiro.</string>
+    <string name="chat_session_error_bridge_restarted">O processo da ponte ACP foi reiniciado enquanto esta sessão carregava. Foi aberta uma nova sessão ao vivo.</string>
+    <string name="chat_session_error_load_timeout">O carregamento da sessão expirou. Verifique a conexão com o servidor e tente novamente.</string>
+    <string name="chat_session_error_could_not_load">Não foi possível carregar esta sessão. Verifique a conexão e tente novamente.</string>
+    <string name="chat_session_error_not_ready">A sessão não está pronta. Tente novamente em instantes.</string>
+    <string name="chat_session_error_no_image">Este agente não anuncia suporte a solicitação de imagem.</string>
+    <string name="chat_session_error_cancel_failed">Falha ao cancelar a rodada atual</string>
+    <string name="chat_session_error_auth_reconnect">A autenticação ACP é necessária para este servidor. Reconecte pela lista de servidores e escolha um método de autenticação.</string>
+    <string name="chat_session_error_gateway_unpaired">A gateway não está pareada para %1$s.</string>
+    <string name="chat_session_error_reconnect">Falha ao reconectar a %1$s: %2$s</string>
+    <string name="chat_session_error_timeout">A solicitação expirou. Tente novamente.</string>
+    <string name="chat_session_error_invalid_request">Falha no envio devido a um formato de solicitação inválido.</string>
+    <string name="chat_session_error_unknown">Falha no envio devido a um erro desconhecido.</string>
+
+    <string name="chat_error_unknown">erro desconhecido</string>
+    <string name="chat_error_send_failed">Falha no envio</string>
+</resources>

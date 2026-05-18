@@ -59,7 +59,7 @@ android {
     }
 
     androidResources {
-        localeFilters += setOf("en", "es")
+        localeFilters += setOf("en", "es", "pt")
     }
 
     signingConfigs {

@@ -1,0 +1,180 @@
+<resources>
+    <string name="about">Ferngeist সম্পর্কে</string>
+    <string name="privacy_policy">গোপনীয়তা নীতি</string>
+    <string name="privacy_policy_url">https://arafatamim.github.io/Ferngeist/privacy_policy.html</string>
+    <string name="report_issue">সমস্যা জানান</string>
+    <string name="github_repo_url">https://github.com/arafatamim/ferngeist/issues</string>
+
+    <string name="serverlist_back_desc">ফিরে যান</string>
+    <string name="serverlist_ok">ঠিক আছে</string>
+    <string name="serverlist_cancel">বাতিল করুন</string>
+    <string name="serverlist_continue">চালিয়ে যান</string>
+
+    <string name="serverlist_title">Ferngeist</string>
+    <string name="serverlist_about_body">Ferngeist হলো Agent Client Protocol (ACP) সার্ভারের জন্য একটি Android ক্লায়েন্ট, যা আপনাকে সরাসরি মোবাইল ডিভাইস থেকে কোডিং এজেন্টের সাথে কাজ করতে দেয়।</string>
+    <string name="serverlist_add_gateway_btn">Ferngeist Gateway পেয়ার করুন</string>
+    <string name="serverlist_add_agent_btn">ম্যানুয়ালি এজেন্ট যোগ করুন</string>
+    <string name="serverlist_add_paired_btn">পেয়ার করা গেটওয়ে ব্যবহার করে যোগ করুন</string>
+    <string name="serverlist_launch_risk_title">গেটওয়েতে এজেন্ট চালাবেন?</string>
+    <string name="serverlist_launch_risk_accept">আমি বুঝেছি এবং চালিয়ে যেতে চাই।</string>
+    <string name="serverlist_empty_title">এখনও কোনো এজেন্ট নেই</string>
+    <string name="serverlist_empty_body">ম্যানুয়ালি একটি এজেন্ট যোগ করুন বা একটি গেটওয়ে পেয়ার করে আপনার লঞ্চ তালিকা তৈরি করুন।</string>
+    <string name="serverlist_empty_action">এজেন্ট যোগ করুন</string>
+
+    <string name="serverlist_auth_title">%1$s প্রমাণীকরণ করুন</string>
+    <string name="serverlist_auth_body">\"%1$s\" এজেন্টের সেশন খোলার আগে ACP প্রমাণীকরণ দরকার।</string>
+    <string name="serverlist_auth_method_fallback">ধরন: %1$s</string>
+    <string name="serverlist_auth_reconnect">পুনরায় সংযোগ করুন</string>
+    <string name="serverlist_auth_authenticate">প্রমাণীকরণ করুন</string>
+    <string name="serverlist_auth_cancel">বাতিল করুন</string>
+    <string name="serverlist_auth_cmd">কমান্ড: %1$s</string>
+    <string name="serverlist_auth_env_instructions">এজেন্ট চালু করার আগে এই পরিবেশ চলকগুলো সেট করুন, তারপর প্রমাণীকরণ পুনরায় চেষ্টা করতে আবার সংযোগ করুন।</string>
+    <string name="serverlist_auth_optional_suffix"> (ঐচ্ছিক)</string>
+
+    <string name="serverlist_card_delete_title">সার্ভার মুছে ফেলুন</string>
+    <string name="serverlist_card_delete_body">\"%1$s\" এবং এর সব সংরক্ষিত সেশন মুছে ফেলবেন?</string>
+    <string name="serverlist_card_delete">মুছে ফেলুন</string>
+    <string name="serverlist_card_manage">পরিচালনা করুন</string>
+    <string name="serverlist_card_edit">সম্পাদনা করুন</string>
+
+    <string name="serverlist_add_server_title_edit">ACP এজেন্ট সম্পাদনা করুন</string>
+    <string name="serverlist_add_server_title_new">নতুন ACP এজেন্ট</string>
+    <string name="serverlist_add_server_details_title">ACP এজেন্টের বিবরণ</string>
+    <string name="serverlist_add_server_name_label">নাম</string>
+    <string name="serverlist_add_server_name_placeholder">আমার সার্ভার</string>
+    <string name="serverlist_add_server_protocol_label">প্রোটোকল</string>
+    <string name="serverlist_add_server_ws_warning">এটি শুধু বিশ্বাসযোগ্য লোকাল নেটওয়ার্ক সংযোগে ব্যবহার করুন, কারণ এটি এনক্রিপ্টেড নয়।</string>
+    <string name="serverlist_add_server_host_label">হোস্ট</string>
+    <string name="serverlist_add_server_host_hint">এখানে localhost নয়, আপনার পিসির লোকাল নেটওয়ার্ক IP ব্যবহার করুন। উদাহরণ: 192.168.1.42:6000</string>
+    <string name="serverlist_add_server_stdio_hint">সংযোগ করার আগে আপনার ACP এজেন্টকে একটি stdio-to-ws র‍্যাপার দিয়ে চালান। উদাহরণ:</string>
+    <string name="serverlist_add_server_docs_hint">ACP মোডে শুরু করার সঠিক কমান্ড ও ফ্ল্যাগগুলোর জন্য আপনার ACP এজেন্টের ডকুমেন্টেশন দেখুন।</string>
+    <string name="serverlist_add_server_auth_title">প্রমাণীকরণ</string>
+    <string name="serverlist_add_server_auth_subtitle">ACP এজেন্ট</string>
+    <string name="serverlist_add_server_auth_desc">Ferngeist এজেন্ট ঘোষিত প্রমাণীকরণ পদ্ধতি ব্যবহার করে সংযোগের পরে ACP প্রমাণীকরণ করে।</string>
+    <string name="serverlist_add_server_stored_auth">সংরক্ষিত প্রমাণীকরণ পদ্ধতি</string>
+    <string name="serverlist_add_server_btn_update">সার্ভার আপডেট করুন</string>
+    <string name="serverlist_add_server_btn_add">সার্ভার যোগ করুন</string>
+    <string name="serverlist_add_server_ws">WebSocket</string>
+    <string name="serverlist_add_server_wss">নিরাপদ</string>
+
+    <string name="serverlist_add_gateway_title">Ferngeist Gateway পেয়ার করুন</string>
+    <string name="serverlist_add_gateway_step_run_title">ferngeist pair চালান</string>
+    <string name="serverlist_add_gateway_step_run_body">আপনার কম্পিউটারে Ferngeist Gateway ইনস্টল ও চালান, তারপর পেয়ারিং শুরু করুন।</string>
+    <string name="serverlist_add_gateway_step_scan_title">QR স্ক্যান করুন</string>
+    <string name="serverlist_add_gateway_step_scan_body">QR কোড স্ক্যান করুন, অথবা টার্মিনাল থেকে পেলোড পেস্ট করুন।</string>
+    <string name="serverlist_add_gateway_step_add_title">গেটওয়ে যোগ করুন</string>
+    <string name="serverlist_add_gateway_step_add_body">বিবরণ দেখুন, গেটওয়েটির নাম দিন, তারপর সংরক্ষণ করুন।</string>
+    <string name="serverlist_add_gateway_step_count">ধাপ %1$d / %2$d</string>
+    <string name="serverlist_add_gateway_next">পরবর্তী</string>
+    <string name="serverlist_add_gateway_pair">পেয়ার করুন</string>
+    <string name="serverlist_add_gateway_skip">এড়িয়ে গিয়ে ম্যানুয়ালি যোগ করুন</string>
+    <string name="serverlist_add_gateway_pairing_code_title">পেয়ারিং কোড লিখুন</string>
+    <string name="serverlist_add_gateway_pairing_code_label">পেয়ারিং কোড</string>
+    <string name="serverlist_add_gateway_command_label">চালানোর কমান্ড</string>
+    <string name="serverlist_add_gateway_scan_instruction">QR কোড দেখা গেলে পরের ধাপে এগিয়ে যান।</string>
+    <string name="serverlist_add_gateway_edit_title">গেটওয়ে সম্পাদনা করুন</string>
+    <string name="serverlist_add_gateway_details_title">গেটওয়ের বিবরণ</string>
+    <string name="serverlist_add_gateway_details_subtitle">এই গেটওয়ে Ferngeist-এ কীভাবে সংরক্ষণ হবে তা আপডেট করুন।</string>
+    <string name="serverlist_add_gateway_name_label">নাম</string>
+    <string name="serverlist_add_gateway_name_placeholder">ওয়ার্কস্টেশন</string>
+    <string name="serverlist_add_gateway_host_label">গেটওয়ে হোস্ট</string>
+    <string name="serverlist_add_gateway_payload_label">পেয়ারিং পেলোড</string>
+    <string name="serverlist_add_gateway_or">অথবা</string>
+    <string name="serverlist_add_gateway_device_label">এই ডিভাইসের নাম</string>
+    <string name="serverlist_add_gateway_manual_hint">পেলোড সাধারণত এই বিবরণগুলো আপনার জন্য পূরণ করে দেয়।</string>
+    <string name="serverlist_add_gateway_http">HTTP</string>
+    <string name="serverlist_add_gateway_https">HTTPS</string>
+
+    <string name="serverlist_add_gateway_placeholder_code">000000</string>
+    <string name="serverlist_add_gateway_pair_save">পেয়ার করুন ও সংরক্ষণ করুন</string>
+    <string name="serverlist_add_gateway_cancel">বাতিল করুন</string>
+    <string name="serverlist_add_gateway_check">গেটওয়ে পরীক্ষা করুন</string>
+    <string name="serverlist_add_gateway_save">গেটওয়ে সংরক্ষণ করুন</string>
+    <string name="serverlist_add_gateway_host_placeholder">192.168.1.42:5788</string>
+    <string name="serverlist_add_gateway_payload_placeholder">ferngeist-gateway://pair?scheme=…</string>
+    <string name="serverlist_add_gateway_imported_title">পেয়ারিং পেলোড লোড হয়েছে</string>
+    <string name="serverlist_add_gateway_challenge_label">চ্যালেঞ্জ %1$s…</string>
+    <string name="serverlist_add_gateway_instruction_1">আপনার কাছে এখনও Ferngeist Gateway না থাকলে, https://github.com/arafatamim/ferngeist-acp-gateway থেকে ডাউনলোড করুন।</string>
+    <string name="serverlist_add_gateway_instruction_2">Ferngeist Gateway চালানো কম্পিউটারে একটি টার্মিনাল খুলুন।</string>
+    <string name="serverlist_add_gateway_instruction_3">`ferngeist-gateway pair` চালান।</string>
+    <string name="serverlist_add_gateway_instruction_4">ওই টার্মিনালটি খোলা রাখুন।</string>
+
+    <string name="serverlist_payload_code_label">কোড %1$s</string>
+    <string name="serverlist_payload_version_label">ভার্সন %1$s</string>
+    <string name="serverlist_payload_remote_label">রিমোট: %1$s</string>
+    <string name="serverlist_payload_remote_local_only">শুধু লোকাল</string>
+
+    <string name="serverlist_add_server_host_placeholder">localhost:8080</string>
+    <string name="serverlist_add_server_clear_auth">সংরক্ষিত পদ্ধতি মুছে ফেলুন</string>
+
+    <string name="serverlist_gateway_agents_title">গেটওয়ে এজেন্ট</string>
+    <string name="serverlist_gateway_agents_add_title">এজেন্টকে তালিকায় যোগ করবেন?</string>
+    <string name="serverlist_gateway_agents_detected">সনাক্ত হয়েছে</string>
+    <string name="serverlist_gateway_agents_not_detected">সনাক্ত হয়নি</string>
+    <string name="serverlist_gateway_agents_valid">বৈধ</string>
+    <string name="serverlist_gateway_agents_invalid">অবৈধ</string>
+    <string name="serverlist_gateway_agents_added">যোগ করা হয়েছে</string>
+    <string name="serverlist_gateway_agents_invalid_body">গেটওয়ে এটিকে অবৈধ চিহ্নিত করায় এই এজেন্ট যোগ করা যাবে না।</string>
+    <string name="serverlist_gateway_agents_add_body">%1$s আপনার প্রধান এজেন্ট তালিকায় যোগ হবে এবং পরে সার্ভার স্ক্রিন থেকে চালানো যাবে।</string>
+    <string name="serverlist_gateway_agents_acknowledge_risk">আমি বুঝেছি এটি আমার গেটওয়ে হোস্টে এজেন্ট বাইনারি ডাউনলোড ও চালাতে পারে।</string>
+    <string name="serverlist_gateway_agents_add_btn">এজেন্ট যোগ করুন</string>
+    <string name="serverlist_gateway_agents_cancel">বাতিল করুন</string>
+    <string name="serverlist_gateway_agents_retry">পুনরায় চেষ্টা করুন</string>
+
+    <string name="serverlist_gateway_list_title">Ferngeist গেটওয়ে</string>
+    <string name="serverlist_gateway_list_remote_mode">রিমোট মোড: %1$s</string>
+    <string name="serverlist_gateway_list_edit">সম্পাদনা করুন</string>
+    <string name="serverlist_gateway_list_delete">মুছে ফেলুন</string>
+
+    <string name="serverlist_error_invalid_payload">পেয়ারিং পেলোড অবৈধ। ferngeist pair-এর QR স্ক্যান করুন বা সম্পূর্ণ পেলোড পেস্ট করুন।</string>
+    <string name="serverlist_error_gateway_host_required">গেটওয়ে হোস্ট প্রয়োজন</string>
+    <string name="serverlist_error_gateway_reach">গেটওয়েতে পৌঁছানো যায়নি: %1$s</string>
+    <string name="serverlist_error_name_required">নাম প্রয়োজন</string>
+    <string name="serverlist_error_host_required">হোস্ট প্রয়োজন</string>
+    <string name="serverlist_error_pairing_code_required">পেয়ারিং কোড প্রয়োজন</string>
+    <string name="serverlist_error_start_pairing">পেয়ারিং শুরু করা যায়নি: %1$s</string>
+    <string name="serverlist_error_complete_pairing">পেয়ারিং সম্পন্ন করা যায়নি: %1$s</string>
+    <string name="serverlist_error_gateway_loaded">গেটওয়ে লোড করা যায়নি</string>
+    <string name="serverlist_error_save_gateway">গেটওয়ে সংরক্ষণ করা যায়নি: %1$s</string>
+    <string name="serverlist_error_scan_or_paste">আগে QR স্ক্যান করুন, পেলোড পেস্ট করুন, অথবা পেয়ারিং কোড লিখুন</string>
+    <string name="serverlist_error_corrupted_gateway">গেটওয়ে লোড করা যায়নি। ক্রেডেনশিয়ালটি ক্ষতিগ্রস্ত হতে পারে। মুছে আবার পেয়ার করুন।</string>
+    <string name="serverlist_error_corrupted_server">সার্ভার লোড করা যায়নি। ক্রেডেনশিয়ালটি ক্ষতিগ্রস্ত হতে পারে। মুছে সার্ভারটি আবার যোগ করুন।</string>
+    <string name="serverlist_error_launch">%1$s চালু করা ব্যর্থ</string>
+    <string name="serverlist_error_connect">%1$s-এর সাথে সংযোগ করা ব্যর্থ</string>
+    <string name="serverlist_error_reconnect">%1$s-এর সাথে পুনরায় সংযোগ করা ব্যর্থ</string>
+    <string name="serverlist_error_server_removed">প্রমাণীকরণ সম্পন্ন হওয়ার আগেই সার্ভার সরানো হয়েছে।</string>
+    <string name="serverlist_error_gateway_not_found">%1$s-এর জন্য গেটওয়ে পাওয়া যায়নি।</string>
+    <string name="serverlist_error_gateway_unpaired">গেটওয়ে পেয়ার করা নেই।</string>
+    <string name="serverlist_error_restart">%1$s পুনরায় চালু করা ব্যর্থ।</string>
+    <string name="serverlist_error_init_session">%1$s-এর সাথে সেশন আরম্ভ করা ব্যর্থ</string>
+    <string name="serverlist_error_init_session_detail">%1$s-এর সাথে সেশন আরম্ভ করা ব্যর্থ। বিস্তারিত জানতে লগক্যাট (logcat) দেখুন।</string>
+    <string name="serverlist_error_gateway_not_found_vm">গেটওয়ে পাওয়া যায়নি</string>
+    <string name="serverlist_error_connect_gateway">গেটওয়ের সাথে সংযোগ করা যায়নি: %1$s</string>
+    <string name="serverlist_error_added_agent">%1$s যোগ করা হয়েছে</string>
+    <string name="serverlist_device_default">Ferngeist Android</string>
+
+    <string name="serverlist_risk_gateway_host_fallback">আপনার গেটওয়ে হোস্ট</string>
+    <string name="serverlist_risk_add_agent_line1">এই কাজটি আপনার গেটওয়ে থেকে %1$s (%2$s) যোগ করে।</string>
+    <string name="serverlist_risk_add_agent_line2">এই এজেন্ট চালালে %1$s-এ কোড চলবে।</string>
+    <string name="serverlist_risk_add_agent_line3">বাইনারি ইনস্টল না থাকলে, গেটওয়ে এটি ACP রেজিস্ট্রি সোর্স (registry source) থেকে ডাউনলোড করতে পারে।</string>
+    <string name="serverlist_risk_add_agent_line4">শুধু এমন এজেন্ট ও সোর্স (source) যোগ করুন যেগুলোকে আপনি বিশ্বাস করেন।</string>
+    <string name="serverlist_risk_launch_agent_line1">%1$s চালালে গেটওয়ের মাধ্যমে এজেন্ট %2$s শুরু হয়।</string>
+    <string name="serverlist_risk_launch_agent_line2">এটি %1$s-এ বাইনারি চালাতে পারে।</string>
+    <string name="serverlist_risk_launch_agent_line3">প্রয়োজন হলে, আপনার গেটওয়ে ACP রেজিস্ট্রি সোর্স (registry source) থেকে এজেন্ট বাইনারি ডাউনলোড করতে পারে।</string>
+    <string name="serverlist_risk_launch_agent_line4">শুধু তখনই চালিয়ে যান যখন আপনি এই এজেন্ট ও এর সোর্স-এ আস্থা রাখেন।</string>
+
+    <string name="serverlist_qr_error_no_activity">স্ক্যানার খোলা যাচ্ছে না: এটি কোনো অ্যাক্টিভিটি কনটেক্সট (activity context)-এ নেই</string>
+    <string name="serverlist_qr_error_play_services">Google Play Services অনুপলব্ধ: %1$s</string>
+    <string name="serverlist_qr_error_no_scanner">এই ডিভাইসে স্ক্যানার খোলা যাচ্ছে না। পরিবর্তে পেয়ারিং পেলোড পেস্ট করুন।</string>
+    <string name="serverlist_qr_error_empty">QR কোডটি ফাঁকা ছিল</string>
+    <string name="serverlist_qr_error_invalid">QR-এ বৈধ পেয়ারিং পেলোড নেই</string>
+    <string name="serverlist_qr_error_scan_failed">QR স্ক্যান ব্যর্থ হয়েছে: %1$s</string>
+    <string name="serverlist_qr_error_cannot_start">এই ডিভাইসে স্ক্যানার শুরু করা যাচ্ছে না। পরিবর্তে পেয়ারিং পেলোড পেস্ট করুন।</string>
+
+    <string name="serverlist_error_unknown">অজানা ত্রুটি</string>
+    <string name="serverlist_gateway_default_name">গেটওয়ে</string>
+
+    <string name="serverlist_gateway_url_format">%1$s://%2$s</string>
+
+    <string name="serverlist_add_server_stdio_example">npx -y stdio-to-ws \"npx @qwen-code/qwen-code@latest --acp\" --port 8769</string>
+</resources>

@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_composer_hint">একটি বার্তা লিখুন…</string>
+    <string name="chat_composer_close_desc">কম্পোজার বন্ধ করুন</string>
+    <string name="chat_stop">থামান</string>
+    <string name="chat_cancel_unavailable">বাতিল করা যাচ্ছে না</string>
+    <string name="chat_chat">চ্যাট</string>
+    <string name="chat_mode">মোড</string>
+    <string name="chat_no_modes_available">কোনো মোড নেই</string>
+    <string name="chat_options">বিকল্প</string>
+    <string name="chat_commands">কমান্ড</string>
+    <string name="chat_no_options_available">কোনো বিকল্প নেই</string>
+    <string name="chat_enabled">সক্রিয়</string>
+    <string name="chat_disabled">নিষ্ক্রিয়</string>
+    <string name="chat_not_selected">নির্বাচিত নয়</string>
+    <string name="chat_send_desc">পাঠান</string>
+    <string name="chat_stop_desc">থামুন</string>
+
+    <string name="chat_back_desc">ফিরে যান</string>
+
+    <string name="chat_reasoning">যুক্তি</string>
+    <string name="chat_show_reasoning">যুক্তি দেখুন</string>
+    <string name="chat_reasoning_desc">যুক্তি দেখুন</string>
+    <string name="chat_plan_desc">পরিকল্পনা</string>
+    <string name="chat_completed_desc">সম্পন্ন</string>
+    <string name="chat_error_desc">ত্রুটি</string>
+    <string name="chat_tool_call">টুল কল</string>
+    <string name="chat_tool_call_details_desc">টুল কলের বিবরণ দেখুন</string>
+    <string name="chat_awaiting_permission">অনুমতির উত্তরের অপেক্ষায়</string>
+    <string name="chat_tool_kind_read">পড়া</string>
+    <string name="chat_tool_kind_edit">সম্পাদনা</string>
+    <string name="chat_tool_kind_delete">মুছে ফেলুন</string>
+    <string name="chat_tool_kind_move">সরান</string>
+    <string name="chat_tool_kind_search">অনুসন্ধান করুন</string>
+    <string name="chat_tool_kind_execute">চালান</string>
+    <string name="chat_tool_kind_think">ভাবুন</string>
+    <string name="chat_tool_kind_fetch">আনা</string>
+    <string name="chat_tool_kind_switch_mode">মোড বদলান</string>
+    <string name="chat_tool_kind_other">অন্যান্য</string>
+    <string name="chat_tool_status_pending">অপেক্ষমাণ</string>
+    <string name="chat_tool_status_in_progress">চলমান</string>
+    <string name="chat_tool_status_completed">সম্পন্ন</string>
+    <string name="chat_tool_status_failed">ব্যর্থ</string>
+    <string name="chat_image_label">ছবি (%1$s)</string>
+    <string name="chat_image_desc">ছবি</string>
+    <string name="chat_streaming_indicator">%1$s…</string>
+    <string name="chat_permission_request">অনুমতির অনুরোধ</string>
+    <string name="chat_permission_kind_allow_once">একবার অনুমতি দিন</string>
+    <string name="chat_permission_kind_allow_always">সবসময় অনুমতি দিন</string>
+    <string name="chat_permission_kind_reject_once">একবার প্রত্যাখ্যান করুন</string>
+    <string name="chat_permission_kind_reject_always">সবসময় প্রত্যাখ্যান করুন</string>
+
+    <string name="chat_spinner_verb_01">শেষ করছি</string>
+    <string name="chat_spinner_verb_02">কার্যকর করছি</string>
+    <string name="chat_spinner_verb_03">আধুনিক করছি</string>
+    <string name="chat_spinner_verb_04">বেক করছি</string>
+    <string name="chat_spinner_verb_05">প্রস্তুত করছি</string>
+    <string name="chat_spinner_verb_06">গণনা করছি</string>
+    <string name="chat_spinner_verb_07">মস্তিষ্কচর্চা করছি</string>
+    <string name="chat_spinner_verb_08">মথছি</string>
+    <string name="chat_spinner_verb_09">একত্র করছি</string>
+    <string name="chat_spinner_verb_10">ভাবছি</string>
+    <string name="chat_spinner_verb_11">গণনাক্রমে করছি</string>
+    <string name="chat_spinner_verb_12">মন্ত্রমুগ্ধ করছি</string>
+    <string name="chat_spinner_verb_13">বিবেচনা করছি</string>
+    <string name="chat_spinner_verb_14">রান্না করছি</string>
+    <string name="chat_spinner_verb_15">গড়ছি</string>
+    <string name="chat_spinner_verb_16">তৈরি করছি</string>
+    <string name="chat_spinner_verb_17">চূর্ণ করছি</string>
+    <string name="chat_spinner_verb_18">আলোচনা করছি</string>
+    <string name="chat_spinner_verb_19">নির্ধারণ করছি</string>
+    <string name="chat_spinner_verb_20">করছি</string>
+    <string name="chat_spinner_verb_21">কার্যকর করছি</string>
+    <string name="chat_spinner_verb_22">কৌশল করছি</string>
+    <string name="chat_spinner_verb_23">গড়ছি</string>
+    <string name="chat_spinner_verb_24">রূপ দিচ্ছি</string>
+    <string name="chat_spinner_verb_25">উৎপন্ন করছি</string>
+    <string name="chat_spinner_verb_26">ডিম ফাটছি</string>
+    <string name="chat_spinner_verb_27">নিয়ন্ত্রণ করছি</string>
+    <string name="chat_spinner_verb_28">হর্ণ দিচ্ছি</string>
+    <string name="chat_spinner_verb_29">ব্যস্ত আছি</string>
+    <string name="chat_spinner_verb_30">ভাবনাচিন্তা করছি</string>
+    <string name="chat_spinner_verb_31">অনুমান করছি</string>
+    <string name="chat_spinner_verb_32">প্রকাশ করছি</string>
+    <string name="chat_spinner_verb_33">মেরিনেট করছি</string>
+    <string name="chat_spinner_verb_34">আড্ডা দিচ্ছি</string>
+    <string name="chat_spinner_verb_35">চিন্তা করছি</string>
+    <string name="chat_spinner_verb_36">জোগাড় করছি</string>
+    <string name="chat_spinner_verb_37">মন দিচ্ছি</string>
+    <string name="chat_spinner_verb_38">নাড়াচাড়া করছি</string>
+    <string name="chat_spinner_verb_39">ধীরে ধীরে এগোচ্ছি</string>
+    <string name="chat_spinner_verb_40">ভাবছি</string>
+    <string name="chat_spinner_verb_41">প্রসেস করছি</string>
+    <string name="chat_spinner_verb_42">এদিক-ওদিক করছি</string>
+    <string name="chat_spinner_verb_43">রেটিকুলেট করছি</string>
+    <string name="chat_spinner_verb_44">মন্থন করছি</string>
+    <string name="chat_spinner_verb_45">টেনে নিয়ে যাচ্ছি</string>
+    <string name="chat_spinner_verb_46">খোসা ছাড়াচ্ছি</string>
+    <string name="chat_spinner_verb_47">হালকা আঁচে রান্না করছি</string>
+    <string name="chat_spinner_verb_48">মাড়ছি</string>
+    <string name="chat_spinner_verb_49">ঘুরছি</string>
+    <string name="chat_spinner_verb_50">ঝোলাচ্ছি</string>
+    <string name="chat_spinner_verb_51">সংযোজন করছি</string>
+    <string name="chat_spinner_verb_52">ভাবছি</string>
+    <string name="chat_spinner_verb_53">রূপান্তর করছি</string>
+    <string name="chat_spinner_verb_54">কম্পিত করছি</string>
+    <string name="chat_spinner_verb_55">কাজ করছি</string>
+
+    <string-array name="chat_spinner_verbs">
+        <item>@string/chat_spinner_verb_01</item>
+        <item>@string/chat_spinner_verb_02</item>
+        <item>@string/chat_spinner_verb_03</item>
+        <item>@string/chat_spinner_verb_04</item>
+        <item>@string/chat_spinner_verb_05</item>
+        <item>@string/chat_spinner_verb_06</item>
+        <item>@string/chat_spinner_verb_07</item>
+        <item>@string/chat_spinner_verb_08</item>
+        <item>@string/chat_spinner_verb_09</item>
+        <item>@string/chat_spinner_verb_10</item>
+        <item>@string/chat_spinner_verb_11</item>
+        <item>@string/chat_spinner_verb_12</item>
+        <item>@string/chat_spinner_verb_13</item>
+        <item>@string/chat_spinner_verb_14</item>
+        <item>@string/chat_spinner_verb_15</item>
+        <item>@string/chat_spinner_verb_16</item>
+        <item>@string/chat_spinner_verb_17</item>
+        <item>@string/chat_spinner_verb_18</item>
+        <item>@string/chat_spinner_verb_19</item>
+        <item>@string/chat_spinner_verb_20</item>
+        <item>@string/chat_spinner_verb_21</item>
+        <item>@string/chat_spinner_verb_22</item>
+        <item>@string/chat_spinner_verb_23</item>
+        <item>@string/chat_spinner_verb_24</item>
+        <item>@string/chat_spinner_verb_25</item>
+        <item>@string/chat_spinner_verb_26</item>
+        <item>@string/chat_spinner_verb_27</item>
+        <item>@string/chat_spinner_verb_28</item>
+        <item>@string/chat_spinner_verb_29</item>
+        <item>@string/chat_spinner_verb_30</item>
+        <item>@string/chat_spinner_verb_31</item>
+        <item>@string/chat_spinner_verb_32</item>
+        <item>@string/chat_spinner_verb_33</item>
+        <item>@string/chat_spinner_verb_34</item>
+        <item>@string/chat_spinner_verb_35</item>
+        <item>@string/chat_spinner_verb_36</item>
+        <item>@string/chat_spinner_verb_37</item>
+        <item>@string/chat_spinner_verb_38</item>
+        <item>@string/chat_spinner_verb_39</item>
+        <item>@string/chat_spinner_verb_40</item>
+        <item>@string/chat_spinner_verb_41</item>
+        <item>@string/chat_spinner_verb_42</item>
+        <item>@string/chat_spinner_verb_43</item>
+        <item>@string/chat_spinner_verb_44</item>
+        <item>@string/chat_spinner_verb_45</item>
+        <item>@string/chat_spinner_verb_46</item>
+        <item>@string/chat_spinner_verb_47</item>
+        <item>@string/chat_spinner_verb_48</item>
+        <item>@string/chat_spinner_verb_49</item>
+        <item>@string/chat_spinner_verb_50</item>
+        <item>@string/chat_spinner_verb_51</item>
+        <item>@string/chat_spinner_verb_52</item>
+        <item>@string/chat_spinner_verb_53</item>
+        <item>@string/chat_spinner_verb_54</item>
+        <item>@string/chat_spinner_verb_55</item>
+    </string-array>
+
+    <string name="chat_mode_label">মোড</string>
+
+    <string name="chat_retry">পুনরায় চেষ্টা করুন</string>
+    <string name="chat_permission_title">অনুমতি প্রয়োজন</string>
+    <string name="chat_permission_body">চালিয়ে যাওয়ার আগে এজেন্ট আপনার অনুমতির অপেক্ষায় আছে।</string>
+    <string name="chat_deny">অস্বীকার</string>
+    <string name="chat_no_tool_output">কোনো টুল আউটপুট নেই।</string>
+    <string name="chat_picker_empty">কোনো আইটেম নেই।</string>
+    <string name="chat_picker_no_results">মিলছে এমন কোনো আইটেম নেই।</string>
+    <string name="chat_search_desc">অনুসন্ধান</string>
+    <string name="chat_recent">সাম্প্রতিক</string>
+    <string name="chat_all_items">সব আইটেম</string>
+    <string name="chat_selected_desc">নির্বাচিত</string>
+    <string name="chat_picker_no_values">এজেন্ট থেকে কোনো মান পাওয়া যায়নি।</string>
+    <string name="chat_picker_no_models">মিলছে এমন কোনো মডেল নেই।</string>
+    <string name="chat_search_placeholder">%1$s অনুসন্ধান করুন</string>
+    <string name="chat_commands_sheet_title">কমান্ড</string>
+    <string name="chat_commands_empty">সার্ভার কোনো কমান্ড জানায়নি।</string>
+    <string name="chat_commands_no_results">মিলছে এমন কোনো কমান্ড নেই।</string>
+    <string name="chat_commands_search_hint">কমান্ড অনুসন্ধান করুন</string>
+
+    <string name="chat_tool_output_image">টুল আউটপুট ছবি (%1$s)</string>
+    <string name="chat_failed_decode_image">ছবি ডিকোড করা যায়নি (%1$s)</string>
+    <string name="chat_audio_content">অডিও বিষয়বস্তু (%1$s)</string>
+    <string name="chat_binary_resource">বাইনারি রিসোর্স (%1$s)</string>
+    <string name="chat_terminal_output">টার্মিনাল আউটপুট (%1$s)</string>
+
+    <string name="chat_cancel_not_supported">এই সার্ভার বাতিল সমর্থন করে না</string>
+    <string name="chat_model_updated">মডেল আপডেট হয়েছে</string>
+    <string name="chat_error_load_session">এই সেশন লোড করা যায়নি। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।</string>
+
+    <string name="chat_session_error_disconnected">সংযোগ বিচ্ছিন্ন। এই সেশন রিফ্রেশ করতে আবার সংযোগ করুন।</string>
+    <string name="chat_session_error_no_load">এই এজেন্ট সেশন/লোড (session/load) সমর্থন জানায় না।</string>
+    <string name="chat_session_error_auth_required">এই সার্ভারের জন্য এসিপি (ACP) প্রমাণীকরণ প্রয়োজন। সেশন তালিকায় ফিরে গিয়ে আগে প্রমাণীকরণ করুন।</string>
+    <string name="chat_session_error_bridge_restarted">এই সেশন লোড করার সময় এসিপি (ACP) ব্রিজ প্রক্রিয়া পুনরায় চালু হয়েছে। নতুন লাইভ সেশন খোলা হয়েছে।</string>
+    <string name="chat_session_error_load_timeout">সেশন লোডের সময়সীমা শেষ হয়েছে। সার্ভার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।</string>
+    <string name="chat_session_error_could_not_load">এই সেশন লোড করা যায়নি। সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।</string>
+    <string name="chat_session_error_not_ready">সেশন প্রস্তুত নয়। কিছুক্ষণ পরে আবার চেষ্টা করুন।</string>
+    <string name="chat_session_error_no_image">এই এজেন্ট ছবি (ইমেজ) প্রম্পট সমর্থন জানায় না।</string>
+    <string name="chat_session_error_cancel_failed">বর্তমান টার্ন বাতিল করা যায়নি</string>
+    <string name="chat_session_error_auth_reconnect">এই সার্ভারের জন্য ACP প্রমাণীকরণ প্রয়োজন। সার্ভার তালিকা থেকে পুনরায় সংযোগ করুন এবং একটি প্রমাণীকরণ পদ্ধতি বেছে নিন।</string>
+    <string name="chat_session_error_gateway_unpaired">%1$s-এর জন্য গেটওয়ে পেয়ার করা নেই।</string>
+    <string name="chat_session_error_reconnect">%1$s-এর সাথে পুনরায় সংযোগ করা যায়নি: %2$s</string>
+    <string name="chat_session_error_timeout">অনুরোধের সময়সীমা শেষ হয়েছে। আবার চেষ্টা করুন।</string>
+    <string name="chat_session_error_invalid_request">অবৈধ অনুরোধ ফরম্যাটের কারণে পাঠানো ব্যর্থ হয়েছে।</string>
+    <string name="chat_session_error_unknown">অজানা ত্রুটির কারণে পাঠানো ব্যর্থ হয়েছে।</string>
+
+    <string name="chat_error_unknown">অজানা ত্রুটি</string>
+    <string name="chat_error_send_failed">পাঠানো ব্যর্থ হয়েছে</string>
+</resources>

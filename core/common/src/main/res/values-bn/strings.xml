@@ -1,0 +1,44 @@
+<resources>
+    <string name="common_back">ফিরে যান</string>
+    <string name="common_cancel">বাতিল করুন</string>
+    <string name="common_retry">পুনরায় চেষ্টা করুন</string>
+    <string name="common_delete">মুছে ফেলুন</string>
+    <string name="common_save">সংরক্ষণ করুন</string>
+    <string name="common_close">বন্ধ করুন</string>
+    <string name="common_ok">ঠিক আছে</string>
+    <string name="common_edit">সম্পাদনা</string>
+
+    <string name="common_connecting">সংযোগ হচ্ছে</string>
+    <string name="common_connected">সংযুক্ত</string>
+    <string name="common_disconnected">সংযোগ বিচ্ছিন্ন</string>
+    <string name="common_failed">ব্যর্থ</string>
+    <string name="common_na">প্রযোজ্য নয়</string>
+    <string name="common_unknown">অজানা</string>
+    <string name="common_unsupported">অসমর্থিত</string>
+    <string name="common_supported">সমর্থিত</string>
+
+    <string name="common_connection_status">সংযোগের অবস্থা: %1$s</string>
+    <string name="common_connection_diagnostics">সংযোগ ডায়াগনস্টিকস (diagnostics)</string>
+    <string name="common_connection">সংযোগ: %1$s</string>
+    <string name="common_websocket">ওয়েবসকেট (WebSocket): %1$s</string>
+    <string name="common_server">সার্ভার: %1$s</string>
+    <string name="common_server_info">সার্ভার তথ্য: %1$s (%2$s)</string>
+    <string name="common_pending_rpc">অপেক্ষমাণ RPC অনুরোধ: %1$d</string>
+    <string name="common_cancel_support">বাতিল সমর্থন: %1$s</string>
+    <string name="common_total_tokens">মোট ব্যবহৃত টোকেন: %1$s</string>
+    <string name="common_usage_percentage">ব্যবহারের শতাংশ: %1$s</string>
+    <string name="common_cost_spent">ব্যয়: %1$s</string>
+    <string name="common_recent_rpc">সাম্প্রতিক RPC কার্যকলাপ</string>
+    <string name="common_no_recent_rpc">সাম্প্রতিক RPC কার্যকলাপ নেই</string>
+    <string name="common_recent_errors">সাম্প্রতিক ত্রুটি</string>
+    <string name="common_no_recent_errors">সাম্প্রতিক ত্রুটি নেই</string>
+    <string name="common_connection_status_desc">সংযোগের অবস্থা</string>
+
+    <string name="common_context_used">%2$s কনটেক্সটের মধ্যে %1$s ব্যবহার হয়েছে</string>
+    <string name="common_cost_amount">%1$s ব্যয় হয়েছে</string>
+
+    <string name="common_rpc_direction_req">REQ</string>
+    <string name="common_rpc_direction_res">RES</string>
+    <string name="common_rpc_direction_err">ERR</string>
+    <string name="common_rpc_direction_ntf">NTF</string>
+</resources>

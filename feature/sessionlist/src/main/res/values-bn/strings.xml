@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sessionlist_back_desc">ফিরে যান</string>
+    <string name="sessionlist_cwd_tooltip">কাজের ডিরেক্টরি পরিবর্তন করুন</string>
+    <string name="sessionlist_cwd_desc">কাজের ডিরেক্টরি পরিবর্তন করুন</string>
+    <string name="sessionlist_new_session_desc">নতুন সেশন</string>
+    <string name="sessionlist_today">আজ</string>
+    <string name="sessionlist_yesterday">গতকাল</string>
+    <string name="sessionlist_unknown_date">অজানা</string>
+
+    <plurals name="sessionlist_session_count">
+        <item quantity="one">%dটি সেশন</item>
+        <item quantity="other">%dটি সেশন</item>
+    </plurals>
+
+    <string name="sessionlist_auth_title">%1$s যাচাই করুন</string>
+    <string name="sessionlist_auth_body">সেশন খোলার আগে \"%1$s\" এজেন্টের এসিপি (ACP) প্রমাণীকরণ প্রয়োজন।</string>
+    <string name="sessionlist_auth_method_fallback">ধরন: %1$s</string>
+    <string name="sessionlist_auth_reconnect">পুনরায় সংযোগ করুন</string>
+    <string name="sessionlist_auth_authenticate">প্রমাণীকরণ করুন</string>
+    <string name="sessionlist_auth_cancel">বাতিল করুন</string>
+    <string name="sessionlist_auth_terminal_cmd">কমান্ড: %1$s</string>
+    <string name="sessionlist_auth_env_instructions">এজেন্ট চালু করার আগে এই পরিবেশ চলকগুলো সেট করুন, তারপর প্রমাণীকরণ পুনরায় চেষ্টা করতে আবার সংযোগ করুন।</string>
+    <string name="sessionlist_auth_optional_suffix"> (ঐচ্ছিক)</string>
+    <string name="sessionlist_untitled">শিরোনামহীন সেশন</string>
+    <string name="sessionlist_empty_title">কোনো সেশন নেই</string>
+    <string name="sessionlist_empty_subtitle_listed">সার্ভারের সেশনগুলো এখানে দেখাবে</string>
+    <string name="sessionlist_empty_subtitle_offline">এই ডিভাইসে তৈরি সেশনগুলো এখানে দেখাবে</string>
+    <string name="sessionlist_empty_action">নতুন সেশন তৈরি করুন</string>
+    <string name="sessionlist_topbar_title">সেশন</string>
+
+    <string name="sessionlist_cwd_title">কাজের ডিরেক্টরি</string>
+    <string name="sessionlist_cwd_body">এই এজেন্টের জন্য বর্তমান কাজের ডিরেক্টরি সেট করুন। সব সেশন দেখাতে খালি রাখুন।</string>
+    <string name="sessionlist_cwd_placeholder">ফিল্টার না করতে খালি রাখুন</string>
+    <string name="sessionlist_cwd_clear">পরিষ্কার করুন</string>
+    <string name="sessionlist_cwd_cancel">বাতিল করুন</string>
+    <string name="sessionlist_cwd_save">সংরক্ষণ করুন</string>
+
+    <string name="sessionlist_error_load">সেশন লোড করা যায়নি</string>
+    <string name="sessionlist_error_create">নতুন সেশন তৈরি করা যায়নি</string>
+    <string name="sessionlist_error_reconnect">%1$s-এর সাথে পুনরায় সংযোগ করা যায়নি</string>
+    <string name="sessionlist_error_init">%1$s আরম্ভ করা যায়নি</string>
+    <string name="sessionlist_error_removed">প্রমাণীকরণ শেষ হওয়ার আগেই সার্ভারটি সরানো হয়েছে।</string>
+    <string name="sessionlist_error_gateway_not_found">%1$s-এর জন্য গেটওয়ে পাওয়া যায়নি।</string>
+    <string name="sessionlist_error_gateway_unpaired">গেটওয়ে পেয়ার করা নেই।</string>
+    <string name="sessionlist_error_gateway_runtime_missing">%1$s-এর জন্য গেটওয়ে রানটাইম কনটেক্সট (runtime context) অনুপস্থিত।</string>
+    <string name="sessionlist_error_restart">%1$s পুনরায় চালু করা যায়নি।</string>
+    <string name="sessionlist_error_reconnect_gateway">%1$s-এর সাথে পুনরায় সংযোগ করা যায়নি</string>
+    <string name="sessionlist_error_init_gateway">%1$s আরম্ভ করা যায়নি</string>
+</resources>

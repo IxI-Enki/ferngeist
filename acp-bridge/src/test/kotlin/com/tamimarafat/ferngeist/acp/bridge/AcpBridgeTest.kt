@@ -3,10 +3,12 @@ package com.tamimarafat.ferngeist.acp.bridge
 import app.cash.turbine.test
 import com.agentclientprotocol.model.RequestPermissionOutcome
 import com.agentclientprotocol.protocol.JsonRpcException
+import com.tamimarafat.ferngeist.acp.bridge.connection.PermissionFlow
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAgentCapabilities
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpDiagnosticsStore
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpManagerEvent
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpMcpCapabilities
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpPromptCapabilities
@@ -31,6 +33,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -177,54 +180,59 @@ class AcpConnectionManagerTest {
         }
 
     @Test
-    fun `removeSession clears pending permission requests for that session`() =
+    fun `PermissionFlow cancelForSession cancels only matching session pendings`() =
         runTest {
-            val manager =
-                AcpConnectionManager(
-                    connectivityObserver = ConnectivityObserverStub(initialState = true),
-                    scope = CoroutineScope(Dispatchers.Unconfined),
-                )
-            val deferred = CompletableDeferred<RequestPermissionOutcome>()
+            val flow = PermissionFlow()
+            val deferred1 = CompletableDeferred<RequestPermissionOutcome>()
+            val deferred2 = CompletableDeferred<RequestPermissionOutcome>()
 
-            manager.privateRegistryMap<SessionBridge>("sessionBridges")["session-1"] =
-                SessionBridge("session-1", null)
-            manager.privateRegistryMap<Any>("pendingPermissionRequests")["tool-1"] =
-                createPendingPermissionRequest(sessionId = "session-1", deferred = deferred)
-            manager.privateRegistryMap<Any>("pendingPermissionRequests")["tool-2"] =
-                createPendingPermissionRequest(
-                    sessionId = "session-2",
-                    deferred = CompletableDeferred(),
-                )
+            flow.addPending("tool-1", "session-1", deferred1)
+            flow.addPending("tool-2", "session-2", deferred2)
 
-            manager.removeSession("session-1")
+            flow.cancelForSession("session-1")
 
-            assertNull(manager.getSession("session-1"))
-            assertTrue(deferred.isCancelled)
-            assertFalse(manager.privateRegistryMap<Any>("pendingPermissionRequests").containsKey("tool-1"))
-            assertTrue(manager.privateRegistryMap<Any>("pendingPermissionRequests").containsKey("tool-2"))
+            assertTrue(deferred1.isCancelled)
+            assertNull(flow.takePending("tool-1"))
+            assertNotNull(flow.takePending("tool-2"))
         }
 
     @Test
-    fun `unsupported session cancel failure downgrades diagnostics`() =
+    fun `PermissionFlow cancelAll cleans up all pending requests`() =
         runTest {
-            val manager =
-                AcpConnectionManager(
-                    connectivityObserver = ConnectivityObserverStub(initialState = true),
-                    scope = CoroutineScope(Dispatchers.Unconfined),
-                )
+            val flow = PermissionFlow()
+            val deferred = CompletableDeferred<RequestPermissionOutcome>()
+            flow.addPending("tool-a", "session-x", deferred)
 
-            manager.invokePrivate(
-                methodName = "handleSessionCancelFailure",
-                parameterTypes = arrayOf(Throwable::class.java),
-                args = arrayOf(IllegalStateException("Method not found: session/cancel")),
-            )
+            flow.cancelAll()
 
-            assertEquals(false, manager.diagnostics.value.supportsSessionCancel)
-            assertTrue(
-                manager.diagnostics.value.recentErrors.any { error ->
-                    error.source == "session/cancel"
-                },
-            )
+            assertTrue(deferred.isCancelled)
+            assertNull(flow.takePending("tool-a"))
+        }
+
+    @Test
+    fun `diagnostics starts with supportsSessionCancel null`() =
+        runTest {
+            val connectivityObserver = ConnectivityObserverStub(initialState = true)
+            val scope = CoroutineScope(Dispatchers.Unconfined)
+            val manager = AcpConnectionManager(connectivityObserver, scope)
+
+            assertNull(manager.diagnostics.value.supportsSessionCancel)
+        }
+
+    @Test
+    fun `setSessionCancelSupport false updates diagnostics flag`() =
+        runTest {
+            val store = AcpDiagnosticsStore()
+            store.setSessionCancelSupport(false)
+            assertFalse(store.diagnostics.value.supportsSessionCancel!!)
+        }
+
+    @Test
+    fun `setSessionCancelSupport true updates diagnostics flag`() =
+        runTest {
+            val store = AcpDiagnosticsStore()
+            store.setSessionCancelSupport(true)
+            assertTrue(store.diagnostics.value.supportsSessionCancel!!)
         }
 
     @Test
@@ -247,43 +255,6 @@ class AcpConnectionManagerTest {
             waitJob.join()
             assertTrue(waitJob.isCompleted)
         }
-}
-
-private fun createPendingPermissionRequest(
-    sessionId: String,
-    deferred: CompletableDeferred<RequestPermissionOutcome>,
-): Any {
-    val clazz = Class.forName("com.tamimarafat.ferngeist.acp.bridge.connection.PendingPermissionRequest")
-    val constructor = clazz.getDeclaredConstructor(String::class.java, CompletableDeferred::class.java)
-    constructor.isAccessible = true
-    return constructor.newInstance(sessionId, deferred)
-}
-
-@Suppress("UNCHECKED_CAST")
-private fun <T> AcpConnectionManager.privateRegistryMap(fieldName: String): MutableMap<String, T> {
-    val registry =
-        readPrivateField<Any>("sessionRegistry")
-            ?: error("sessionRegistry not found")
-    val field = registry.javaClass.getDeclaredField(fieldName)
-    field.isAccessible = true
-    return field.get(registry) as MutableMap<String, T>
-}
-
-@Suppress("UNCHECKED_CAST")
-private fun <T> Any.readPrivateField(fieldName: String): T? {
-    val field = javaClass.getDeclaredField(fieldName)
-    field.isAccessible = true
-    return field.get(this) as T?
-}
-
-private fun AcpConnectionManager.invokePrivate(
-    methodName: String,
-    parameterTypes: Array<Class<*>>,
-    args: Array<Any>,
-): Any? {
-    val method = AcpConnectionManager::class.java.getDeclaredMethod(methodName, *parameterTypes)
-    method.isAccessible = true
-    return method.invoke(this, *args)
 }
 
 class AcpConnectionConfigTest {

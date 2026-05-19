@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Image
@@ -49,17 +51,25 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.agentclientprotocol.model.PlanEntry
+import com.agentclientprotocol.model.PlanEntryPriority
+import com.agentclientprotocol.model.PlanEntryStatus
+import com.agentclientprotocol.model.ToolCallStatus
+import com.agentclientprotocol.model.ToolKind
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownAnimations
 import com.mikepenz.markdown.model.markdownDimens
+import com.tamimarafat.ferngeist.core.model.AcpPermissionOption
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
-import com.agentclientprotocol.model.ToolCallStatus
 import com.tamimarafat.ferngeist.feature.chat.R
 import kotlin.random.Random
 import com.mikepenz.markdown.model.State as MarkdownRenderState
@@ -82,24 +92,22 @@ fun MessageBubble(
             .fillMaxWidth()
             .then(
                 if (showStreamingIndicator) Modifier.onSizeChanged { onStreamLayoutSettled() }
-                else Modifier
+                else Modifier,
             ),
         contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         if (isUser) {
             ElevatedCard(
-                colors =
-                    CardDefaults.elevatedCardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = contentColor,
-                    ),
-                shape =
-                    RoundedCornerShape(
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomStart = 20.dp,
-                        bottomEnd = 8.dp,
-                    ),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = contentColor,
+                ),
+                shape = RoundedCornerShape(
+                    topStart = 20.dp,
+                    topEnd = 20.dp,
+                    bottomStart = 20.dp,
+                    bottomEnd = 8.dp,
+                ),
                 modifier = Modifier.widthIn(max = 420.dp),
             ) {
                 UserMessageContent(
@@ -168,6 +176,7 @@ private fun AssistantMessageContent(
                             Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
+
                     AssistantSegment.Kind.THOUGHT -> {
                         ThoughtBubble(
                             isStreaming = message.isStreaming && message.segments.lastOrNull()?.id == segment.id,
@@ -175,6 +184,7 @@ private fun AssistantMessageContent(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
+
                     AssistantSegment.Kind.TOOL_CALL -> {
                         segment.toolCall?.let { toolCall ->
                             ToolCallCard(
@@ -184,8 +194,9 @@ private fun AssistantMessageContent(
                             Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
+
                     AssistantSegment.Kind.PLAN -> {
-                        PlanBubble(segment.text)
+                        PlanBubble(segment.planEntries.orEmpty())
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
@@ -214,29 +225,27 @@ private fun MarkdownText(
     state: MarkdownRenderState?,
     modifier: Modifier = Modifier,
 ) {
-    val compactTypography =
-        markdownTypography(
-            h1 = MaterialTheme.typography.titleLarge,
-            h2 = MaterialTheme.typography.titleMedium,
-            h3 = MaterialTheme.typography.titleSmall,
-            h4 = MaterialTheme.typography.bodyLarge,
-            h5 = MaterialTheme.typography.bodyMedium,
-            h6 = MaterialTheme.typography.bodySmall,
-            text = MaterialTheme.typography.bodyLarge,
-            paragraph = MaterialTheme.typography.bodyLarge,
-            list = MaterialTheme.typography.bodyLarge,
-            bullet = MaterialTheme.typography.bodyLarge,
-            ordered = MaterialTheme.typography.bodyLarge,
-        )
+    val compactTypography = markdownTypography(
+        h1 = MaterialTheme.typography.titleLarge,
+        h2 = MaterialTheme.typography.titleMedium,
+        h3 = MaterialTheme.typography.titleSmall,
+        h4 = MaterialTheme.typography.bodyLarge,
+        h5 = MaterialTheme.typography.bodyMedium,
+        h6 = MaterialTheme.typography.bodySmall,
+        text = MaterialTheme.typography.bodyLarge,
+        paragraph = MaterialTheme.typography.bodyLarge,
+        list = MaterialTheme.typography.bodyLarge,
+        bullet = MaterialTheme.typography.bodyLarge,
+        ordered = MaterialTheme.typography.bodyLarge,
+    )
     if (state != null) {
         SelectionContainer {
             Markdown(
                 state = state,
                 typography = compactTypography,
-                animations =
-                    markdownAnimations(
-                        animateTextSize = { this },
-                    ),
+                animations = markdownAnimations(
+                    animateTextSize = { this },
+                ),
                 dimens = markdownDimens(),
                 modifier = modifier.fillMaxWidth(),
             )
@@ -251,26 +260,23 @@ private fun ThoughtBubble(
     modifier: Modifier = Modifier,
 ) {
     val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val textBrush =
-        rememberShimmerTextBrush(
-            isActive = isStreaming,
-            baseColor = baseColor,
-            labelPrefix = "reasoning",
-        )
+    val textBrush = rememberShimmerTextBrush(
+        isActive = isStreaming,
+        baseColor = baseColor,
+        labelPrefix = "reasoning",
+    )
 
     Row(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clickable { onClick() },
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = if (isStreaming) stringResource(R.string.chat_reasoning) else stringResource(R.string.chat_show_reasoning),
-            style =
-                MaterialTheme.typography.bodySmall.copy(
-                    brush = textBrush,
-                ),
+            style = MaterialTheme.typography.bodySmall.copy(
+                brush = textBrush,
+            ),
             modifier = Modifier.padding(vertical = 4.dp),
         )
         Spacer(modifier = Modifier.width(4.dp))
@@ -285,32 +291,52 @@ private fun ThoughtBubble(
 
 @Composable
 private fun PlanBubble(
-    text: String,
+    entries: List<PlanEntry>,
     modifier: Modifier = Modifier,
 ) {
+    if (entries.isEmpty()) return
     Card(
-        colors =
-            CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
         shape = RoundedCornerShape(8.dp),
         modifier = modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.PlaylistAddCheck,
-                contentDescription = stringResource(R.string.chat_plan_desc),
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+        Column(modifier = Modifier.padding(12.dp)) {
+            entries.forEachIndexed { index, entry ->
+                val isCompleted = entry.status == PlanEntryStatus.COMPLETED
+                val isInProgress = entry.status == PlanEntryStatus.IN_PROGRESS
+                val isPending = entry.status == PlanEntryStatus.PENDING
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = if (isCompleted) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                        contentDescription = null,
+                        tint = if (isInProgress) MaterialTheme.colorScheme.primary
+                            else if (isPending) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
+                            else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha= 0.5f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = entry.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isPending) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
+                            else if (isInProgress) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
+                        fontWeight = if (isInProgress) FontWeight.Medium else null,
+                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (index < entries.lastIndex) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+            }
         }
     }
 }
@@ -323,45 +349,42 @@ private fun ToolCallCard(
     modifier: Modifier = Modifier,
 ) {
     Card(
-        colors =
-            CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+        ),
         shape = CardDefaults.shape,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column {
             // Header
             Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onClick() }
-                        .padding(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick() }
+                    .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Status badge
                 toolCall.status?.let { status ->
                     when (status) {
-                        ToolCallStatus.PENDING, ToolCallStatus.IN_PROGRESS ->
-                            ContainedLoadingIndicator(
-                                polygons = pickLoadingPolygons(toolCall.toolCallId ?: toolCall.title),
-                                containerShape = MaterialTheme.shapes.medium,
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(32.dp),
-                            )
-                        ToolCallStatus.COMPLETED ->
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = stringResource(R.string.chat_completed_desc),
-                            )
-                        ToolCallStatus.FAILED ->
-                            Icon(
-                                imageVector = Icons.Default.Error,
-                                contentDescription = stringResource(R.string.chat_error_desc),
-                            )
+                        ToolCallStatus.PENDING, ToolCallStatus.IN_PROGRESS -> ContainedLoadingIndicator(
+                            polygons = pickLoadingPolygons(toolCall.toolCallId ?: toolCall.title),
+                            containerShape = MaterialTheme.shapes.medium,
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(32.dp),
+                        )
+
+                        ToolCallStatus.COMPLETED -> Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = stringResource(R.string.chat_completed_desc),
+                        )
+
+                        ToolCallStatus.FAILED -> Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = stringResource(R.string.chat_error_desc),
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -372,7 +395,7 @@ private fun ToolCallCard(
                         maxLines = 1,
                         overflow = TextOverflow.MiddleEllipsis,
                         style = MaterialTheme.typography.bodySmall,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                        fontWeight = FontWeight.Medium,
                     )
                     toolCall.kind?.let { kind ->
                         Text(
@@ -448,19 +471,17 @@ private fun StreamingIndicator(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val spinnerVerb =
-        remember(streamKey) {
-            val verbs = context.resources.getStringArray(R.array.chat_spinner_verbs)
-            verbs[Random.nextInt(verbs.size)]
-        }
+    val spinnerVerb = remember(streamKey) {
+        val verbs = context.resources.getStringArray(R.array.chat_spinner_verbs)
+        verbs[Random.nextInt(verbs.size)]
+    }
     val polygons = remember(streamKey) { pickLoadingPolygons(streamKey) }
     val baseColor = LocalContentColor.current.copy(alpha = 0.8f)
-    val textBrush =
-        rememberShimmerTextBrush(
-            isActive = true,
-            baseColor = baseColor,
-            labelPrefix = "spinnerVerb",
-        )
+    val textBrush = rememberShimmerTextBrush(
+        isActive = true,
+        baseColor = baseColor,
+        labelPrefix = "spinnerVerb",
+    )
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -472,30 +493,27 @@ private fun StreamingIndicator(
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = stringResource(R.string.chat_streaming_indicator, spinnerVerb),
-            style =
-                MaterialTheme.typography.bodyMedium.copy(
-                    brush = textBrush,
-                ),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                brush = textBrush,
+            ),
         )
     }
 }
 
 
-
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private val LOADING_SHAPES =
-    listOf(
-        MaterialShapes.Oval,
-        MaterialShapes.ClamShell,
-        MaterialShapes.Diamond,
-        MaterialShapes.VerySunny,
-        MaterialShapes.Cookie4Sided,
-        MaterialShapes.SoftBurst,
-        MaterialShapes.SoftBoom,
-        MaterialShapes.Flower,
-        MaterialShapes.PuffyDiamond,
-        MaterialShapes.Bun,
-    )
+private val LOADING_SHAPES = listOf(
+    MaterialShapes.Oval,
+    MaterialShapes.ClamShell,
+    MaterialShapes.Diamond,
+    MaterialShapes.VerySunny,
+    MaterialShapes.Cookie4Sided,
+    MaterialShapes.SoftBurst,
+    MaterialShapes.SoftBoom,
+    MaterialShapes.Flower,
+    MaterialShapes.PuffyDiamond,
+    MaterialShapes.Bun,
+)
 
 private fun pickLoadingPolygons(seedKey: String) = LOADING_SHAPES.shuffled(Random(seedKey.hashCode())).take(6)
 
@@ -506,35 +524,107 @@ private fun rememberShimmerTextBrush(
     labelPrefix: String,
 ): Brush {
     val shimmerTransition = rememberInfiniteTransition(label = "${labelPrefix}Shimmer")
-    val shimmerOffset =
-        if (isActive) {
-            shimmerTransition
-                .animateFloat(
-                    initialValue = -200f,
-                    targetValue = 600f,
-                    animationSpec =
-                        infiniteRepeatable(
-                            animation = tween(durationMillis = 1400, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart,
-                        ),
-                    label = "${labelPrefix}ShimmerOffset",
-                ).value
-        } else {
-            0f
-        }
+    val shimmerOffset = if (isActive) {
+        shimmerTransition.animateFloat(
+                initialValue = -200f,
+                targetValue = 600f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 1400, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "${labelPrefix}ShimmerOffset",
+            ).value
+    } else {
+        0f
+    }
 
     return if (isActive) {
         Brush.linearGradient(
-            colors =
-                listOf(
-                    baseColor.copy(alpha = 0.45f),
-                    baseColor.copy(alpha = 0.95f),
-                    baseColor.copy(alpha = 0.45f),
-                ),
+            colors = listOf(
+                baseColor.copy(alpha = 0.45f),
+                baseColor.copy(alpha = 0.95f),
+                baseColor.copy(alpha = 0.45f),
+            ),
             start = Offset(shimmerOffset - 200f, 0f),
             end = Offset(shimmerOffset, 0f),
         )
     } else {
         SolidColor(baseColor)
+    }
+}
+
+@Preview
+@Composable
+private fun PlanBubblePreview() {
+    Surface {
+        PlanBubble(
+            entries = listOf(
+                PlanEntry(
+                    content = "Analyze the existing codebase structure",
+                    priority = PlanEntryPriority.HIGH,
+                    status = PlanEntryStatus.COMPLETED,
+                ),
+                PlanEntry(
+                    content = "Identify components that need refactoring",
+                    priority = PlanEntryPriority.HIGH,
+                    status = PlanEntryStatus.IN_PROGRESS,
+                ),
+                PlanEntry(
+                    content = "Create unit tests for critical functions",
+                    priority = PlanEntryPriority.MEDIUM,
+                    status = PlanEntryStatus.PENDING,
+                ),
+            ),
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ToolCallCardPreview() {
+    MaterialTheme {
+        Surface(modifier = Modifier.padding(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "list_files",
+                        kind = ToolKind.READ,
+                        status = ToolCallStatus.IN_PROGRESS,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "read_file",
+                        kind = ToolKind.READ,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "write_file",
+                        kind = ToolKind.EDIT,
+                        status = ToolCallStatus.FAILED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "delete_file",
+                        kind = ToolKind.DELETE,
+                        status = ToolCallStatus.PENDING,
+                        permissionOptions = listOf(
+                            AcpPermissionOption(
+                                id = "1",
+                                label = "Allow",
+                                kind = "allow_once",
+                            ),
+                        ),
+                    ),
+                    onClick = {},
+                )
+            }
+        }
     }
 }

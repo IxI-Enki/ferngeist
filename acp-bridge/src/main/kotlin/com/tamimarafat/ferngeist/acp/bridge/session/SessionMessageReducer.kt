@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.acp.bridge.session
 
+import com.agentclientprotocol.model.PlanEntry
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.core.model.AcpPermissionOption
@@ -34,13 +35,7 @@ object SessionMessageReducer {
             is AppSessionEvent.ToolCallUpdated -> updateToolCall(messages, event)
             is AppSessionEvent.ToolPermissionRequested -> updateToolCallPermission(messages, event)
             is AppSessionEvent.ToolPermissionResolved -> clearToolCallPermission(messages, event.toolCallId)
-            is AppSessionEvent.PlanUpdated ->
-                appendText(
-                    messages,
-                    event.content,
-                    AssistantSegment.Kind.PLAN,
-                    event.timestampMs,
-                )
+            is AppSessionEvent.PlanUpdated -> updatePlan(messages, event.entries, event.timestampMs)
             is AppSessionEvent.TurnComplete -> finishStreaming(messages)
             else -> messages
         }
@@ -181,6 +176,64 @@ object SessionMessageReducer {
             segments[textSegmentIndex] = existing.copy(text = existing.text + text)
         } else {
             segments.add(AssistantSegment(id = UUID.randomUUID().toString(), kind = kind, text = text))
+        }
+
+        val updatedContent =
+            segments
+                .filter { it.kind == AssistantSegment.Kind.MESSAGE }
+                .joinToString("") { it.text }
+
+        mutableMessages[targetIndex] =
+            message.copy(
+                segments = segments,
+                content = updatedContent,
+                isStreaming = true,
+            )
+        return mutableMessages
+    }
+
+    private fun updatePlan(
+        messages: List<ChatMessage>,
+        entries: List<PlanEntry>,
+        timestampMs: Long?,
+    ): List<ChatMessage> {
+        if (entries.isEmpty()) return messages
+        val mutableMessages = messages.toMutableList()
+
+        val lastMessage = mutableMessages.lastOrNull()
+        val targetIndex =
+            if (lastMessage?.role == ChatMessage.Role.ASSISTANT) {
+                mutableMessages.lastIndex
+            } else {
+                val newMessage =
+                    ChatMessage(
+                        role = ChatMessage.Role.ASSISTANT,
+                        isStreaming = true,
+                        createdAt = timestampMs ?: System.currentTimeMillis(),
+                    )
+                mutableMessages.add(newMessage)
+                mutableMessages.lastIndex
+            }
+
+        val message = mutableMessages[targetIndex]
+        val segments = message.segments.toMutableList()
+
+        val existingPlanIndex = segments.indexOfLast { it.kind == AssistantSegment.Kind.PLAN }
+        if (existingPlanIndex != -1) {
+            segments[existingPlanIndex] =
+                segments[existingPlanIndex].copy(
+                    text = "",
+                    planEntries = entries,
+                )
+        } else {
+            segments.add(
+                AssistantSegment(
+                    id = UUID.randomUUID().toString(),
+                    kind = AssistantSegment.Kind.PLAN,
+                    text = "",
+                    planEntries = entries,
+                ),
+            )
         }
 
         val updatedContent =

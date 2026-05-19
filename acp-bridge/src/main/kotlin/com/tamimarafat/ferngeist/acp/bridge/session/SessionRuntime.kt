@@ -310,7 +310,7 @@ class SessionRuntime(
             is AppSessionEvent.LegacyModelOptionsUpdated ->
                 "legacyModels=${event.choices.size} current=${event.currentModelId}"
             is AppSessionEvent.ModelSelectionConfirmed -> "modelId=${event.modelId}"
-            is AppSessionEvent.PlanUpdated -> "planLen=${event.content.length}"
+            is AppSessionEvent.PlanUpdated -> "entries=${event.entries.size}"
             is AppSessionEvent.UsageUpdated -> "usageTotal=${event.totalTokens} context=${event.contextWindowTokens}"
             is AppSessionEvent.CommandsUpdated -> "commands=${event.commands.size}"
             is AppSessionEvent.SessionInfoUpdated -> "title=${event.title} updatedAt=${event.updatedAt}"

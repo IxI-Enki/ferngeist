@@ -44,7 +44,7 @@ internal object AcpSessionUpdateMapper {
                 )
             is SessionUpdate.PlanUpdate ->
                 AppSessionEvent.PlanUpdated(
-                    content = update.entries.joinToString("\n") { it.toString() },
+                    entries = update.entries,
                 )
             is SessionUpdate.AvailableCommandsUpdate ->
                 AppSessionEvent.CommandsUpdated(

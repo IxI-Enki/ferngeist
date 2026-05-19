@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.core.model
 
+import com.agentclientprotocol.model.PlanEntry
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
@@ -32,6 +33,7 @@ data class AssistantSegment(
     val kind: Kind = Kind.MESSAGE,
     val text: String = "",
     val toolCall: ToolCallDisplay? = null,
+    val planEntries: List<PlanEntry>? = null,
 ) {
     @Serializable
     enum class Kind {

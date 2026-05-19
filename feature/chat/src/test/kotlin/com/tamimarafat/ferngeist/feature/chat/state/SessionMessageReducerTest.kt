@@ -1,5 +1,8 @@
 package com.tamimarafat.ferngeist.feature.chat.state
 
+import com.agentclientprotocol.model.PlanEntry
+import com.agentclientprotocol.model.PlanEntryPriority
+import com.agentclientprotocol.model.PlanEntryStatus
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.acp.bridge.session.AppSessionEvent
@@ -243,5 +246,37 @@ class SessionMessageReducerTest {
         assertEquals(AssistantSegment.Kind.TOOL_CALL, segments[1].kind)
         assertEquals(AssistantSegment.Kind.MESSAGE, segments[2].kind)
         assertEquals(" world", segments[2].text)
+    }
+
+    @Test
+    fun `plan entries replace existing plan segment on each update`() {
+        val first =
+            SessionMessageReducer.handleEvent(
+                emptyList(),
+                AppSessionEvent.PlanUpdated(
+                    entries = listOf(
+                        PlanEntry(content = "Step 1", priority = PlanEntryPriority.HIGH, status = PlanEntryStatus.PENDING),
+                    ),
+                ),
+            )
+
+        assertEquals(1, first.last().segments.size)
+        assertEquals(AssistantSegment.Kind.PLAN, first.last().segments.last().kind)
+        assertEquals(1, first.last().segments.last().planEntries?.size)
+
+        val second =
+            SessionMessageReducer.handleEvent(
+                first,
+                AppSessionEvent.PlanUpdated(
+                    entries = listOf(
+                        PlanEntry(content = "Step 1", priority = PlanEntryPriority.HIGH, status = PlanEntryStatus.IN_PROGRESS),
+                        PlanEntry(content = "Step 2", priority = PlanEntryPriority.MEDIUM, status = PlanEntryStatus.PENDING),
+                    ),
+                ),
+            )
+
+        assertEquals(1, second.last().segments.size)
+        assertEquals(2, second.last().segments.last().planEntries?.size)
+        assertEquals(PlanEntryStatus.IN_PROGRESS, second.last().segments.last().planEntries?.get(0)?.status)
     }
 }

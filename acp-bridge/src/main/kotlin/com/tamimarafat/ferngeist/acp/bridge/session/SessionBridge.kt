@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.acp.bridge.session
 
+import com.agentclientprotocol.model.PlanEntry
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
@@ -200,7 +201,7 @@ sealed interface AppSessionEvent {
     ) : AppSessionEvent
 
     data class PlanUpdated(
-        val content: String,
+        val entries: List<PlanEntry>,
         val timestampMs: Long? = null,
     ) : AppSessionEvent
 

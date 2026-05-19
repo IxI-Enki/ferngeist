@@ -50,7 +50,7 @@ class AcpSessionUpdateParserTest {
         val event = invokeMapSessionUpdateToEvent(update)
         val tool = event as AppSessionEvent.ToolCallUpdated
         assertEquals("tool_123", tool.toolCallId)
-        assertEquals("\"{\\\"ok\\\":true}\"", tool.rawOutput)
+        assertEquals("\"{\\\"ok\\\":true}\"", tool.rawOutput?.toString())
         assertNotNull(tool.title)
     }
 

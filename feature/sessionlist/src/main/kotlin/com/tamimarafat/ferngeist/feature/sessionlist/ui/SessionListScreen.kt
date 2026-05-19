@@ -103,6 +103,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Date
 import kotlin.math.max
+import androidx.compose.ui.platform.LocalResources
 
 /**
  * Full-screen session list for an ACP agent server.
@@ -232,7 +233,6 @@ fun SessionListScreen(
         ConnectionDiagnosticsDialog(
             connectionState = connectionState,
             diagnostics = connectionDiagnostics,
-            showCancelSupport = true,
             onDismiss = { showConnectionStatusDialog = false },
         )
     }
@@ -483,7 +483,7 @@ fun SessionListScreen(
                         }
                         item {
                             Text(
-                                text = LocalContext.current.resources.getQuantityString(com.tamimarafat.ferngeist.feature.sessionlist.R.plurals.sessionlist_session_count, sessions.size, sessions.size),
+                                text = LocalResources.current.getQuantityString(com.tamimarafat.ferngeist.feature.sessionlist.R.plurals.sessionlist_session_count, sessions.size, sessions.size),
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
@@ -842,6 +842,9 @@ private fun EmptySessionList(
     }
 }
 
+/**
+ * Renders the session list top-bar title with shared-element transition ownership.
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SessionListTopBarTitle(

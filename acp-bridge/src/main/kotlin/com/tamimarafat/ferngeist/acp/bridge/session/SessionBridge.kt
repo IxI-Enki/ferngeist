@@ -1,4 +1,4 @@
-﻿package com.tamimarafat.ferngeist.acp.bridge.session
+package com.tamimarafat.ferngeist.acp.bridge.session
 
 import com.agentclientprotocol.model.PlanEntry
 import com.agentclientprotocol.model.ToolCallContent
@@ -66,28 +66,43 @@ class SessionBridge(
 
     private val traceTag = "TSBridge"
 
+    /**
+     * Feeds a session event into the runtime reducer and then emits it to observers.
+     *
+     * Ordering matters: runtime state is updated before observers see the event.
+     */
     suspend fun emitEvent(event: AppSessionEvent) {
         debug("emitEvent type=${event::class.simpleName}")
         runtime.onEvent(event)
         _events.emit(event)
     }
 
+    /** Marks the session as entering hydration (history replay) mode. */
     suspend fun beginHydration() {
         runtime.beginHydration()
     }
 
+    /** Marks hydration as completed and transitions the runtime toward ready. */
     suspend fun completeHydration() {
         runtime.completeHydration()
     }
 
+    /** Marks hydration as failed and stores the failure message. */
     suspend fun failHydration(error: String?) {
         runtime.failHydration(error)
     }
 
+    /** Marks the session as ready once initial state has been fully built. */
     suspend fun markReady() {
         runtime.markReady()
     }
 
+    /**
+     * Sends a prompt to the server while updating local state optimistically.
+     *
+     * The runtime is updated first so the UI shows the outgoing message immediately.
+     * If the transport call fails, the runtime is informed so it can rollback state.
+     */
     override suspend fun sendPrompt(
         text: String,
         images: List<Pair<String, String>>,
@@ -101,6 +116,9 @@ class SessionBridge(
         }
     }
 
+    /**
+     * Requests a streaming cancel on the transport and updates local state.
+     */
     override suspend fun cancel() {
         connectionManager?.cancelSession(sessionId)
         runtime.onLocalCancel()
@@ -148,6 +166,7 @@ class SessionBridge(
         connectionManager?.respondPermissionSelected(sessionId, toolCallId, optionId)
     }
 
+    /** Declines a permission prompt for a tool call. */
     override suspend fun denyPermission(toolCallId: String) {
         connectionManager?.respondPermissionCancelled(sessionId, toolCallId)
     }
@@ -161,6 +180,7 @@ class SessionBridge(
         eventScope.cancel()
     }
 
+    /** Emits a debug log entry if logging is available. */
     private fun debug(message: String) {
         runCatching { android.util.Log.d(traceTag, "[$sessionId] $message") }
     }

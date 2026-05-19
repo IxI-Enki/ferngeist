@@ -10,8 +10,9 @@ import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthenticationRequired
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
-import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectionDiagnostics
 import com.tamimarafat.ferngeist.acp.bridge.connection.formatAcpErrorMessage
+import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.LaunchableTargetSessionSettings
 import com.tamimarafat.ferngeist.core.model.SessionSummary
@@ -63,6 +64,11 @@ sealed interface PendingAuthAction {
     ) : PendingAuthAction
 }
 
+/**
+ * Coordinates session list data and ACP authentication flows.
+ *
+ * Converts ACP transport state into chat-domain diagnostics for UI rendering.
+ */
 @HiltViewModel
 class SessionListViewModel
     @Inject
@@ -107,15 +113,29 @@ class SessionListViewModel
 
         private val _isLoading = MutableStateFlow(true)
         val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-        val connectionState: StateFlow<AcpConnectionState> =
+        val connectionState: StateFlow<ChatConnectionState> =
             connectionManager.connectionState
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AcpConnectionState.Disconnected)
+                .map { state ->
+                    when (state) {
+                        is AcpConnectionState.Disconnected -> ChatConnectionState.Disconnected
+                        is AcpConnectionState.Connecting -> ChatConnectionState.Connecting
+                        is AcpConnectionState.Connected -> ChatConnectionState.Connected
+                        is AcpConnectionState.Failed -> ChatConnectionState.Failed(state.error.message)
+                    }
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatConnectionState.Disconnected)
         val agentCapabilities: StateFlow<AcpAgentCapabilities?> =
             connectionManager.agentCapabilities
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-        val connectionDiagnostics: StateFlow<ConnectionDiagnostics> =
+        val connectionDiagnostics: StateFlow<ChatConnectionDiagnostics> =
             connectionManager.diagnostics
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConnectionDiagnostics())
+                .map { diagnostics ->
+                    ChatConnectionDiagnostics(
+                        serverUrl = diagnostics.serverUrl,
+                        pendingRequestCount = diagnostics.pendingRequestCount,
+                        recentErrors = diagnostics.recentErrors.map { it.message },
+                        lastUpdatedAtMs = diagnostics.lastUpdatedAtMs,
+                    )
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatConnectionDiagnostics())
 
         private val _events = MutableSharedFlow<SessionListEvent>()
         val events = _events.asSharedFlow()
@@ -127,6 +147,9 @@ class SessionListViewModel
             refreshSessions()
         }
 
+        /**
+         * Refreshes the session list, handling auth gating and capability checks.
+         */
         fun refreshSessions() {
             viewModelScope.launch {
                 if (!connectionManager.isConnected) {
@@ -157,6 +180,9 @@ class SessionListViewModel
             }
         }
 
+        /**
+         * Creates a new session on the server and navigates to it on success.
+         */
         fun createSession(cwd: String) {
             viewModelScope.launch {
                 _isLoading.value = true
@@ -197,6 +223,9 @@ class SessionListViewModel
             }
         }
 
+        /**
+         * Creates a new session using the current working directory filter.
+         */
         fun createSessionWithCurrentCwd() {
             val normalizedCwd =
                 sessionSettings.value.cwd
@@ -205,26 +234,26 @@ class SessionListViewModel
             createSession(normalizedCwd)
         }
 
-    /** Persists [cwd] to settings, records it in the recent list, then refreshes sessions. */
-    fun updateCurrentCwd(cwd: String) {
-        viewModelScope.launch {
-            sessionSettingsRepository.updateCwd(serverId, cwd)
-            val normalized = cwd.trim().ifBlank { "" }
-            if (normalized.isNotBlank()) {
-                recentCwdStore.addCwd(serverId, normalized)
+        /** Persists [cwd] to settings, records it in the recent list, then refreshes sessions. */
+        fun updateCurrentCwd(cwd: String) {
+            viewModelScope.launch {
+                sessionSettingsRepository.updateCwd(serverId, cwd)
+                val normalized = cwd.trim().ifBlank { "" }
+                if (normalized.isNotBlank()) {
+                    recentCwdStore.addCwd(serverId, normalized)
+                }
+                refreshSessions()
             }
-            refreshSessions()
         }
-    }
 
-    /** Removes [cwd] from the recent list without affecting the current filter. */
-    fun removeRecentCwd(cwd: String) {
-        viewModelScope.launch {
-            recentCwdStore.removeCwd(serverId, cwd)
+        /** Removes [cwd] from the recent list without affecting the current filter. */
+        fun removeRecentCwd(cwd: String) {
+            viewModelScope.launch {
+                recentCwdStore.removeCwd(serverId, cwd)
+            }
         }
-    }
 
-    /**
+        /**
          * Completes the currently pending ACP auth challenge, then retries the
          * session action that originally failed.
          */
@@ -239,6 +268,7 @@ class SessionListViewModel
                 _isLoading.value = true
                 _pendingAuthentication.update { it?.copy(authErrorMessage = null) }
 
+                // Env-based gateway auth is handled by restarting the gateway runtime with env vars.
                 if (method.type == "env" && pending.gatewayRuntimeId != null) {
                     authenticateGatewayEnvVar(pending, method, envValues)
                     return@launch
@@ -265,6 +295,7 @@ class SessionListViewModel
          * external process, so the user restarts it outside the app and this method
          * reconnects before retrying the blocked session action.
          */
+        /** Reconnects to a manual ACP server after the user applied env vars. */
         fun reconnectPendingAuthentication() {
             viewModelScope.launch {
                 val pending = _pendingAuthentication.value ?: return@launch
@@ -318,11 +349,15 @@ class SessionListViewModel
             }
         }
 
+        /** Dismisses the authentication dialog and clears loading state. */
         fun dismissAuthenticationPrompt() {
             _pendingAuthentication.value = null
             _isLoading.value = false
         }
 
+        /**
+         * Replaces all stored sessions for the current server with the latest remote list.
+         */
         private suspend fun replaceSessions(newSessions: List<SessionSummary>) {
             sessionRepository.clearSessions(serverId)
             newSessions.forEach { session ->
@@ -330,13 +365,15 @@ class SessionListViewModel
             }
         }
 
+        /**
+         * Builds and surfaces a pending authentication model when ACP requires auth.
+         */
         private suspend fun handleAuthenticationRequired(
             error: Throwable,
             action: PendingAuthAction,
         ): Boolean {
-            // ACP auth is now session-gated. initialize() only advertises methods;
-            // the first session/list, session/new, or session/load failure is what
-            // actually opens the authentication prompt.
+            // ACP auth is session-gated. initialize() only advertises methods; the first
+            // session action failure is what opens the authentication prompt.
             val authError = error as? AcpAuthenticationRequiredException ?: return false
             val currentServer = server.value ?: return false
             _pendingAuthentication.value =
@@ -355,6 +392,9 @@ class SessionListViewModel
             return true
         }
 
+        /**
+         * Handles gateway-backed env authentication by restarting the runtime with env vars.
+         */
         private suspend fun authenticateGatewayEnvVar(
             pending: SessionListPendingAuthentication,
             method: AcpAuthMethodInfo,
@@ -486,6 +526,7 @@ class SessionListViewModel
             retryPendingAction(pending.pendingAction)
         }
 
+        /** Retries the action that triggered the authentication prompt. */
         private fun retryPendingAction(action: PendingAuthAction) {
             when (action) {
                 PendingAuthAction.RefreshSessions -> refreshSessions()
@@ -493,6 +534,9 @@ class SessionListViewModel
             }
         }
 
+        /**
+         * Loads persisted env vars, limited to the auth methods currently requested.
+         */
         private suspend fun loadPersistedEnvValues(
             serverId: String,
             authMethods: List<AcpAuthMethodInfo>,
@@ -511,6 +555,9 @@ class SessionListViewModel
             }
         }
 
+        /**
+         * Persists env vars for the selected auth method so the dialog can be prefilled.
+         */
         private suspend fun persistEnvValues(
             serverId: String,
             method: AcpAuthMethodInfo,
@@ -526,6 +573,9 @@ class SessionListViewModel
             }
         }
 
+        /**
+         * Builds the env payload for gateway restart, omitting blank optional fields.
+         */
         private fun buildEnvPayload(
             method: AcpAuthMethodInfo,
             envValues: Map<String, String>,
@@ -542,6 +592,7 @@ class SessionListViewModel
             }
         }
 
+        /** Stores the last successful auth method as a per-target preference. */
         private fun savePreferredAuthMethod(
             targetId: String,
             methodId: String,

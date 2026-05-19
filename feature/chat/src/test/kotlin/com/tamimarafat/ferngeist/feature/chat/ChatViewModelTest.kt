@@ -2,32 +2,27 @@ package com.tamimarafat.ferngeist.feature.chat
 
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
-import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectivityObserver
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
-import com.tamimarafat.ferngeist.core.model.GatewaySource
-import com.tamimarafat.ferngeist.core.model.LaunchableTarget
+import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
+import com.tamimarafat.ferngeist.core.model.ChatConfigValue
+import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
+import com.tamimarafat.ferngeist.core.model.ChatImageData
+import com.tamimarafat.ferngeist.core.model.ChatOperationError
+import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
+import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
+import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.SessionSummary
-import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
-import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
-import com.tamimarafat.ferngeist.gateway.GatewayAgent
-import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
-import com.tamimarafat.ferngeist.gateway.GatewayLogEntry
-import com.tamimarafat.ferngeist.gateway.GatewayPairStartResponse
-import com.tamimarafat.ferngeist.gateway.GatewayPairStatusResponse
-import com.tamimarafat.ferngeist.gateway.GatewayPairingResult
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
-import com.tamimarafat.ferngeist.gateway.GatewayRuntime
-import com.tamimarafat.ferngeist.gateway.GatewayStatus
+import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -41,6 +36,7 @@ import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 
+/** Unit tests for ChatViewModel intent handling and initial state. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelTest {
     @get:Rule
@@ -50,7 +46,6 @@ class ChatViewModelTest {
     fun `set config option without active session emits session not ready error`() =
         runTest {
             val viewModel = createViewModel()
-
             advanceUntilIdle()
 
             viewModel.effects.test {
@@ -59,7 +54,7 @@ class ChatViewModelTest {
                 viewModel.dispatch(
                     ChatIntent.SetConfigOption(
                         optionId = "mode",
-                        value = SessionConfigValue.StringValue("code"),
+                        value = ChatConfigValue.StringValue("code"),
                     ),
                 )
                 advanceUntilIdle()
@@ -74,7 +69,6 @@ class ChatViewModelTest {
     fun `send message without active session emits session not ready error`() =
         runTest {
             val viewModel = createViewModel()
-
             advanceUntilIdle()
 
             viewModel.effects.test {
@@ -93,7 +87,6 @@ class ChatViewModelTest {
     fun `cancel streaming without active session emits session not ready error`() =
         runTest {
             val viewModel = createViewModel()
-
             advanceUntilIdle()
 
             viewModel.effects.test {
@@ -138,17 +131,10 @@ class ChatViewModelTest {
             )
         }
 
+    /** Creates a view model with in-memory test doubles. */
     private fun createViewModel(
         chatScrollStateStore: ChatScrollStateStore = InMemoryChatScrollStateStore(),
     ): ChatViewModel {
-        val connectivityObserver = ConnectivityObserverStub(initialState = false)
-        val manager =
-            AcpConnectionManager(
-                connectivityObserver = connectivityObserver,
-                scope = CoroutineScope(Dispatchers.Main),
-            )
-        val targetRepository = FakeLaunchableTargetRepository()
-        val sessionRepository = FakeSessionRepository()
         val handle =
             SavedStateHandle(
                 mapOf(
@@ -157,13 +143,11 @@ class ChatViewModelTest {
                     "cwd" to "/",
                 ),
             )
-
+        val facadeFactory =
+            FakeChatSessionFacadeFactory()
         return ChatViewModel(
-            connectionManager = manager,
-            gatewaySourceRepository = FakeGatewaySourceRepository(),
-            launchableTargetRepository = targetRepository,
-            sessionRepository = sessionRepository,
-            gatewayRepository = FakeGatewayRepository(),
+            sessionFacadeFactory = facadeFactory,
+            sessionRepository = FakeSessionRepository(),
             chatScrollStateStore = chatScrollStateStore,
             recentSelectionStore = FakeRecentSelectionStore(),
             savedStateHandle = handle,
@@ -171,6 +155,7 @@ class ChatViewModelTest {
     }
 }
 
+/** JUnit rule that swaps the main dispatcher for tests. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainDispatcherRule(
     private val dispatcher: TestDispatcher = StandardTestDispatcher(),
@@ -184,38 +169,77 @@ class MainDispatcherRule(
     }
 }
 
-private class ConnectivityObserverStub(
-    initialState: Boolean,
-) : ConnectivityObserver {
-    private val isConnectedFlow = MutableStateFlow(initialState)
-    override val isConnected: Flow<Boolean> = isConnectedFlow
+/**
+ * Fake [ChatSessionFacade] that simulates a session that is never ready.
+ * [loadSession] emits a load-failed error; all operations emit [operationError].
+ */
+private class FakeChatSessionFacade : ChatSessionFacade {
+    private val _connectionState = MutableStateFlow<ChatConnectionState>(ChatConnectionState.Disconnected)
+    private val _diagnostics = MutableStateFlow(ChatConnectionDiagnostics())
+    private val _sessionSnapshot = MutableStateFlow<ChatSessionSnapshot?>(null)
+    private val _agentCapabilities = MutableStateFlow(ChatAgentCapabilities())
+
+    private val _loadFailed = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    private val _operationError = MutableSharedFlow<ChatOperationError>(extraBufferCapacity = 1)
+    private val _streamingCancelled = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _cancelUnsupported = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _sessionReady = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _modelUpdated = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    override val connectionState: StateFlow<ChatConnectionState> = _connectionState
+    override val diagnostics: StateFlow<ChatConnectionDiagnostics> = _diagnostics
+    override val sessionSnapshot: StateFlow<ChatSessionSnapshot?> = _sessionSnapshot
+    override val agentCapabilities: StateFlow<ChatAgentCapabilities> = _agentCapabilities
+
+    override val loadFailed: SharedFlow<String> = _loadFailed
+    override val operationError: SharedFlow<ChatOperationError> = _operationError
+    override val streamingCancelled: SharedFlow<Unit> = _streamingCancelled
+    override val cancelUnsupported: SharedFlow<Unit> = _cancelUnsupported
+    override val sessionReady: SharedFlow<Unit> = _sessionReady
+    override val modelUpdated: SharedFlow<Unit> = _modelUpdated
+
+    override suspend fun loadSession() {
+        _loadFailed.emit("Session not found")
+    }
+
+    override suspend fun sendMessage(text: String, images: List<ChatImageData>) {
+        _operationError.emit(ChatOperationError("Session is not ready. Please retry in a moment.", false))
+    }
+
+    override suspend fun cancelStreaming() {
+        _operationError.emit(ChatOperationError("Session is not ready. Please retry in a moment.", false))
+    }
+
+    override suspend fun setConfigOption(optionId: String, value: ChatConfigValue) {
+        _operationError.emit(ChatOperationError("Session is not ready. Please retry in a moment.", false))
+    }
+
+    override suspend fun grantPermission(toolCallId: String, optionId: String) {}
+
+    override suspend fun denyPermission(toolCallId: String) {}
+
+    override fun clear() {}
+
+    override fun onConnectionStateChanged(connectionState: ChatConnectionState) {}
 }
 
-private class FakeLaunchableTargetRepository : LaunchableTargetRepository {
-    override fun getTargets(): Flow<List<LaunchableTarget>> = emptyFlow()
+/** Factory that returns [FakeChatSessionFacade] instances. */
+private class FakeChatSessionFacadeFactory : ChatSessionFacadeFactory {
+    val lastFacade = MutableStateFlow<FakeChatSessionFacade?>(null)
 
-    override suspend fun getTarget(id: String): LaunchableTarget? = null
-
-    override suspend fun updatePreferredAuthMethod(
-        targetId: String,
-        methodId: String,
-    ) = Unit
-
-    override suspend fun deleteTarget(id: String) = Unit
+    override fun create(
+        scope: CoroutineScope,
+        serverId: String,
+        sessionId: String,
+        cwd: String,
+    ): ChatSessionFacade {
+        val facade = FakeChatSessionFacade()
+        lastFacade.value = facade
+        return facade
+    }
 }
 
-private class FakeGatewaySourceRepository : GatewaySourceRepository {
-    override fun getGateways() = flowOf(emptyList<GatewaySource>())
-
-    override suspend fun addGateway(gateway: GatewaySource) = Unit
-
-    override suspend fun updateGateway(gateway: GatewaySource) = Unit
-
-    override suspend fun deleteGateway(id: String) = Unit
-
-    override suspend fun getGateway(id: String) = null
-}
-
+/** In-memory session repository stub. */
 private class FakeSessionRepository : SessionRepository {
     override fun getSessions(serverId: String): Flow<List<SessionSummary>> = emptyFlow()
 
@@ -232,73 +256,7 @@ private class FakeSessionRepository : SessionRepository {
     override suspend fun clearSessions(serverId: String) = Unit
 }
 
-private class FakeGatewayRepository : GatewayRepository {
-    override suspend fun fetchStatus(
-        scheme: String,
-        host: String,
-    ): GatewayStatus = throw NotImplementedError()
-
-    override suspend fun startPairing(
-        scheme: String,
-        host: String,
-    ): GatewayPairStartResponse = throw NotImplementedError()
-
-    override suspend fun getPairingStatus(
-        scheme: String,
-        host: String,
-        challengeId: String,
-    ): GatewayPairStatusResponse = throw NotImplementedError()
-
-    override suspend fun fetchAgents(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-    ): List<GatewayAgent> = emptyList()
-
-    override suspend fun startAgent(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        agentId: String,
-    ): GatewayRuntime = throw NotImplementedError()
-
-    override suspend fun connectRuntime(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-    ): GatewayConnectResponse = throw NotImplementedError()
-
-    override suspend fun restartRuntime(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-        envVars: Map<String, String>,
-    ): GatewayConnectResponse = throw NotImplementedError()
-
-    override suspend fun fetchRuntimeLogs(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-    ): List<GatewayLogEntry> = emptyList()
-
-    override suspend fun completePairing(
-        scheme: String,
-        host: String,
-        challengeId: String,
-        code: String,
-        deviceName: String,
-    ): GatewayPairingResult = throw NotImplementedError()
-
-    override suspend fun refreshCredential(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-    ): GatewayPairingResult = throw NotImplementedError()
-}
-
+/** Minimal in-memory scroll state store for tests. */
 private class InMemoryChatScrollStateStore : ChatScrollStateStore {
     private val entries = linkedMapOf<Pair<String, String>, ChatScrollSnapshot>()
 
@@ -323,6 +281,7 @@ private class InMemoryChatScrollStateStore : ChatScrollStateStore {
     }
 }
 
+/** No-op recent selection store for tests. */
 private class FakeRecentSelectionStore : RecentSelectionStore {
     override fun getRecentSelections(key: String): Flow<List<String>> = emptyFlow()
 

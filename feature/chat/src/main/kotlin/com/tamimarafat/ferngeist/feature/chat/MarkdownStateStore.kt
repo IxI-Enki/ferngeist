@@ -1,8 +1,8 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import com.mikepenz.markdown.model.parseMarkdownFlow
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionLoadState
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
+import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -14,6 +14,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.mikepenz.markdown.model.State as MarkdownRenderState
 
+/**
+ * Maintains a cached set of parsed markdown states for assistant messages.
+ *
+ * Parsing is batched and throttled to avoid UI jank during streaming updates.
+ */
 internal class MarkdownStateStore(
     private val scope: CoroutineScope,
     private val currentMessages: () -> List<ChatMessage>,
@@ -32,21 +37,27 @@ internal class MarkdownStateStore(
     private val markdownParsingKeys = mutableSetOf<String>()
     private var markdownParserJob: Job? = null
 
+    /**
+     * Updates markdown cache for a new snapshot and returns the projection to render.
+     *
+     * During initial hydration, missing entries are pre-parsed synchronously so the
+     * first render can show rich markdown without waiting for the scheduler.
+     */
     suspend fun onSnapshot(
         messages: List<ChatMessage>,
-        loadState: SessionLoadState,
+        loadState: ChatLoadState,
     ): MarkdownStateProjection {
         val requiredEntries = collectRequiredEntries(messages)
-        if (!initialHydrated && loadState != SessionLoadState.FAILED) {
+        if (!initialHydrated && loadState != ChatLoadState.FAILED) {
             preparseMissingEntries(requiredEntries)
-            if (loadState == SessionLoadState.READY) {
+            if (loadState == ChatLoadState.READY) {
                 initialHydrated = true
             }
         }
 
         val markdownStates = buildMarkdownEntries(messages)
         val pendingInitialHydration =
-            loadState != SessionLoadState.FAILED &&
+            loadState != ChatLoadState.FAILED &&
                 !initialHydrated &&
                 messages.isNotEmpty()
         return MarkdownStateProjection(
@@ -55,6 +66,7 @@ internal class MarkdownStateStore(
         )
     }
 
+    /** Clears cached states and cancels any in-flight parsing work. */
     fun reset() {
         initialHydrated = false
         markdownParserJob?.cancel()
@@ -64,6 +76,9 @@ internal class MarkdownStateStore(
         markdownParsingKeys.clear()
     }
 
+    /**
+     * Extracts assistant message content that requires markdown parsing.
+     */
     private fun collectRequiredEntries(messages: List<ChatMessage>): LinkedHashMap<String, String> {
         val requiredEntries = linkedMapOf<String, String>()
         messages.forEach { message ->
@@ -81,6 +96,9 @@ internal class MarkdownStateStore(
         return requiredEntries
     }
 
+    /**
+     * Pre-parses any missing entries to minimize visible markdown "pop-in" on first load.
+     */
     private suspend fun preparseMissingEntries(requiredEntries: Map<String, String>) {
         requiredEntries.forEach { (key, text) ->
             val cached = markdownStateCache[key]
@@ -98,6 +116,9 @@ internal class MarkdownStateStore(
         }
     }
 
+    /**
+     * Synchronizes the cache with current messages and schedules parsing for deltas.
+     */
     private fun buildMarkdownEntries(messages: List<ChatMessage>): Map<String, MarkdownRenderState> {
         val requiredEntries = collectRequiredEntries(messages)
         val requiredKeys = requiredEntries.keys
@@ -128,6 +149,9 @@ internal class MarkdownStateStore(
             }.toMap()
     }
 
+    /**
+     * Launches a background parser that drains the pending queue in batches.
+     */
     private fun scheduleMarkdownParsing() {
         if (markdownParserJob?.isActive == true) return
 
@@ -185,12 +209,16 @@ internal class MarkdownStateStore(
             }
     }
 
+    /**
+     * Parses markdown text and returns the first non-loading state.
+     */
     private suspend fun parse(text: String): MarkdownRenderState =
         withContext(Dispatchers.Default) {
             parseMarkdownFlow(text)
                 .first { it !is MarkdownRenderState.Loading }
         }
 
+    /** Emits markdown states for the currently rendered messages. */
     private fun publishMarkdownStatesForCurrentMessages() {
         onMarkdownStatesChanged(buildMarkdownEntries(currentMessages()))
     }
@@ -201,6 +229,7 @@ internal class MarkdownStateStore(
     )
 }
 
+/** Snapshot of markdown state used to render the current message list. */
 internal data class MarkdownStateProjection(
     val markdownStates: Map<String, MarkdownRenderState>,
     val pendingInitialHydration: Boolean,

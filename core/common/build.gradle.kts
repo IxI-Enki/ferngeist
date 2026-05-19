@@ -35,6 +35,7 @@ kotlin {
 
 dependencies {
     implementation(projects.acpBridge)
+    implementation(projects.core.model)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)

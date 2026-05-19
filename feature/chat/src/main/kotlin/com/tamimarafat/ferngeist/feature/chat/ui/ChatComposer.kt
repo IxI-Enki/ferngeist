@@ -72,10 +72,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigOption
+import com.tamimarafat.ferngeist.core.model.ChatConfigOption
+import com.tamimarafat.ferngeist.core.model.allChoices
+import com.tamimarafat.ferngeist.core.model.displayValueLabel
 import com.tamimarafat.ferngeist.feature.chat.R
-import com.tamimarafat.ferngeist.acp.bridge.session.allChoices
-import com.tamimarafat.ferngeist.acp.bridge.session.displayValueLabel
 import com.tamimarafat.ferngeist.feature.chat.ChatState
 
 /**
@@ -110,7 +110,7 @@ import com.tamimarafat.ferngeist.feature.chat.ChatState
 internal fun ChatComposerBar(
     modifier: Modifier = Modifier,
     state: ChatState,
-    toolbarConfigOptions: List<SessionConfigOption>,
+    toolbarConfigOptions: List<ChatConfigOption>,
     composerExpanded: Boolean,
     onComposerExpandedChange: (Boolean) -> Unit,
     messageText: String,
@@ -118,7 +118,7 @@ internal fun ChatComposerBar(
     inputAlpha: Float,
     buttonsAlpha: Float,
     showModeButton: Boolean,
-    modeOption: SessionConfigOption.Select?,
+    modeOption: ChatConfigOption.Select?,
     currentModeLabel: String,
     showStopAction: Boolean,
     canCancelStreaming: Boolean,
@@ -341,10 +341,10 @@ internal fun ExpandedComposerContent(
 @Composable
 internal fun CollapsedComposerActions(
     state: ChatState,
-    toolbarConfigOptions: List<SessionConfigOption>,
+    toolbarConfigOptions: List<ChatConfigOption>,
     buttonsAlpha: Float,
     showModeButton: Boolean,
-    modeOption: SessionConfigOption.Select?,
+    modeOption: ChatConfigOption.Select?,
     currentModeLabel: String,
     showStopAction: Boolean,
     canCancelStreaming: Boolean,
@@ -432,7 +432,7 @@ internal fun CollapsedComposerActions(
 internal fun ModeMenuButton(
     modifier: Modifier = Modifier,
     currentModeLabel: String,
-    modeOption: SessionConfigOption.Select,
+    modeOption: ChatConfigOption.Select,
     maxWidth: Dp,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
@@ -516,7 +516,7 @@ internal fun ModeMenuButton(
 @Composable
 internal fun ToolbarOptionsButton(
     commandsAdvertised: Boolean,
-    configOptions: List<SessionConfigOption>,
+    configOptions: List<ChatConfigOption>,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     interactionSource: MutableInteractionSource,
@@ -560,17 +560,17 @@ internal fun ToolbarOptionsButton(
                             option = option,
                             onClick = {
                                 when (option) {
-                                    is SessionConfigOption.BooleanOption -> {
+                                    is ChatConfigOption.BooleanOption -> {
                                         onExpandedChange(false)
                                         onSetBooleanConfigOption(option.id, !option.currentValue)
                                     }
 
-                                    is SessionConfigOption.Select -> {
+                                    is ChatConfigOption.Select -> {
                                         onExpandedChange(false)
                                         onShowConfigOptionPicker(option.id)
                                     }
 
-                                    is SessionConfigOption.Unknown -> Unit
+                                    is ChatConfigOption.Unknown -> Unit
                                 }
                             },
                         )
@@ -595,7 +595,7 @@ internal fun ToolbarOptionsButton(
  */
 @Composable
 internal fun ConfigOptionMenuItem(
-    option: SessionConfigOption,
+    option: ChatConfigOption,
     onClick: () -> Unit,
 ) {
     DropdownMenuItem(
@@ -612,7 +612,7 @@ internal fun ConfigOptionMenuItem(
             }
         },
         onClick = onClick,
-        enabled = option is SessionConfigOption.Select || option is SessionConfigOption.BooleanOption,
+        enabled = option is ChatConfigOption.Select || option is ChatConfigOption.BooleanOption,
     )
 }
 
@@ -620,9 +620,9 @@ internal fun ConfigOptionMenuItem(
  * Extension to get a user-friendly subtitle for a config option in the dropdown.
  */
 @Composable
-internal fun SessionConfigOption.dropdownSubtitle(): String =
+internal fun ChatConfigOption.dropdownSubtitle(): String =
     when (this) {
-        is SessionConfigOption.BooleanOption -> if (currentValue) stringResource(R.string.chat_enabled) else stringResource(R.string.chat_disabled)
+        is ChatConfigOption.BooleanOption -> if (currentValue) stringResource(R.string.chat_enabled) else stringResource(R.string.chat_disabled)
         else -> displayValueLabel() ?: stringResource(R.string.chat_not_selected)
     }
 

@@ -6,6 +6,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
 import com.tamimarafat.ferngeist.acp.bridge.connection.AndroidConnectivityObserver
+import com.tamimarafat.ferngeist.acp.bridge.facade.AcpChatSessionFacadeFactory
+import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
 import com.tamimarafat.ferngeist.core.model.repository.GatewayAgentBindingRepository
 import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
@@ -20,6 +22,7 @@ import com.tamimarafat.ferngeist.data.database.repository.LaunchableTargetReposi
 import com.tamimarafat.ferngeist.data.database.repository.LaunchableTargetSessionSettingsRepositoryImpl
 import com.tamimarafat.ferngeist.data.database.repository.ServerRepositoryImpl
 import com.tamimarafat.ferngeist.data.database.repository.SessionRepositoryImpl
+import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,6 +39,7 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+    /** Provides the Room database with all current migrations registered. */
     @Provides
     @Singleton
     fun provideDatabase(
@@ -60,6 +64,7 @@ object AppModule {
             ).fallbackToDestructiveMigration(false)
             .build()
 
+    /** Binds the server repository backed by Room. */
     @Provides
     @Singleton
     fun provideServerRepository(
@@ -67,6 +72,7 @@ object AppModule {
         credentialEncryptor: CredentialEncryptor,
     ): ServerRepository = ServerRepositoryImpl(database.serverDao(), credentialEncryptor)
 
+    /** Binds the gateway source repository backed by Room. */
     @Provides
     @Singleton
     fun provideGatewaySourceRepository(
@@ -74,11 +80,13 @@ object AppModule {
         credentialEncryptor: CredentialEncryptor,
     ): GatewaySourceRepository = GatewaySourceRepositoryImpl(database.gatewaySourceDao(), credentialEncryptor)
 
+    /** Binds gateway agent bindings stored in the database. */
     @Provides
     @Singleton
     fun provideGatewayAgentBindingRepository(database: FerngeistDatabase): GatewayAgentBindingRepository =
         GatewayAgentBindingRepositoryImpl(database.gatewayAgentBindingDao())
 
+    /** Combines server + gateway repositories into a launchable target registry. */
     @Provides
     @Singleton
     fun provideLaunchableTargetRepository(
@@ -92,11 +100,13 @@ object AppModule {
             gatewayAgentBindingRepository = gatewayAgentBindingRepository,
         )
 
+    /** Binds the session repository backed by Room. */
     @Provides
     @Singleton
     fun provideSessionRepository(database: FerngeistDatabase): SessionRepository =
         SessionRepositoryImpl(database.sessionDao())
 
+    /** Persists per-target session settings (cwd, etc.). */
     @Provides
     @Singleton
     fun provideLaunchableTargetSessionSettingsRepository(
@@ -104,12 +114,14 @@ object AppModule {
     ): LaunchableTargetSessionSettingsRepository =
         LaunchableTargetSessionSettingsRepositoryImpl(database.launchableTargetSessionSettingsDao())
 
+    /** Provides encryptor for sensitive database fields. */
     @Provides
     @Singleton
     fun provideCredentialEncryptor(
         @ApplicationContext context: Context,
     ): CredentialEncryptor = CredentialEncryptor(context)
 
+    /** Builds the singleton ACP connection manager for the app process. */
     @Provides
     @Singleton
     fun provideAcpConnectionManager(
@@ -120,6 +132,23 @@ object AppModule {
         return AcpConnectionManager(connectivityObserver, scope)
     }
 
+    /** Supplies the chat-session facade factory backed by ACP. */
+    @Provides
+    @Singleton
+    fun provideChatSessionFacadeFactory(
+        connectionManager: AcpConnectionManager,
+        launchableTargetRepository: LaunchableTargetRepository,
+        gatewaySourceRepository: GatewaySourceRepository,
+        gatewayRepository: GatewayRepository,
+    ): ChatSessionFacadeFactory =
+        AcpChatSessionFacadeFactory(
+            connectionManager = connectionManager,
+            launchableTargetRepository = launchableTargetRepository,
+            gatewaySourceRepository = gatewaySourceRepository,
+            gatewayRepository = gatewayRepository,
+        )
+
+    /** Provides a shared JSON configuration for network and persistence layers. */
     @Provides
     @Singleton
     fun provideJson(): Json =
@@ -127,6 +156,7 @@ object AppModule {
             ignoreUnknownKeys = true
         }
 
+    /** Provides a singleton Ktor HTTP client. */
     @Provides
     @Singleton
     fun provideHttpClient(): HttpClient = HttpClient(CIO)

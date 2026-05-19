@@ -1,6 +1,6 @@
 package com.tamimarafat.ferngeist.feature.chat
 
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionLoadState
+import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +12,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** Coverage for markdown caching and hydration behavior. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MarkdownStateStoreTest {
     @Test
@@ -43,7 +44,7 @@ class MarkdownStateStoreTest {
             val projection =
                 store.onSnapshot(
                     messages = currentMessages,
-                    loadState = SessionLoadState.HYDRATING,
+                    loadState = ChatLoadState.HYDRATING,
                 )
 
             assertTrue(projection.pendingInitialHydration)
@@ -67,7 +68,7 @@ class MarkdownStateStoreTest {
             val initial =
                 store.onSnapshot(
                     messages = currentMessages,
-                    loadState = SessionLoadState.READY,
+                    loadState = ChatLoadState.READY,
                 )
             assertFalse(initial.pendingInitialHydration)
             assertEquals(setOf("message_1"), initial.markdownStates.keys)
@@ -79,7 +80,7 @@ class MarkdownStateStoreTest {
             val changed =
                 store.onSnapshot(
                     messages = currentMessages,
-                    loadState = SessionLoadState.READY,
+                    loadState = ChatLoadState.READY,
                 )
 
             assertEquals(setOf("message_1"), changed.markdownStates.keys)
@@ -89,7 +90,7 @@ class MarkdownStateStoreTest {
             val settled =
                 store.onSnapshot(
                     messages = currentMessages,
-                    loadState = SessionLoadState.READY,
+                    loadState = ChatLoadState.READY,
                 )
 
             assertFalse(settled.pendingInitialHydration)
@@ -112,7 +113,7 @@ class MarkdownStateStoreTest {
             val initial =
                 store.onSnapshot(
                     messages = currentMessages,
-                    loadState = SessionLoadState.READY,
+                    loadState = ChatLoadState.READY,
                 )
             assertEquals(setOf("message_1"), initial.markdownStates.keys)
 
@@ -120,13 +121,14 @@ class MarkdownStateStoreTest {
             val cleared =
                 store.onSnapshot(
                     messages = currentMessages,
-                    loadState = SessionLoadState.READY,
+                    loadState = ChatLoadState.READY,
                 )
 
             assertTrue(cleared.markdownStates.isEmpty())
             assertFalse(cleared.pendingInitialHydration)
         }
 
+    /** Builds a markdown store for tests with overridable callbacks. */
     private fun createStore(
         scope: CoroutineScope,
         currentMessages: () -> List<ChatMessage>,
@@ -139,6 +141,7 @@ class MarkdownStateStoreTest {
             trace = {},
         )
 
+    /** Helper for creating assistant messages with optional segments. */
     private fun assistantMessage(
         id: String,
         text: String,

@@ -3,43 +3,43 @@ package com.tamimarafat.ferngeist.feature.chat
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAgentCapabilities
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
-import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectionDiagnostics
-import com.tamimarafat.ferngeist.acp.bridge.session.CommandInfo
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigOption
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionLoadState
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionSnapshot
 import com.tamimarafat.ferngeist.core.common.MviViewModel
+import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
+import com.tamimarafat.ferngeist.core.model.ChatCommand
+import com.tamimarafat.ferngeist.core.model.ChatConfigOption
+import com.tamimarafat.ferngeist.core.model.ChatConfigValue
+import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatImageData
+import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatMessage
+import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
+import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
+import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
 import com.tamimarafat.ferngeist.core.model.SessionSummary
-import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
-import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
+import com.tamimarafat.ferngeist.core.model.UsageState
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.mikepenz.markdown.model.State as MarkdownRenderState
 
+/**
+ * Orchestrates chat UI state by binding the session facade, scroll state, and markdown parsing.
+ *
+ * The view model holds no ACP details; all transport-specific logic is delegated to the facade.
+ */
 @HiltViewModel
 class ChatViewModel
     @Inject
     constructor(
-        private val connectionManager: AcpConnectionManager,
-        private val gatewaySourceRepository: GatewaySourceRepository,
-        private val launchableTargetRepository: LaunchableTargetRepository,
+        sessionFacadeFactory: ChatSessionFacadeFactory,
         private val sessionRepository: SessionRepository,
-        private val gatewayRepository: GatewayRepository,
         private val chatScrollStateStore: ChatScrollStateStore,
         val recentSelectionStore: RecentSelectionStore,
         savedStateHandle: SavedStateHandle,
-    ) : MviViewModel<ChatState, ChatIntent, ChatEffect>(
-            initialChatState(),
-        ) {
+    ) : MviViewModel<ChatState, ChatIntent, ChatEffect>(initialChatState()) {
+
         companion object {
             private const val TRACE_TAG = "TSChatVM"
 
@@ -50,17 +50,21 @@ class ChatViewModel
         private val sessionId: String = savedStateHandle["sessionId"] ?: error("sessionId is required")
         private val cwd: String = savedStateHandle["cwd"] ?: "/"
         private val sessionUpdatedAt: Long? = savedStateHandle.get<Long>("updatedAt")?.takeIf { it > 0L }
+        private val sessionFacade: ChatSessionFacade =
+            sessionFacadeFactory.create(
+                scope = viewModelScope,
+                serverId = serverId,
+                sessionId = sessionId,
+                cwd = cwd,
+            )
         private val markdownStateStore =
             MarkdownStateStore(
                 scope = viewModelScope,
                 currentMessages = { state.value.messages },
                 onMarkdownStatesChanged = { markdownStates ->
                     updateState {
-                        if (markdownStates == this.markdownStates) {
-                            this
-                        } else {
-                            copy(markdownStates = markdownStates)
-                        }
+                        if (markdownStates == this.markdownStates) this
+                        else copy(markdownStates = markdownStates)
                     }
                 },
                 trace = { message -> trace(message) },
@@ -68,15 +72,7 @@ class ChatViewModel
         private val sessionCoordinator =
             ChatSessionCoordinator(
                 scope = viewModelScope,
-                connectionManager = connectionManager,
-                launchableTargetRepository = launchableTargetRepository,
-                gatewaySourceRepository = gatewaySourceRepository,
-                gatewayRepository = gatewayRepository,
-                serverId = serverId,
-                initialSessionId = sessionId,
-                cwd = cwd,
-                trace = { message -> trace(message) },
-                logError = { message, error -> logError(message, error) },
+                facade = sessionFacade,
                 callbacks =
                     object : ChatSessionCoordinator.Callbacks {
                         override suspend fun onLoadStarted() {
@@ -94,7 +90,7 @@ class ChatViewModel
                             }
                         }
 
-                        override suspend fun onSnapshot(snapshot: SessionSnapshot) {
+                        override suspend fun onSnapshot(snapshot: ChatSessionSnapshot) {
                             applySnapshot(snapshot)
                         }
 
@@ -164,11 +160,11 @@ class ChatViewModel
                             emitEffect(ChatEffect.ShowMessage("Model updated"))
                         }
 
-                        override suspend fun onCapabilitiesChanged(capabilities: AcpAgentCapabilities) {
+                        override suspend fun onCapabilitiesChanged(capabilities: ChatAgentCapabilities) {
                             updateState {
                                 copy(
-                                    canSendImages = capabilities.prompt.image,
-                                    supportsEmbeddedContext = capabilities.prompt.embeddedContext,
+                                    canSendImages = capabilities.canSendImages,
+                                    supportsEmbeddedContext = capabilities.supportsEmbeddedContext,
                                 )
                             }
                         }
@@ -185,59 +181,58 @@ class ChatViewModel
                 sessionCoordinator.loadSession()
             }
             viewModelScope.launch {
-                connectionManager.connectionState.collect { connectionState ->
+                sessionFacade.connectionState.collect { connectionState ->
                     updateState {
                         copy(
                             connectionState = connectionState,
                             isSessionReady =
-                                if (
-                                    connectionState is AcpConnectionState.Connected
-                                ) {
+                                if (connectionState is ChatConnectionState.Connected) {
                                     isSessionReady
                                 } else {
                                     false
                                 },
                             isStreaming =
-                                if (
-                                    connectionState is AcpConnectionState.Connected
-                                ) {
+                                if (connectionState is ChatConnectionState.Connected) {
                                     isStreaming
                                 } else {
                                     false
                                 },
                         )
                     }
-                    sessionCoordinator.onConnectionStateChanged(connectionState)
                 }
             }
             viewModelScope.launch {
-                connectionManager.diagnostics.collect { diagnostics ->
+                sessionFacade.diagnostics.collect { diagnostics ->
                     updateState { copy(connectionDiagnostics = diagnostics) }
                 }
             }
         }
 
-        private suspend fun applySnapshot(snapshot: SessionSnapshot) {
+        /**
+         * Applies a snapshot from the facade to UI state, keeping markdown hydration in sync.
+         */
+        private suspend fun applySnapshot(snapshot: ChatSessionSnapshot) {
             val markdownProjection =
                 markdownStateStore.onSnapshot(
                     messages = snapshot.messages,
                     loadState = snapshot.loadState,
                 )
             updateState {
-                val failed = snapshot.loadState == SessionLoadState.FAILED
+                val failed = snapshot.loadState == ChatLoadState.FAILED
                 copy(
                     messages = snapshot.messages,
                     markdownStates = markdownProjection.markdownStates,
                     isStreaming = snapshot.isStreaming,
-                    usage = snapshot.toUsageState(),
+                    usage = snapshot.usage,
                     availableCommands = snapshot.availableCommands,
                     commandsAdvertised = snapshot.commandsAdvertised,
                     configOptions = snapshot.configOptions,
+                    // Loading ends only after session state is ready *and* markdown has hydrated.
                     isLoading =
-                        snapshot.loadState == SessionLoadState.HYDRATING ||
+                        snapshot.loadState == ChatLoadState.HYDRATING ||
                             markdownProjection.pendingInitialHydration,
                     isSessionReady =
-                        snapshot.loadState == SessionLoadState.READY &&
+                        snapshot.loadState == ChatLoadState.READY &&
                             !markdownProjection.pendingInitialHydration,
                     error =
                         if (failed) {
@@ -249,25 +244,15 @@ class ChatViewModel
             }
         }
 
-        private fun SessionSnapshot.toUsageState(): UsageState? {
-            val usage = usage ?: return null
-            return UsageState(
-                promptTokens = usage.promptTokens,
-                completionTokens = usage.completionTokens,
-                totalTokens = usage.totalTokens,
-                cachedReadTokens = usage.cachedReadTokens,
-                contextWindowTokens = usage.contextWindowTokens,
-                costAmount = usage.costAmount,
-                costCurrency = usage.costCurrency,
-            )
-        }
-
         override fun onCleared() {
             markdownStateStore.reset()
             sessionCoordinator.clear()
             super.onCleared()
         }
 
+        /**
+         * Routes UI intents to the coordinator so ACP details stay outside the view model.
+         */
         override suspend fun handleIntent(intent: ChatIntent) {
             when (intent) {
                 is ChatIntent.SendMessage -> sessionCoordinator.sendMessage(intent.text, intent.images)
@@ -279,38 +264,29 @@ class ChatViewModel
             }
         }
 
+        /**
+         * Persists and mirrors the latest scroll snapshot for restore on re-entry.
+         */
         fun persistScrollSnapshot(snapshot: ChatScrollSnapshot) {
             viewModelScope.launch {
                 chatScrollStateStore.save(serverId, sessionId, snapshot)
             }
             updateState {
-                if (restoredScrollSnapshot == snapshot) {
-                    this
-                } else {
-                    copy(restoredScrollSnapshot = snapshot)
-                }
+                if (restoredScrollSnapshot == snapshot) this
+                else copy(restoredScrollSnapshot = snapshot)
             }
         }
 
+        /** Debug-only trace logger. */
         private fun trace(message: String) {
             if (!BuildConfig.DEBUG) return
             runCatching { Log.d(TRACE_TAG, message) }
         }
 
-        private fun logError(
-            message: String,
-            error: Throwable? = null,
-        ) {
-            runCatching {
-                if (error == null) {
-                    Log.e("ChatViewModel", message)
-                } else {
-                    Log.e("ChatViewModel", message, error)
-                }
-            }
-        }
+
     }
 
+/** UI state for the chat screen. */
 data class ChatState(
     val serverId: String = "",
     val messages: List<ChatMessage> = emptyList(),
@@ -320,27 +296,18 @@ data class ChatState(
     val isStreaming: Boolean = false,
     val isSessionReady: Boolean = false,
     val canCancelStreaming: Boolean = true,
-    val connectionState: AcpConnectionState = AcpConnectionState.Disconnected,
-    val connectionDiagnostics: ConnectionDiagnostics = ConnectionDiagnostics(),
-    val configOptions: List<SessionConfigOption> = emptyList(),
+    val connectionState: ChatConnectionState = ChatConnectionState.Disconnected,
+    val connectionDiagnostics: ChatConnectionDiagnostics = ChatConnectionDiagnostics(),
+    val configOptions: List<ChatConfigOption> = emptyList(),
     val usage: UsageState? = null,
-    val availableCommands: List<CommandInfo> = emptyList(),
+    val availableCommands: List<ChatCommand> = emptyList(),
     val commandsAdvertised: Boolean = false,
     val canSendImages: Boolean = false,
     val supportsEmbeddedContext: Boolean = false,
     val error: String? = null,
 )
 
-data class UsageState(
-    val promptTokens: Int? = null,
-    val completionTokens: Int? = null,
-    val totalTokens: Int? = null,
-    val cachedReadTokens: Int? = null,
-    val contextWindowTokens: Int? = null,
-    val costAmount: Double? = null,
-    val costCurrency: String? = null,
-)
-
+/** User intents emitted from the chat UI. */
 sealed interface ChatIntent {
     data class SendMessage(
         val text: String,
@@ -351,7 +318,7 @@ sealed interface ChatIntent {
 
     data class SetConfigOption(
         val optionId: String,
-        val value: SessionConfigValue,
+        val value: ChatConfigValue,
     ) : ChatIntent
 
     data class GrantPermission(
@@ -366,14 +333,9 @@ sealed interface ChatIntent {
     data object RetryLoad : ChatIntent
 }
 
+/** One-shot effects emitted to the UI layer (snackbar, navigation, etc.). */
 sealed interface ChatEffect {
-    data class ShowError(
-        val message: String,
-    ) : ChatEffect
-
-    data class ShowMessage(
-        val message: String,
-    ) : ChatEffect
-
+    data class ShowError(val message: String) : ChatEffect
+    data class ShowMessage(val message: String) : ChatEffect
     data object NavigateBack : ChatEffect
 }

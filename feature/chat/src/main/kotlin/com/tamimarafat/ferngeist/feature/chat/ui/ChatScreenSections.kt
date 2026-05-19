@@ -56,11 +56,11 @@ import androidx.compose.ui.unit.dp
 import com.agentclientprotocol.model.ContentBlock
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolKind
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
-import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectionDiagnostics
-import com.tamimarafat.ferngeist.acp.bridge.session.CommandInfo
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigOption
-import com.tamimarafat.ferngeist.acp.bridge.session.allChoices
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
+import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
+import com.tamimarafat.ferngeist.core.model.ChatCommand
+import com.tamimarafat.ferngeist.core.model.ChatConfigOption
+import com.tamimarafat.ferngeist.core.model.allChoices
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionDiagnosticsDialog
 import com.tamimarafat.ferngeist.core.model.AcpPermissionOption
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
@@ -69,13 +69,16 @@ import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.feature.chat.ChatState
 import com.tamimarafat.ferngeist.feature.chat.R
 import com.tamimarafat.ferngeist.feature.chat.RecentSelectionStore
-import com.tamimarafat.ferngeist.feature.chat.UsageState
+import com.tamimarafat.ferngeist.core.model.UsageState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
+/**
+ * Hosts the dialog/overlay surfaces that sit above the main chat UI.
+ */
 @Composable
 internal fun ChatScreenDialogs(
-    selectedConfigPickerOption: SessionConfigOption.Select?,
+    selectedConfigPickerOption: ChatConfigOption.Select?,
     onConfigOptionSelected: (String, String) -> Unit,
     onDismissConfigPicker: () -> Unit,
     selectedThought: String?,
@@ -86,12 +89,12 @@ internal fun ChatScreenDialogs(
     onPermissionGrant: (String, String) -> Unit,
     onPermissionDeny: (String) -> Unit,
     showConnectionStatusDialog: Boolean,
-    connectionState: AcpConnectionState,
-    diagnostics: ConnectionDiagnostics,
+    connectionState: ChatConnectionState,
+    diagnostics: ChatConnectionDiagnostics,
     usage: UsageState?,
     onDismissConnectionStatus: () -> Unit,
     showCommandsDialog: Boolean,
-    commands: List<CommandInfo>,
+    commands: List<ChatCommand>,
     serverId: String,
     recentSelectionStore: RecentSelectionStore,
     onDismissCommands: () -> Unit,
@@ -154,6 +157,9 @@ internal fun ChatScreenDialogs(
     }
 }
 
+/**
+ * Renders the main chat content area, switching between loading, error, and list states.
+ */
 @Composable
 internal fun ChatScreenBody(
     state: ChatState,
@@ -200,6 +206,9 @@ internal fun ChatScreenBody(
     }
 }
 
+/**
+ * Full-screen error placeholder shown when the session fails before any messages load.
+ */
 @Composable
 private fun ChatLoadError(
     message: String,
@@ -683,7 +692,7 @@ private fun PickerItemRow(
 
 @Composable
 private fun SelectConfigOptionSheet(
-    option: SessionConfigOption.Select,
+    option: ChatConfigOption.Select,
     serverId: String,
     recentSelectionStore: RecentSelectionStore,
     onOptionSelected: (String) -> Unit,
@@ -738,7 +747,7 @@ private fun SelectConfigOptionSheet(
 
 @Composable
 private fun CommandsSheet(
-    commands: List<CommandInfo>,
+    commands: List<ChatCommand>,
     serverId: String,
     recentSelectionStore: RecentSelectionStore,
     onCommandClick: (String) -> Unit,

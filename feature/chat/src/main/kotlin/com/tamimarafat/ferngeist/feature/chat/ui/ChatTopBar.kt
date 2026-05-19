@@ -32,7 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.feature.chat.R
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
 import com.tamimarafat.ferngeist.core.common.ui.SessionTitleSharedBoundsKey
@@ -56,7 +56,7 @@ internal fun ChatTopBar(
     sessionId: String,
     sessionTitle: String,
     activeModel: String?,
-    connectionState: AcpConnectionState,
+    connectionState: ChatConnectionState,
     totalTokens: Int?,
     contextWindowTokens: Int?,
     costAmount: Double?,

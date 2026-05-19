@@ -47,11 +47,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigCategory
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigOption
-import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
-import com.tamimarafat.ferngeist.acp.bridge.session.allChoices
-import com.tamimarafat.ferngeist.acp.bridge.session.displayValueLabel
+import com.tamimarafat.ferngeist.core.model.ChatConfigCategory
+import com.tamimarafat.ferngeist.core.model.ChatConfigOption
+import com.tamimarafat.ferngeist.core.model.ChatConfigValue
+import com.tamimarafat.ferngeist.core.model.allChoices
+import com.tamimarafat.ferngeist.core.model.displayValueLabel
 import com.tamimarafat.ferngeist.core.common.ui.SessionSharedBoundsKey
 import com.tamimarafat.ferngeist.feature.chat.ChatIntent
 import com.tamimarafat.ferngeist.feature.chat.R
@@ -142,26 +142,26 @@ fun ChatScreen(
     val activeModel =
         remember(state.configOptions) {
             state.configOptions
-                .firstOrNull { it.category is SessionConfigCategory.Model }
+                .firstOrNull { it.category is ChatConfigCategory.Model }
                 ?.displayValueLabel()
         }
     val modeOption =
         remember(state.configOptions) {
             state.configOptions
-                .filterIsInstance<SessionConfigOption.Select>()
+                .filterIsInstance<ChatConfigOption.Select>()
                 .firstOrNull {
-                    it.category is SessionConfigCategory.Mode && it.allChoices().isNotEmpty()
+                    it.category is ChatConfigCategory.Mode && it.allChoices().isNotEmpty()
                 }
         }
     val toolbarConfigOptions =
         remember(state.configOptions) {
-            state.configOptions.filterNot { it.category is SessionConfigCategory.Mode }
+            state.configOptions.filterNot { it.category is ChatConfigCategory.Mode }
         }
     val selectedConfigPickerOption =
         remember(state.configOptions, selectedConfigPickerOptionId) {
             val optionId = selectedConfigPickerOptionId ?: return@remember null
             state.configOptions.firstOrNull { it.id == optionId }
-                as? SessionConfigOption.Select
+                as? ChatConfigOption.Select
         }
 
     // --- Streaming / stop flags ---
@@ -331,7 +331,7 @@ fun ChatScreen(
                             viewModel.dispatch(
                                 ChatIntent.SetConfigOption(
                                     optionId = optionId,
-                                    value = SessionConfigValue.StringValue(value),
+                                    value = ChatConfigValue.StringValue(value),
                                 ),
                             )
                         },
@@ -426,7 +426,7 @@ fun ChatScreen(
                                 viewModel.dispatch(
                                     ChatIntent.SetConfigOption(
                                         optionId = optionId,
-                                        value = SessionConfigValue.StringValue(value),
+                                        value = ChatConfigValue.StringValue(value),
                                     ),
                                 )
                             },
@@ -434,7 +434,7 @@ fun ChatScreen(
                                 viewModel.dispatch(
                                     ChatIntent.SetConfigOption(
                                         optionId = optionId,
-                                        value = SessionConfigValue.BoolValue(value),
+                                        value = ChatConfigValue.BoolValue(value),
                                     ),
                                 )
                             },

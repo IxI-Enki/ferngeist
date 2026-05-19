@@ -106,6 +106,7 @@ dependencies {
     implementation(projects.feature.serverlist)
     implementation(projects.feature.sessionlist)
     implementation(projects.feature.chat)
+    implementation(projects.gatewayClient)
 
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.core.ktx)

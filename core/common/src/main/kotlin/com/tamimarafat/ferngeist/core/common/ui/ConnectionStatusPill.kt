@@ -33,49 +33,26 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.core.common.R
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import androidx.compose.ui.platform.LocalLocale
 
 /**
- * Floating pill showing the ACP connection state as a colored dot, loading spinner, or
- * a donut chart of session context usage when connected and usage data is available.
+ * Compact connection status button with a tooltip for usage/cost details.
  *
- * The pill is a circular [FilledTonalButton] with [secondaryContainer] color.
- *
- * When [connectionState] is [AcpConnectionState.Connected] and both [totalTokens] and
- * [contextWindowTokens] are non-null with [contextWindowTokens] > 0, a Canvas donut arc is
- * drawn showing the usage ratio (sweep from 12 o'clock). The arc uses
- * [MaterialTheme.colorScheme.primary], shifting to [MaterialTheme.colorScheme.error] when
- * the ratio exceeds 95%.
- *
- * Otherwise the indicator follows [connectionState]:
- * - [AcpConnectionState.Connecting] → [CircularProgressIndicator] (12dp)
- * - [AcpConnectionState.Connected] → [MaterialTheme.colorScheme.primary] dot
- * - [AcpConnectionState.Failed] → [MaterialTheme.colorScheme.error] dot
- * - [AcpConnectionState.Disconnected] → [MaterialTheme.colorScheme.outlineVariant] dot
- *
- * Long-press shows a [RichTooltip] with connection status and, when donut mode is active,
- * compact context usage info (e.g. "24K used of 128K context").
- *
- * @param connectionState The current ACP connection state to display.
- * @param totalTokens Total tokens used in the session, or null if unknown.
- * @param contextWindowTokens Context window size in tokens, or null if unknown.
- * @param costAmount Session cost amount, or null if unknown.
- * @param costCurrency ISO 4217 currency code (e.g. "USD"), or null if unknown.
- * @param onClick Called when the pill is tapped (e.g. open diagnostics dialog).
- * @param modifier Optional [Modifier] applied to the outer [FilledTonalButton].
+ * The pill renders a state icon (spinner, dot, or ring) and uses the tooltip to
+ * surface token/cost metrics when provided.
  */
 @ExperimentalMaterial3Api
 @Composable
 fun ConnectionStatusPill(
-    connectionState: AcpConnectionState,
+    modifier: Modifier = Modifier,
+    connectionState: ChatConnectionState,
     totalTokens: Int? = null,
     contextWindowTokens: Int? = null,
     costAmount: Double? = null,
     costCurrency: String? = null,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val connectionLabel = connectionStateLabel(connectionState)
     val connectionStatusDesc = stringResource(R.string.common_connection_status_desc)
@@ -121,13 +98,13 @@ fun ConnectionStatusPill(
                     },
         ) {
             when (connectionState) {
-                is AcpConnectionState.Connecting ->
+                is ChatConnectionState.Connecting ->
                     CircularProgressIndicator(
                         modifier = Modifier.size(12.dp),
                         strokeWidth = 1.5.dp,
                     )
 
-                is AcpConnectionState.Connected ->
+                is ChatConnectionState.Connected ->
                     if (totalTokens != null && contextWindowTokens != null && contextWindowTokens > 0) {
                         val ratio by animateFloatAsState(
                             targetValue = (totalTokens.toFloat() / contextWindowTokens.toFloat())
@@ -146,14 +123,14 @@ fun ConnectionStatusPill(
                         ) {}
                     }
 
-                is AcpConnectionState.Failed ->
+                is ChatConnectionState.Failed ->
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(10.dp),
                     ) {}
 
-                is AcpConnectionState.Disconnected ->
+                is ChatConnectionState.Disconnected ->
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.outlineVariant,

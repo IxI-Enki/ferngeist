@@ -46,6 +46,7 @@ dependencies {
 
     // === Internal ===
     implementation(project(":core:model"))
+    implementation(project(":gateway-client"))
     implementation(libs.androidx.annotation.jvm)
 
     // === Testing ===

@@ -91,6 +91,56 @@ Requires Android 13+ (`minSdk = 33`).
 cmd /c gradlew.bat :app:assembleDebug
 ```
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph UI["UI layer"]
+        App["app/\nNavigation + Hilt"]
+        Features["feature/*\nserverlist · sessionlist · chat"]
+    end
+
+    subgraph Shared["Shared contracts"]
+        Core["core/model\nDomain models + repository APIs"]
+        Common["core/common\nShared utilities"]
+    end
+
+    subgraph Services["App services"]
+        Bridge["acp-bridge\nChat facade + ACP session orchestration"]
+        GatewayClient["gateway-client\nGateway pairing + REST client"]
+        Persistence["data/*\nRoom + DataStore"]
+    end
+
+    subgraph External["Outside the APK"]
+        Gateway["Ferngeist ACP Gateway\noptional local-agent launcher"]
+        Agent["ACP-compatible agent"]
+        SDK["ACP Kotlin SDK\nWebSocket client + sessions"]
+    end
+
+    App --> Features
+    Features --> Core
+    Features --> Common
+    Features --> Bridge
+    Features --> GatewayClient
+
+    Persistence -.->|implements| Core
+    Bridge -.->|implements ChatSessionFacade| Core
+    Bridge --> GatewayClient
+    Bridge --> SDK
+    GatewayClient -->|REST| Gateway
+    SDK -->|gateway WebSocket| Gateway
+    SDK -->|manual WebSocket| Agent
+    Gateway --> Agent
+```
+
+**Key data flow:**
+1. `app/` owns navigation and Hilt bindings, then routes users into the feature modules.
+2. Feature modules render Compose UI and depend on `core/model` contracts instead of persistence details.
+3. `data/*` provides the local Room/DataStore implementations for saved servers, gateway bindings, and preferences.
+4. `acp-bridge` implements `ChatSessionFacade`, manages ACP connections/sessions, and converts SDK callbacks into app events.
+5. `gateway-client` handles pairing and gateway REST calls; the bridge uses it when a chat starts from a gateway-backed agent.
+6. Manual servers connect directly to an ACP agent through the SDK, while gateway-backed agents go through the optional Ferngeist ACP Gateway first.
+
 ## Project Structure
 
 ```
@@ -102,6 +152,7 @@ data/database/        Room database, DAOs, entities
 feature/serverlist/   Saved server management UI
 feature/sessionlist/  Session listing and creation
 feature/chat/         Streaming chat UI, reducers, markdown state
+gateway-client/       Ferngeist ACP Gateway HTTP client
 gradle/               Version catalog
 ```
 

@@ -153,7 +153,7 @@ private fun UserMessageContent(
         if (message.content.isNotBlank()) {
             Text(
                 text = message.content,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = textColor,
             )
         }
@@ -244,11 +244,11 @@ private fun MarkdownText(
         h4 = MaterialTheme.typography.bodyLarge,
         h5 = MaterialTheme.typography.bodyMedium,
         h6 = MaterialTheme.typography.bodySmall,
-        text = MaterialTheme.typography.bodyLarge,
-        paragraph = MaterialTheme.typography.bodyLarge,
-        list = MaterialTheme.typography.bodyLarge,
-        bullet = MaterialTheme.typography.bodyLarge,
-        ordered = MaterialTheme.typography.bodyLarge,
+        text = MaterialTheme.typography.bodyMedium,
+        paragraph = MaterialTheme.typography.bodyMedium,
+        list = MaterialTheme.typography.bodyMedium,
+        bullet = MaterialTheme.typography.bodyMedium,
+        ordered = MaterialTheme.typography.bodyMedium,
     )
     if (state != null) {
         SelectionContainer {
@@ -341,7 +341,7 @@ private fun PlanBubble(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = entry.content,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = if (isPending) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
                         else if (isInProgress) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
@@ -533,7 +533,7 @@ private fun StreamingIndicator(
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = stringResource(R.string.chat_streaming_indicator, spinnerVerb),
-            style = MaterialTheme.typography.bodyMedium.copy(
+            style = MaterialTheme.typography.bodySmall.copy(
                 brush = textBrush,
             ),
         )

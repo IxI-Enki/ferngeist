@@ -98,6 +98,7 @@ import com.tamimarafat.ferngeist.core.model.SessionSummary
 import com.tamimarafat.ferngeist.feature.sessionlist.SessionListEvent
 import com.tamimarafat.ferngeist.feature.sessionlist.SessionListPendingAuthentication
 import com.tamimarafat.ferngeist.feature.sessionlist.SessionListViewModel
+import com.tamimarafat.ferngeist.feature.sessionlist.R
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -308,7 +309,7 @@ fun SessionListScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.FolderOpen,
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.sessionlist_cwd_desc),
                                     modifier = Modifier.size(18.dp),
                                     tint = MaterialTheme.colorScheme.primary,
                                 )

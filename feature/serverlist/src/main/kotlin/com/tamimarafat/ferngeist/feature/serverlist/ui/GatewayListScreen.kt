@@ -39,6 +39,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.core.model.GatewaySource
@@ -73,7 +75,7 @@ fun GatewayListScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onPairAnother) {
-                Icon(Icons.Default.Add, contentDescription = null)
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.serverlist_add_gateway_btn))
             }
         },
     ) { padding ->
@@ -118,7 +120,10 @@ private fun GatewayCard(
                     .combinedClickable(
                         onClick = onOpenGatewayAgents,
                         onLongClick = { showActionsMenu = true },
-                    ),
+                    )
+                    .semantics {
+                        contentDescription = gateway.name
+                    },
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),

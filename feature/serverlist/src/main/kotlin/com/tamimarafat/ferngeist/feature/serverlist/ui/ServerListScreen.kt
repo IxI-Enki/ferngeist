@@ -5,6 +5,9 @@ import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +32,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.rounded.Info
@@ -66,6 +68,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -196,9 +199,21 @@ fun ServerListScreen(
                         checked = showAddMenu,
                         onCheckedChange = { showAddMenu = it },
                     ) {
+                        val fabRotation by animateFloatAsState(
+                            targetValue = if (showAddMenu) 45f else 0f,
+                            animationSpec = tween(durationMillis = 200),
+                            label = "fabRotation",
+                        )
+                        val fabTint by animateColorAsState(
+                            targetValue = if (showAddMenu) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                            animationSpec = tween(durationMillis = 200),
+                            label = "fabTint",
+                        )
                         Icon(
-                            imageVector = if (showAddMenu) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = null,
+                            modifier = Modifier.graphicsLayer { rotationZ = fabRotation },
+                            imageVector = Icons.Default.Add,
+                            tint = fabTint,
+                            contentDescription = if (showAddMenu) stringResource(R.string.serverlist_fab_close) else stringResource(R.string.serverlist_fab_add),
                         )
                     }
                 },
@@ -212,7 +227,7 @@ fun ServerListScreen(
                             onNavigateToPairGateway()
                         }
                     },
-                    icon = { Icon(Icons.Default.Devices, contentDescription = null) },
+                    icon = { Icon(Icons.Default.Devices, contentDescription = stringResource(R.string.serverlist_add_gateway_btn)) },
                     text = { Text(if (hasGateways) stringResource(R.string.serverlist_add_paired_btn) else stringResource(R.string.serverlist_add_gateway_btn)) },
                 )
                 FloatingActionButtonMenuItem(
@@ -220,7 +235,7 @@ fun ServerListScreen(
                         showAddMenu = false
                         onNavigateToAddServer()
                     },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    icon = { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.serverlist_add_agent_btn)) },
                     text = { Text(stringResource(R.string.serverlist_add_agent_btn)) },
                 )
             }

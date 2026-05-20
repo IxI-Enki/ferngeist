@@ -59,6 +59,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -106,7 +109,7 @@ internal fun ServerCard(
             icon = {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.serverlist_card_delete),
                     tint = MaterialTheme.colorScheme.error,
                 )
             },
@@ -152,7 +155,11 @@ internal fun ServerCard(
                         enabled = !connectionState.isConnecting,
                         onClick = onClick,
                         onLongClick = { showActionsMenu = true },
-                    ),
+                        role = Role.Button,
+                    )
+                    .semantics {
+                        contentDescription = server.name
+                    },
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
         ) {
@@ -235,19 +242,19 @@ private fun ServerSubtitle(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (hasSavedAuthMethod) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = stringResource(R.string.serverlist_add_server_stored_auth),
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
         }
 
         when (server) {
             is LaunchableTarget.GatewayAgent -> {
                 Icon(
                     imageVector = Icons.Default.Devices,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.serverlist_card_from_gateway),
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

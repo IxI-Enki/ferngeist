@@ -23,6 +23,12 @@
     <string name="serverlist_empty_title">No agents yet</string>
     <string name="serverlist_empty_body">Add an agent manually or pair a gateway to build your launch list.</string>
     <string name="serverlist_empty_action">Add agent</string>
+    <string name="serverlist_fab_add">Add server or gateway</string>
+    <string name="serverlist_fab_close">Close menu</string>
+
+    <string name="serverlist_card_from_gateway">From gateway</string>
+    <string name="serverlist_gateway_qr_label">QR pairing payload</string>
+    <string name="serverlist_scan_qr_desc">Scan QR code</string>
 
     <!-- Auth dialog (server list) -->
     <string name="serverlist_auth_title">Authenticate %1$s</string>

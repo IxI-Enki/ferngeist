@@ -20,6 +20,11 @@
     <string name="serverlist_empty_title">Ainda não há agentes</string>
     <string name="serverlist_empty_body">Adicione um agente manualmente ou pareie uma gateway para montar sua lista de inicialização.</string>
     <string name="serverlist_empty_action">Adicionar agente</string>
+    <string name="serverlist_fab_add">Adicionar servidor ou gateway</string>
+    <string name="serverlist_fab_close">Fechar menu</string>
+    <string name="serverlist_card_from_gateway">Do gateway</string>
+    <string name="serverlist_gateway_qr_label">Payload de pareamento QR</string>
+    <string name="serverlist_scan_qr_desc">Escanear QR</string>
 
     <string name="serverlist_auth_title">Autenticar %1$s</string>
     <string name="serverlist_auth_body">O agente "%1$s" exige autenticação ACP antes que sessões possam ser abertas.</string>

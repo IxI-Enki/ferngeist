@@ -26,6 +26,8 @@ import androidx.compose.material3.TwoRowsTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -223,7 +225,10 @@ internal fun ChatTopBarTitle(
                             } else {
                                 Modifier
                             },
-                        ).clickable(onClick = onTitleClick),
+                        ).clickable(onClick = onTitleClick)
+                        .semantics {
+                            contentDescription = sessionTitle
+                        },
             )
         }
     } else {
@@ -235,7 +240,10 @@ internal fun ChatTopBarTitle(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(percent = 50))
-                    .clickable(onClick = onTitleClick),
+                    .clickable(onClick = onTitleClick)
+                    .semantics {
+                        contentDescription = sessionTitle
+                    },
         ) {
             with(sharedTransitionScope) {
                 Text(

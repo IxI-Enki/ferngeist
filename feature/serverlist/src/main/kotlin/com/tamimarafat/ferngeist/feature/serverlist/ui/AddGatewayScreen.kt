@@ -54,6 +54,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -555,7 +557,7 @@ private fun EditGatewayScreen(
                     placeholder = { Text(stringResource(R.string.serverlist_add_gateway_host_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                    leadingIcon = { Icon(Icons.Default.Link, contentDescription = stringResource(R.string.serverlist_add_server_host_label)) },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(onClick = viewModel::checkStatus, enabled = !uiState.isCheckingStatus) {
@@ -611,7 +613,7 @@ private fun ImportPairingStep(
                 label = { Text(stringResource(R.string.serverlist_add_gateway_payload_label)) },
                 placeholder = { Text(stringResource(R.string.serverlist_add_gateway_payload_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Default.QrCode2, contentDescription = null) },
+                leadingIcon = { Icon(Icons.Default.QrCode2, contentDescription = stringResource(R.string.serverlist_gateway_qr_label)) },
             )
 
             Row(
@@ -633,7 +635,7 @@ private fun ImportPairingStep(
                 onClick = onScanQr,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null)
+                Icon(Icons.Default.CameraAlt, contentDescription = stringResource(R.string.serverlist_scan_qr_desc))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.serverlist_add_gateway_step_scan_title))
             }
@@ -702,7 +704,7 @@ private fun ReviewGatewayStep(
                 placeholder = { Text(stringResource(R.string.serverlist_add_gateway_host_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                leadingIcon = { Icon(Icons.Default.Link, contentDescription = stringResource(R.string.serverlist_add_server_host_label)) },
             )
 
             Text(
@@ -900,7 +902,11 @@ private fun GatewayProtocolOption(
         color = containerColor,
         contentColor = contentColor,
         border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
-        modifier = modifier.height(52.dp),
+        modifier = modifier
+            .height(52.dp)
+            .semantics {
+                contentDescription = label
+            },
     ) {
         Row(
             modifier =
@@ -913,7 +919,7 @@ private fun GatewayProtocolOption(
             if (code == "https") {
                 Icon(
                     Icons.Default.Key,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.serverlist_add_gateway_https),
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))

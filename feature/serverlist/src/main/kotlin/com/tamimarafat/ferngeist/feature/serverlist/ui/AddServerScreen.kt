@@ -304,7 +304,7 @@ fun AddServerScreen(
                 }
                 Icon(
                     Icons.Default.Save,
-                    contentDescription = null,
+                    contentDescription = if (viewModel.isEditMode) stringResource(R.string.serverlist_add_server_btn_update) else stringResource(R.string.serverlist_add_server_btn_add),
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -395,7 +395,7 @@ private fun ProtocolOption(
             if (code == "wss") {
                 Icon(
                     Icons.Default.Lock,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.serverlist_add_server_wss),
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
@@ -448,7 +448,7 @@ internal fun SectionCard(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = icon,
-                            contentDescription = null,
+                            contentDescription = title,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(18.dp),
                         )

@@ -21,12 +21,21 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.Help
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ContainedLoadingIndicator
@@ -48,9 +57,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -266,10 +278,15 @@ private fun ThoughtBubble(
         labelPrefix = "reasoning",
     )
 
+    val reasoningDesc = stringResource(R.string.chat_reasoning_desc)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onClick() },
+            .clickable { onClick() }
+            .semantics {
+                contentDescription = reasoningDesc
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -315,10 +332,10 @@ private fun PlanBubble(
                 ) {
                     Icon(
                         imageVector = if (isCompleted) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                        contentDescription = null,
+                        contentDescription = if (isCompleted) stringResource(R.string.chat_completed_desc) else stringResource(R.string.chat_plan_desc),
                         tint = if (isInProgress) MaterialTheme.colorScheme.primary
-                            else if (isPending) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
-                            else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha= 0.5f),
+                        else if (isPending) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
+                        else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -326,8 +343,8 @@ private fun PlanBubble(
                         text = entry.content,
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (isPending) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
-                            else if (isInProgress) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
+                        else if (isInProgress) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
                         fontWeight = if (isInProgress) FontWeight.Medium else null,
                         textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                         modifier = Modifier.weight(1f),
@@ -362,6 +379,9 @@ private fun ToolCallCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onClick() }
+                    .semantics {
+                        contentDescription = toolCall.title + " " + (toolCall.status?.name?.lowercase() ?: "unknown")
+                    }
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -376,15 +396,35 @@ private fun ToolCallCard(
                             modifier = Modifier.size(32.dp),
                         )
 
-                        ToolCallStatus.COMPLETED -> Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = stringResource(R.string.chat_completed_desc),
-                        )
+                        ToolCallStatus.COMPLETED -> Surface(
+                            modifier = Modifier.size(32.dp),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.primary,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    modifier = Modifier.size(20.dp),
+                                    imageVector = toolKindIcon(toolCall.kind),
+                                    contentDescription = stringResource(R.string.chat_completed_desc),
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
+                        }
 
-                        ToolCallStatus.FAILED -> Icon(
-                            imageVector = Icons.Default.Error,
-                            contentDescription = stringResource(R.string.chat_error_desc),
-                        )
+                        ToolCallStatus.FAILED -> Surface(
+                            modifier = Modifier.size(32.dp),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.error,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    modifier = Modifier.size(20.dp),
+                                    imageVector = Icons.Rounded.Error,
+                                    contentDescription = stringResource(R.string.chat_error_desc),
+                                    tint = MaterialTheme.colorScheme.onError,
+                                )
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -517,6 +557,20 @@ private val LOADING_SHAPES = listOf(
 
 private fun pickLoadingPolygons(seedKey: String) = LOADING_SHAPES.shuffled(Random(seedKey.hashCode())).take(6)
 
+private fun toolKindIcon(kind: ToolKind?): ImageVector = when (kind) {
+    ToolKind.READ -> Icons.Rounded.Search
+    ToolKind.EDIT -> Icons.Rounded.Edit
+    ToolKind.DELETE -> Icons.Rounded.Delete
+    ToolKind.MOVE -> Icons.AutoMirrored.Rounded.ArrowForward
+    ToolKind.SEARCH -> Icons.Rounded.Search
+    ToolKind.EXECUTE -> Icons.Rounded.PlayArrow
+    ToolKind.THINK -> Icons.Rounded.Refresh
+    ToolKind.FETCH -> Icons.Rounded.CloudDownload
+    ToolKind.SWITCH_MODE -> Icons.Rounded.Settings
+    ToolKind.OTHER -> Icons.Rounded.Build
+    null -> Icons.AutoMirrored.Rounded.Help
+}
+
 @Composable
 private fun rememberShimmerTextBrush(
     isActive: Boolean,
@@ -526,14 +580,14 @@ private fun rememberShimmerTextBrush(
     val shimmerTransition = rememberInfiniteTransition(label = "${labelPrefix}Shimmer")
     val shimmerOffset = if (isActive) {
         shimmerTransition.animateFloat(
-                initialValue = -200f,
-                targetValue = 600f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 1400, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart,
-                ),
-                label = "${labelPrefix}ShimmerOffset",
-            ).value
+            initialValue = -200f,
+            targetValue = 600f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "${labelPrefix}ShimmerOffset",
+        ).value
     } else {
         0f
     }
@@ -587,7 +641,7 @@ private fun ToolCallCardPreview() {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ToolCallCard(
                     toolCall = ToolCallDisplay(
-                        title = "list_files",
+                        title = "list_files (READ · IN_PROGRESS)",
                         kind = ToolKind.READ,
                         status = ToolCallStatus.IN_PROGRESS,
                     ),
@@ -595,7 +649,7 @@ private fun ToolCallCardPreview() {
                 )
                 ToolCallCard(
                     toolCall = ToolCallDisplay(
-                        title = "read_file",
+                        title = "search_code (READ · COMPLETED)",
                         kind = ToolKind.READ,
                         status = ToolCallStatus.COMPLETED,
                     ),
@@ -603,15 +657,87 @@ private fun ToolCallCardPreview() {
                 )
                 ToolCallCard(
                     toolCall = ToolCallDisplay(
-                        title = "write_file",
+                        title = "search (SEARCH · COMPLETED)",
+                        kind = ToolKind.SEARCH,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "edit_file (EDIT · COMPLETED)",
                         kind = ToolKind.EDIT,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "delete_file (DELETE · FAILED)",
+                        kind = ToolKind.DELETE,
                         status = ToolCallStatus.FAILED,
                     ),
                     onClick = {},
                 )
                 ToolCallCard(
                     toolCall = ToolCallDisplay(
-                        title = "delete_file",
+                        title = "move_file (MOVE · COMPLETED)",
+                        kind = ToolKind.MOVE,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "run_tests (EXECUTE · COMPLETED)",
+                        kind = ToolKind.EXECUTE,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "think (THINK · COMPLETED)",
+                        kind = ToolKind.THINK,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "fetch_data (FETCH · FAILED)",
+                        kind = ToolKind.FETCH,
+                        status = ToolCallStatus.FAILED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "switch (SWITCH_MODE · COMPLETED)",
+                        kind = ToolKind.SWITCH_MODE,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "other_action (OTHER · COMPLETED)",
+                        kind = ToolKind.OTHER,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "unknown (null · COMPLETED)",
+                        kind = null,
+                        status = ToolCallStatus.COMPLETED,
+                    ),
+                    onClick = {},
+                )
+                ToolCallCard(
+                    toolCall = ToolCallDisplay(
+                        title = "delete_file (DELETE · PENDING · permissions)",
                         kind = ToolKind.DELETE,
                         status = ToolCallStatus.PENDING,
                         permissionOptions = listOf(

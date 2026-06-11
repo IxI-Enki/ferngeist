@@ -44,3 +44,17 @@ Run commands from repository root with the Gradle wrapper:
 ## Security & Configuration Tips
 - Never commit secrets or tokens (`local.properties` stays local).
 - Review `network_security_config.xml` changes carefully; cleartext settings can weaken transport security.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on `arafatamim/Ferngeist`, operated via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses the default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

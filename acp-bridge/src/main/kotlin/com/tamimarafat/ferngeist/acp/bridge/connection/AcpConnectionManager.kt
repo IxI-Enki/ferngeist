@@ -33,9 +33,10 @@ import kotlinx.coroutines.flow.StateFlow
  */
 class AcpConnectionManager(
     connectivityObserver: ConnectivityObserver,
+    private val gatewayRepository: com.tamimarafat.ferngeist.gateway.GatewayRepository?,
     scope: CoroutineScope,
 ) {
-    private val orchestra = ConnectionOrchestrator(connectivityObserver, scope)
+    private val orchestra = ConnectionOrchestrator(connectivityObserver, gatewayRepository, scope)
     private val permissionFlow = PermissionFlow()
     private val gateway = SessionGateway(orchestra, permissionFlow) { sessionId ->
         SessionBridge(sessionId, this)

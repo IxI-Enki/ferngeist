@@ -420,6 +420,7 @@ class AcpChatSessionFacade(
                     host = refreshedSource.host,
                     gatewayCredential = refreshedSource.gatewayCredential,
                     runtimeId = runtime.id,
+                    sessionMode = "resilient",
                 )
             AcpConnectionConfig(
                 scheme = refreshedSource.scheme,
@@ -430,6 +431,11 @@ class AcpChatSessionFacade(
                 gatewayRuntimeId = runtime.id,
                 gatewaySourceId = refreshedSource.id,
                 serverDisplayName = target.name,
+                sessionId = handoff.sessionId,
+                attachToken = handoff.attachToken,
+                gatewayScheme = refreshedSource.scheme,
+                gatewayHost = refreshedSource.host,
+                gatewayCredential = refreshedSource.gatewayCredential,
             )
         } catch (error: Throwable) {
             _loadFailed.emit(

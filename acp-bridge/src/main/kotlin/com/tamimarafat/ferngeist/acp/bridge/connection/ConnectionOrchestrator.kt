@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 
 internal class ConnectionOrchestrator(
     private val connectivityObserver: ConnectivityObserver,
+    private val gatewayRepository: com.tamimarafat.ferngeist.gateway.GatewayRepository?,
     private val scope: CoroutineScope,
 ) {
     companion object {
@@ -59,6 +60,7 @@ internal class ConnectionOrchestrator(
      */
     private val transportClient = AcpTransportClient(
         connectivityObserver = connectivityObserver,
+        gatewayRepository = gatewayRepository,
         scope = scope,
         diagnosticsStore = diagnosticsStore,
         updateConnectionState = { state -> _connectionState.value = state },

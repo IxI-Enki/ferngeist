@@ -597,6 +597,11 @@ class ServerListViewModel
                             preferredAuthMethodId = method.id,
                             gatewayRuntimeId = handoff.runtimeId,
                             gatewaySourceId = gatewaySource.id,
+                            sessionId = handoff.sessionId,
+                            attachToken = handoff.attachToken,
+                            gatewayScheme = gatewaySource.scheme,
+                            gatewayHost = gatewaySource.host,
+                            gatewayCredential = gatewaySource.gatewayCredential,
                         ),
                     )
                 }
@@ -823,6 +828,7 @@ class ServerListViewModel
                             host = gatewaySource.host,
                             gatewayCredential = gatewaySource.gatewayCredential,
                             runtimeId = runtime.id,
+                            sessionMode = "resilient",
                         )
                     }
                 GatewayLaunchContext(
@@ -836,6 +842,11 @@ class ServerListViewModel
                             gatewayRuntimeId = runtime.id,
                             gatewaySourceId = gatewaySource.id,
                             serverDisplayName = server.name,
+                            sessionId = handoff.sessionId,
+                            attachToken = handoff.attachToken,
+                            gatewayScheme = gatewaySource.scheme,
+                            gatewayHost = gatewaySource.host,
+                            gatewayCredential = gatewaySource.gatewayCredential,
                         ),
                     gatewaySource = gatewaySource,
                     runtimeId = runtime.id,

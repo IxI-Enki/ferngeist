@@ -12,7 +12,14 @@ data class AcpConnectionConfig(
     val gatewayRuntimeId: String? = null,
     val gatewaySourceId: String? = null,
     val serverDisplayName: String? = null,
-)
+    val sessionId: String? = null,
+    val attachToken: String? = null,
+    val gatewayScheme: String? = null,
+    val gatewayHost: String? = null,
+    val gatewayCredential: String? = null,
+) {
+    val isResilientSession: Boolean get() = sessionId != null
+}
 
 sealed interface AcpConnectionState {
     data object Disconnected : AcpConnectionState

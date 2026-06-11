@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.acp.bridge.connection
 
+import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.agentclientprotocol.annotations.UnstableApi
 import com.agentclientprotocol.client.Client
 import com.agentclientprotocol.client.ClientInfo
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 
 internal class AcpTransportClient(
     private val connectivityObserver: ConnectivityObserver,
+    private val gatewayRepository: GatewayRepository?,
     private val scope: CoroutineScope,
     private val diagnosticsStore: AcpDiagnosticsStore,
     private val updateConnectionState: (AcpConnectionState) -> Unit,
@@ -161,70 +163,30 @@ internal class AcpTransportClient(
         updateConnectionState(AcpConnectionState.Connecting)
         diagnosticsStore.setWebSocketState(WebSocketState.CONNECTING)
 
+        val rawEndpointUrl = config.webSocketUrl ?: "${config.scheme}://${config.host}"
+        val (wsUrl, diagnosticsUrl) = if (config.isResilientSession) {
+            val sid = config.sessionId!!
+            val att = config.attachToken!!
+            val base = rawEndpointUrl.substringBefore('?')
+            "$base?sessionId=$sid&attachToken=$att" to "$base?sessionId=$sid&attachToken=***"
+        } else {
+            rawEndpointUrl to rawEndpointUrl
+        }
         return try {
-            val endpointUrl = config.webSocketUrl ?: "${config.scheme}://${config.host}"
-            diagnosticsStore.startConnect(endpointUrl)
-
-            val client =
-                HttpClient(CIO) {
-                    install(WebSockets) {
-                        pingIntervalMillis = WEB_SOCKET_PING_INTERVAL_MILLIS
-                    }
-                }
-            val webSocketSession =
-                client.webSocketSession {
-                    url(endpointUrl)
-                    config.webSocketBearerToken?.takeIf { it.isNotBlank() }?.let {
-                        headers.append("Authorization", "Bearer $it")
-                    }
-                }
-            // NOTE: Manual transport/Protocol setup instead of the SDK's
-            // HttpClient.acpProtocolOnClientWebSocket() because Protocol.transport
-            // is private — we need onError/onClose for reconnection (lines 199-215).
-            // Switch to the extension if a future SDK exposes Protocol.transport publicly.
-            val transport =
-                WebSocketTransport(
-                    parentScope = webSocketSession,
-                    wss = webSocketSession,
-                )
-            val protocol =
-                Protocol(
-                    parentScope = webSocketSession,
-                    transport = transport,
-                    options = ProtocolOptions(protocolDebugName = "FerngeistACP"),
-                )
-            val generation = activeTransportGeneration + 1L
-            activeTransportGeneration = generation
-            ignoreTransportCallbacks = false
-            transport.onError { error ->
-                scope.launch {
-                    handleUnexpectedTransportTermination(
-                        generation = generation,
-                        resetState = resetState,
-                        error = error,
-                    )
-                }
-            }
-            transport.onClose {
-                scope.launch {
-                    handleUnexpectedTransportTermination(
-                        generation = generation,
-                        resetState = resetState,
-                    )
-                }
-            }
-            protocol.start()
-
-            httpClient = client
-            sdkClient = Client(protocol)
-
-            updateConnectionState(AcpConnectionState.Connected)
-            diagnosticsStore.setWebSocketState(WebSocketState.OPEN)
-            reconnectAttempts = 0
-            scope.launch { emitManagerEvent(AcpManagerEvent.Connected) }
-            true
+            establishSession(
+                wsUrl = wsUrl,
+                bearerToken = if (config.isResilientSession) null else config.webSocketBearerToken,
+                resetState = resetState,
+                diagnosticsUrl = diagnosticsUrl,
+            )
         } catch (error: Exception) {
             if (error is CancellationException) throw error
+            // 409 means the gateway has an active resilient session for this runtime — the
+            // attachToken from connectRuntime is not enough; we must call resumeSession first
+            // to explicitly migrate the live session to this client.
+            if (config.isResilientSession && isWebSocketConflictError(error)) {
+                return connectSessionResume(config, resetState, scheduleReconnectOnFailure)
+            }
             if (isCancellationLikeError(error)) {
                 updateConnectionState(AcpConnectionState.Disconnected)
                 diagnosticsStore.markDisconnected()
@@ -240,6 +202,121 @@ internal class AcpTransportClient(
         }
     }
 
+    private suspend fun connectSessionResume(
+        config: AcpConnectionConfig,
+        resetState: () -> Unit,
+        scheduleReconnectOnFailure: Boolean,
+    ): Boolean {
+        val sessionId = config.sessionId ?: return false
+        val gatewayRepo = gatewayRepository ?: return false
+        val gatewayScheme = config.gatewayScheme ?: return false
+        val gatewayHost = config.gatewayHost ?: return false
+        val gatewayCredential = config.gatewayCredential ?: return false
+
+        try {
+            val resumeResponse = gatewayRepo.resumeSession(
+                scheme = gatewayScheme,
+                host = gatewayHost,
+                gatewayCredential = gatewayCredential,
+                sessionId = sessionId,
+            )
+            currentConfig = config.copy(attachToken = resumeResponse.attachToken)
+            val rawEndpointUrl = config.webSocketUrl ?: "${config.scheme}://${config.host}"
+            val base = rawEndpointUrl.substringBefore('?')
+            val wsUrl = "$base?sessionId=$sessionId&attachToken=${resumeResponse.attachToken}"
+            val diagnosticsUrl = "$base?sessionId=$sessionId&attachToken=***"
+
+            prepareForConnectAttempt(resetState)
+            updateConnectionState(AcpConnectionState.Connecting)
+            diagnosticsStore.setWebSocketState(WebSocketState.CONNECTING)
+
+            return establishSession(
+                wsUrl = wsUrl,
+                bearerToken = null,
+                resetState = resetState,
+                diagnosticsUrl = diagnosticsUrl,
+            )
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            updateConnectionState(AcpConnectionState.Failed(error))
+            diagnosticsStore.setWebSocketState(WebSocketState.FAILED)
+            diagnosticsStore.appendError("connect-resume", formatAcpErrorMessage(error, "Session resume failed"))
+            if (scheduleReconnectOnFailure) {
+                scheduleReconnect(resetState)
+            }
+            return false
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private suspend fun establishSession(
+        wsUrl: String,
+        bearerToken: String?,
+        resetState: () -> Unit,
+        diagnosticsUrl: String = wsUrl,
+    ): Boolean {
+        diagnosticsStore.startConnect(diagnosticsUrl)
+
+        val client =
+            HttpClient(CIO) {
+                install(WebSockets) {
+                    pingIntervalMillis = WEB_SOCKET_PING_INTERVAL_MILLIS
+                }
+            }
+        val webSocketSession =
+            client.webSocketSession {
+                url(wsUrl)
+                bearerToken?.takeIf { it.isNotBlank() }?.let {
+                    headers.append("Authorization", "Bearer $it")
+                }
+            }
+        // NOTE: Manual transport/Protocol setup instead of the SDK's
+        // HttpClient.acpProtocolOnClientWebSocket() because Protocol.transport
+        // is private — we need onError/onClose for reconnection.
+        // Switch to the extension if a future SDK exposes Protocol.transport publicly.
+        val transport =
+            WebSocketTransport(
+                parentScope = webSocketSession,
+                wss = webSocketSession,
+            )
+        val protocol =
+            Protocol(
+                parentScope = webSocketSession,
+                transport = transport,
+                options = ProtocolOptions(protocolDebugName = "FerngeistACP"),
+            )
+        val generation = activeTransportGeneration + 1L
+        activeTransportGeneration = generation
+        ignoreTransportCallbacks = false
+        transport.onError { error ->
+            scope.launch {
+                handleUnexpectedTransportTermination(
+                    generation = generation,
+                    resetState = resetState,
+                    error = error,
+                )
+            }
+        }
+        transport.onClose {
+            scope.launch {
+                handleUnexpectedTransportTermination(
+                    generation = generation,
+                    resetState = resetState,
+                )
+            }
+        }
+        protocol.start()
+
+        httpClient = client
+        sdkClient = Client(protocol)
+
+        updateConnectionState(AcpConnectionState.Connected)
+        diagnosticsStore.setWebSocketState(WebSocketState.OPEN)
+        reconnectAttempts = 0
+        scope.launch { emitManagerEvent(AcpManagerEvent.Connected) }
+        return true
+    }
+
     private fun scheduleReconnect(resetState: () -> Unit) {
         if (reconnectJob != null) return
         reconnectJob =
@@ -249,7 +326,14 @@ internal class AcpTransportClient(
                     awaitConnectivityForReconnect()
                     reconnectAttempts++
                     delay((1000L * reconnectAttempts).coerceAtMost(5000L))
-                    if (connectInternal(config, resetState, scheduleReconnectOnFailure = false)) {
+
+                    val reconnected = if (config.isResilientSession) {
+                        connectSessionResume(config, resetState, scheduleReconnectOnFailure = false)
+                    } else {
+                        connectInternal(config, resetState, scheduleReconnectOnFailure = false)
+                    }
+
+                    if (reconnected) {
                         initialize()
                         break
                     }

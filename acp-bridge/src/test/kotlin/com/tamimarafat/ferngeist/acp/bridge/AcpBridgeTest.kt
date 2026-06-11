@@ -129,7 +129,7 @@ class AcpConnectionManagerTest {
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = true)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, scope)
+            val manager = AcpConnectionManager(connectivityObserver, null, scope)
 
             assertEquals(AcpConnectionState.Disconnected, manager.connectionState.value)
         }
@@ -139,7 +139,7 @@ class AcpConnectionManagerTest {
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = true)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, scope)
+            val manager = AcpConnectionManager(connectivityObserver, null, scope)
 
             val session = manager.getSession("unknown")
 
@@ -151,7 +151,7 @@ class AcpConnectionManagerTest {
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = false)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, scope)
+            val manager = AcpConnectionManager(connectivityObserver, null, scope)
 
             assertFalse(manager.isConnected)
         }
@@ -162,6 +162,7 @@ class AcpConnectionManagerTest {
             val manager =
                 AcpConnectionManager(
                     connectivityObserver = ConnectivityObserverStub(initialState = true),
+                    gatewayRepository = null,
                     scope = CoroutineScope(Dispatchers.Unconfined),
                 )
 
@@ -218,7 +219,7 @@ class AcpConnectionManagerTest {
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = true)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, scope)
+            val manager = AcpConnectionManager(connectivityObserver, null, scope)
 
             assertNull(manager.diagnostics.value.supportsSessionCancel)
         }
@@ -246,6 +247,7 @@ class AcpConnectionManagerTest {
             val manager =
                 AcpConnectionManager(
                     connectivityObserver = connectivityObserver,
+                    gatewayRepository = null,
                     scope = CoroutineScope(Dispatchers.Unconfined),
                 )
 

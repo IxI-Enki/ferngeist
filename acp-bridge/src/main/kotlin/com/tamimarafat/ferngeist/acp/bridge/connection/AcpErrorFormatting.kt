@@ -28,6 +28,19 @@ fun isCancellationLikeError(error: Throwable): Boolean =
         }
     }
 
+/**
+ * True when a WebSocket upgrade failed with HTTP 409 Conflict anywhere in the
+ * cause chain. The gateway returns 409 when a resilient session already has an
+ * attached client, signalling that the resume flow must run before re-attaching.
+ * Ktor surfaces this as "Expected status code 101 but was 409", often nested in
+ * a cause rather than on the top-level exception.
+ */
+fun isWebSocketConflictError(error: Throwable): Boolean =
+    generateSequence(error as Throwable?) { it.cause }.any { cause ->
+        val message = cause.message.orEmpty()
+        message.contains("but was 409") || message.contains("409 Conflict", ignoreCase = true)
+    }
+
 private fun formatJsonRpcErrorMessage(
     error: JsonRpcException,
     fallback: String,

@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.feature.chat
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -19,6 +20,8 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
 import com.tamimarafat.ferngeist.core.model.SessionSummary
 import com.tamimarafat.ferngeist.core.model.UsageState
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
+import com.tamimarafat.ferngeist.core.model.store.ActiveChat
+import com.tamimarafat.ferngeist.core.model.store.ActiveChatStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,6 +40,7 @@ class ChatViewModel
         private val sessionRepository: SessionRepository,
         private val chatScrollStateStore: ChatScrollStateStore,
         val recentSelectionStore: RecentSelectionStore,
+        private val activeChatStore: ActiveChatStore,
         savedStateHandle: SavedStateHandle,
     ) : MviViewModel<ChatState, ChatIntent, ChatEffect>(initialChatState()) {
 
@@ -50,6 +54,8 @@ class ChatViewModel
         private val sessionId: String = savedStateHandle["sessionId"] ?: error("sessionId is required")
         private val cwd: String = savedStateHandle["cwd"] ?: "/"
         private val sessionUpdatedAt: Long? = savedStateHandle.get<Long>("updatedAt")?.takeIf { it > 0L }
+        private val sessionTitle: String =
+            savedStateHandle.get<String>("title")?.let { Uri.decode(it) }.orEmpty()
         private val sessionFacade: ChatSessionFacade =
             sessionFacadeFactory.create(
                 scope = viewModelScope,
@@ -173,6 +179,11 @@ class ChatViewModel
 
         init {
             updateState { copy(serverId = serverId) }
+            // Record this as the active chat so the connection notification deep-links
+            // back here instead of dropping the user on the home screen.
+            activeChatStore.setActiveChat(
+                ActiveChat(serverId = serverId, sessionId = sessionId, cwd = cwd, title = sessionTitle),
+            )
             viewModelScope.launch {
                 val snapshot = chatScrollStateStore.restore(serverId, sessionId)
                 updateState { copy(restoredScrollSnapshot = snapshot) }

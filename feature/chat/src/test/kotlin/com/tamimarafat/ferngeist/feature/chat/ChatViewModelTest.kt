@@ -13,6 +13,7 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.SessionSummary
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
+import com.tamimarafat.ferngeist.core.model.store.ActiveChatStore
 import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -150,6 +151,7 @@ class ChatViewModelTest {
             sessionRepository = FakeSessionRepository(),
             chatScrollStateStore = chatScrollStateStore,
             recentSelectionStore = FakeRecentSelectionStore(),
+            activeChatStore = ActiveChatStore(),
             savedStateHandle = handle,
         )
     }

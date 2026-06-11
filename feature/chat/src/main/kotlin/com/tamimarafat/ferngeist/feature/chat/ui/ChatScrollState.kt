@@ -293,7 +293,18 @@ internal fun rememberChatScrollState(
     }
 
     val jumpToTop: suspend () -> Unit = {
-        listState.animateScrollToItem(0)
+        // Tapping "scroll to top" is a deliberate move away from the bottom.
+        // Route it through the same transition as a manual scroll so the policy
+        // leaves Following and cancels any pending follow job. Otherwise the
+        // Following-state mechanisms (streaming-bubble resize, insets follow)
+        // immediately scroll back to the bottom and fight this jump.
+        executeDecision(policy.onUserScrolled())
+        programmaticScrolling = true
+        try {
+            listState.animateScrollToItem(0)
+        } finally {
+            programmaticScrolling = false
+        }
     }
 
     return ChatScrollHandle(

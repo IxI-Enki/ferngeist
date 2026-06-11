@@ -227,8 +227,10 @@ fun ChatScreen(
         )
 
     // --- Send message (composer) ---
+    // Only send when the session bridge is active. If it isn't (e.g. disconnected),
+    // leave the text in the composer instead of dispatching a send that would fail.
     val sendMessage: () -> Unit = {
-        if (messageText.isNotBlank()) {
+        if (messageText.isNotBlank() && state.isSessionReady) {
             viewModel.dispatch(ChatIntent.SendMessage(messageText))
             scrollHandle.onSendMessage()
             messageText = ""
@@ -239,10 +241,12 @@ fun ChatScreen(
 
     // --- Slash-command send (commands sheet) ---
     val sendCommand: (String) -> Unit = { command ->
-        val normalized = command.trim()
-        val slashCommand = if (normalized.startsWith("/")) normalized else "/$normalized"
-        viewModel.dispatch(ChatIntent.SendMessage(slashCommand))
-        scrollHandle.onSendMessage()
+        if (state.isSessionReady) {
+            val normalized = command.trim()
+            val slashCommand = if (normalized.startsWith("/")) normalized else "/$normalized"
+            viewModel.dispatch(ChatIntent.SendMessage(slashCommand))
+            scrollHandle.onSendMessage()
+        }
     }
 
     // --- ViewModel effects ---

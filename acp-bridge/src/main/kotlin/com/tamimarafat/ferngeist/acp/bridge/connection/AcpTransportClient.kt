@@ -164,6 +164,11 @@ internal class AcpTransportClient(
         diagnosticsStore.setWebSocketState(WebSocketState.CONNECTING)
 
         val rawEndpointUrl = config.webSocketUrl ?: "${config.scheme}://${config.host}"
+        // Resilient config without an attachToken — skip the direct WebSocket connect
+        // and route straight to resume, which mints a fresh attachToken.
+        if (config.isResilientSession && config.attachToken == null) {
+            return connectSessionResume(config, resetState, scheduleReconnectOnFailure)
+        }
         val (wsUrl, diagnosticsUrl) = if (config.isResilientSession) {
             val sid = config.sessionId!!
             val att = config.attachToken!!
@@ -264,11 +269,16 @@ internal class AcpTransportClient(
                 }
             }
         val webSocketSession =
-            client.webSocketSession {
-                url(wsUrl)
-                bearerToken?.takeIf { it.isNotBlank() }?.let {
-                    headers.append("Authorization", "Bearer $it")
+            try {
+                client.webSocketSession {
+                    url(wsUrl)
+                    bearerToken?.takeIf { it.isNotBlank() }?.let {
+                        headers.append("Authorization", "Bearer $it")
+                    }
                 }
+            } catch (e: Throwable) {
+                runCatching { client.close() }
+                throw e
             }
         // NOTE: Manual transport/Protocol setup instead of the SDK's
         // HttpClient.acpProtocolOnClientWebSocket() because Protocol.transport

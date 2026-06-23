@@ -120,6 +120,9 @@ class ServerListViewModel
                 .map { gateways -> gateways.isNotEmpty() }
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+        private val _isLoading = MutableStateFlow(true)
+        val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
         private val _uiState = MutableStateFlow(ServerListUiState())
         val uiState: StateFlow<ServerListUiState> = _uiState.asStateFlow()
 
@@ -139,6 +142,11 @@ class ServerListViewModel
                 connectionManager.events.collect { event ->
                     handleManagerEvent(event)
                 }
+            }
+
+            // Mark list as loaded on first emission
+            viewModelScope.launch {
+                servers.collect { _isLoading.value = false }
             }
         }
 

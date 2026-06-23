@@ -44,6 +44,8 @@ import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -109,6 +111,7 @@ fun ServerListScreen(
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val hasGateways by viewModel.hasGateways.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAddMenu by rememberSaveable { mutableStateOf(false) }
@@ -259,21 +262,37 @@ fun ServerListScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (servers.isEmpty()) {
-                item(key = "empty") {
-                    EmptyServerList(onAddServer = onNavigateToAddServer)
+            when {
+                isLoading && servers.isEmpty() -> {
+                    item(key = "loading") {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            LoadingIndicator(
+                                polygons = listOf(MaterialShapes.Oval),
+                                modifier = Modifier.size(48.dp),
+                            )
+                        }
+                    }
                 }
-            } else {
-                items(servers, key = { it.id }) { server ->
-                    ServerCard(
-                        server = server,
-                        uiState = uiState,
-                        onClick = { viewModel.connectAndOpenServer(server) },
-                        onEdit = { onNavigateToEditServer(server) },
-                        onDelete = { viewModel.deleteServer(server.id) },
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedContentScope = animatedContentScope,
-                    )
+                servers.isEmpty() -> {
+                    item(key = "empty") {
+                        EmptyServerList(onAddServer = onNavigateToAddServer)
+                    }
+                }
+                else -> {
+                    items(servers, key = { it.id }) { server ->
+                        ServerCard(
+                            server = server,
+                            uiState = uiState,
+                            onClick = { viewModel.connectAndOpenServer(server) },
+                            onEdit = { onNavigateToEditServer(server) },
+                            onDelete = { viewModel.deleteServer(server.id) },
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedContentScope = animatedContentScope,
+                        )
+                    }
                 }
             }
         }

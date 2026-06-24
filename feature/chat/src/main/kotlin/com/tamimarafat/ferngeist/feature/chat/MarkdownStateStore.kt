@@ -8,6 +8,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -26,7 +29,10 @@ internal class MarkdownStateStore(
     private val trace: (String) -> Unit,
 ) {
     companion object {
-        private const val MARKDOWN_FLUSH_INTERVAL_MS = 28L
+        // 80ms (~12 parses/sec) keeps the chat surface responsive during
+        // streaming. The previous 28ms interval drove ~35 parses/sec, which
+        // caused CPU contention with UI work and Room reads.
+        private const val MARKDOWN_FLUSH_INTERVAL_MS = 80L
         private const val MARKDOWN_BATCH_SIZE = 24
         private const val MARKDOWN_STATE_EMIT_INTERVAL_MS = 120L
     }
@@ -96,23 +102,38 @@ internal class MarkdownStateStore(
         return requiredEntries
     }
 
-    /**
-     * Pre-parses any missing entries to minimize visible markdown "pop-in" on first load.
-     */
     private suspend fun preparseMissingEntries(requiredEntries: Map<String, String>) {
-        requiredEntries.forEach { (key, text) ->
-            val cached = markdownStateCache[key]
-            if (cached?.text == text) return@forEach
-            try {
-                val parsedState = parse(text)
-                markdownStateCache[key] = MarkdownEntry(text = text, state = parsedState)
-                pendingMarkdownQueue.remove(key)
-                markdownParsingKeys.remove(key)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                trace("markdownPreparse:error key=$key message=${error.message}")
+        // Parse missing entries in parallel. `parse()` switches to
+        // Dispatchers.Default internally, so the `async` here fans out across
+        // the Default dispatcher pool instead of blocking the snapshot
+        // coroutine on a single sequential loop.
+        val (keys, results) =
+            coroutineScope {
+                val pending =
+                    requiredEntries.filter { (key, text) ->
+                        markdownStateCache[key]?.text != text
+                    }
+                val deferreds =
+                    pending.map { (key, text) ->
+                        async {
+                            try {
+                                key to MarkdownEntry(text = text, state = parse(text))
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                trace("markdownPreparse:error key=$key message=${error.message}")
+                                key to null
+                            }
+                        }
+                    }
+                deferreds.awaitAll().unzip()
             }
+        // Sequential map writes preserve LinkedHashMap insertion order for
+        // downstream render projections.
+        keys.forEach { pendingMarkdownQueue.remove(it) }
+        keys.forEach { markdownParsingKeys.remove(it) }
+        results.forEachIndexed { index, entry ->
+            entry?.let { markdownStateCache[keys[index]] = it }
         }
     }
 

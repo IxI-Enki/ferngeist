@@ -537,12 +537,20 @@ internal class SessionGateway(
         return sessionRegistry.getPort(sessionId)
     }
 
-    /** Checks if a JSON-RPC error means the session is already loaded (Invalid params + "already loaded"). */
-    private fun isSessionAlreadyLoadedError(error: Throwable): Boolean {
-        val rpcError = error as? JsonRpcException ?: return false
-        if (rpcError.code != JsonRpcErrorCode.INVALID_PARAMS.code) return false
-        return rpcError.message.contains("already loaded", ignoreCase = true)
-    }
+    /**
+     * Checks whether an error means the session is already loaded on the agent.
+     *
+     * Agents surface this differently — a [JsonRpcException] with varying error
+     * codes, or a plain message-only exception — so we match on the message
+     * anywhere in the cause chain rather than a specific type or code. For gateway
+     * sessions the gateway recovers from this transparently; this remains the
+     * fallback for direct (Manual) connections to an agent that keeps the session
+     * loaded.
+     */
+    private fun isSessionAlreadyLoadedError(error: Throwable): Boolean =
+        generateSequence(error as Throwable?) { it.cause }.any {
+            it.message?.contains("already loaded", ignoreCase = true) == true
+        }
 
     /**
      * Inspects a session/cancel failure to determine whether the server

@@ -19,6 +19,14 @@ data class AcpConnectionConfig(
     val gatewayCredential: String? = null,
 ) {
     val isResilientSession: Boolean get() = sessionId != null
+
+    /**
+     * True when this connection targets a gateway-backed agent (as opposed to a
+     * directly-reachable Manual server). Gateway agents are always launched in
+     * resilient mode, so a gateway connection is expected to carry a [sessionId];
+     * its absence means the gateway could not provision a session.
+     */
+    val isGatewayConnection: Boolean get() = gatewayCredential != null
 }
 
 sealed interface AcpConnectionState {

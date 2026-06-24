@@ -164,6 +164,25 @@ internal class AcpTransportClient(
         diagnosticsStore.setWebSocketState(WebSocketState.CONNECTING)
 
         val rawEndpointUrl = config.webSocketUrl ?: "${config.scheme}://${config.host}"
+        // A gateway agent is always launched in resilient mode, so a gateway connection
+        // must carry a sessionId. If it does not, the gateway could not provision a
+        // session (the agent crashed, its runtime lease is held, or the device hit its
+        // session limit) and returned a session-less connect descriptor. The resilient
+        // ACP endpoint rejects a connect without sessionId/attachToken with HTTP 400, so
+        // attempting it here would loop on a doomed handshake. Fail fast with an
+        // actionable error instead; the caller's retry rebuilds a fresh handoff.
+        if (config.isGatewayConnection && config.sessionId == null) {
+            val error =
+                IllegalStateException(
+                    "The gateway could not start a session for this agent. " +
+                        "It may have crashed or reached its session limit — try again, " +
+                        "or restart the agent from the server list.",
+                )
+            updateConnectionState(AcpConnectionState.Failed(error))
+            diagnosticsStore.setWebSocketState(WebSocketState.FAILED)
+            diagnosticsStore.appendError("connect", error.message ?: "Gateway session unavailable")
+            return false
+        }
         // Resilient config without an attachToken — skip the direct WebSocket connect
         // and route straight to resume, which mints a fresh attachToken.
         if (config.isResilientSession && config.attachToken == null) {

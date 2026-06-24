@@ -5,20 +5,25 @@ import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.data.database.dao.SessionDao
 import com.tamimarafat.ferngeist.data.database.entity.SessionEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 class SessionRepositoryImpl(
     private val sessionDao: SessionDao,
 ) : SessionRepository {
     override fun getSessions(serverId: String): Flow<List<SessionSummary>> =
-        sessionDao.getSessionsByServerId(serverId).map { entities ->
-            entities.map { it.toSummary() }
-        }
+        sessionDao.getSessionsByServerId(serverId)
+            .distinctUntilChanged()
+            .map { entities ->
+                entities.map { it.toSummary() }
+            }
 
     override fun getRecentSessions(limit: Int): Flow<List<SessionSummary>> =
-        sessionDao.getRecentSessions(limit).map { entities ->
-            entities.map { it.toSummary() }
-        }
+        sessionDao.getRecentSessions(limit)
+            .distinctUntilChanged()
+            .map { entities ->
+                entities.map { it.toSummary() }
+            }
 
     override suspend fun getSession(
         serverId: String,

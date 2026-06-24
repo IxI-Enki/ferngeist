@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "sessions",
-    indices = [Index("serverId")],
+    indices = [Index(value = ["serverId", "updatedAt"])],
 )
 data class SessionEntity(
     @PrimaryKey val sessionId: String,

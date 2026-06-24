@@ -207,6 +207,8 @@ fun ChatScreen(
             onScrollSnapshotChanged = viewModel::persistScrollSnapshot,
         )
 
+    val showJumpToBottom by scrollHandle.showJumpToBottom
+
     // --- Composer spring animations ---
     val fadeSpring =
         spring<Float>(
@@ -446,8 +448,13 @@ fun ChatScreen(
                             onShowConfigOptionPicker = { optionId ->
                                 selectedConfigPickerOptionId = optionId
                             },
+                            showJumpToBottom = showJumpToBottom,
+                            onJumpToBottom = {
+                                coroutineScope.launch { scrollHandle.jumpToBottom() }
+                            },
                         )
                     }
+
                 }
             }
         }

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
@@ -132,6 +133,8 @@ internal fun ChatComposerBar(
     onSetBooleanConfigOption: (String, Boolean) -> Unit,
     onShowCommands: () -> Unit,
     onShowConfigOptionPicker: (String) -> Unit,
+    showJumpToBottom: Boolean,
+    onJumpToBottom: () -> Unit,
 ) {
     var showModeMenu by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
@@ -234,6 +237,8 @@ internal fun ChatComposerBar(
                     onSetBooleanConfigOption = onSetBooleanConfigOption,
                     onShowCommands = onShowCommands,
                     onShowConfigOptionPicker = onShowConfigOptionPicker,
+                    showJumpToBottom = showJumpToBottom,
+                    onJumpToBottom = onJumpToBottom,
                 )
             }
         }
@@ -361,6 +366,8 @@ internal fun CollapsedComposerActions(
     onSetBooleanConfigOption: (String, Boolean) -> Unit,
     onShowCommands: () -> Unit,
     onShowConfigOptionPicker: (String) -> Unit,
+    showJumpToBottom: Boolean,
+    onJumpToBottom: () -> Unit,
 ) {
     if (showModeButton && modeOption != null) {
         ModeMenuButton(
@@ -410,6 +417,26 @@ internal fun CollapsedComposerActions(
             },
             chatIcon = Icons.Default.Edit,
         )
+    }
+
+    if (showJumpToBottom) {
+        Spacer(modifier = Modifier.width(6.dp))
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+            tooltip = {
+                PlainTooltip {
+                    Text(stringResource(R.string.chat_scroll_to_bottom))
+                }
+            },
+            state = rememberTooltipState(),
+        ) {
+            IconButton(onClick = onJumpToBottom) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.chat_scroll_to_bottom),
+                )
+            }
+        }
     }
 
     ToolbarOptionsButton(

@@ -103,4 +103,5 @@
 
     <string name="chat_error_unknown">неизвестная ошибка</string>
     <string name="chat_error_send_failed">Ошибка отправки</string>
+    <string name="chat_scroll_to_bottom">Прокрутить вниз</string>
 </resources>

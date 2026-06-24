@@ -213,4 +213,5 @@
 
     <string name="chat_error_unknown">erro desconhecido</string>
     <string name="chat_error_send_failed">Falha no envio</string>
+    <string name="chat_scroll_to_bottom">Rolar para baixo</string>
 </resources>

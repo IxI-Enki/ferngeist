@@ -218,4 +218,5 @@
 
     <string name="chat_error_unknown">未知错误</string>
     <string name="chat_error_send_failed">发送失败</string>
+    <string name="chat_scroll_to_bottom">滚动到底部</string>
 </resources>

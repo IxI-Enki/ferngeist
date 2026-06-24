@@ -3,6 +3,7 @@ package com.tamimarafat.ferngeist.feature.chat.ui
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,8 @@ internal class ChatScrollHandle(
     val onStreamLayoutSettled: () -> Unit,
     val onSendMessage: () -> Unit,
     val jumpToTop: suspend () -> Unit,
+    val showJumpToBottom: State<Boolean>,
+    val jumpToBottom: suspend () -> Unit,
 )
 // endregion
 
@@ -75,6 +78,8 @@ internal fun rememberChatScrollState(
     val listState = remember(sessionId) { LazyListState() }
     val policy = remember(sessionId) { ChatScrollPolicy() }
     val scope = rememberCoroutineScope()
+
+    val showJumpToBottom = remember { mutableStateOf(false) }
 
     var isFollowingState by remember { mutableStateOf(true) }
 
@@ -281,6 +286,16 @@ internal fun rememberChatScrollState(
         executeDecision(decision)
     }
 
+    // 6. Reactively show/hide the jump-to-bottom FAB.
+    // Show only when there are messages AND auto-follow is paused.
+    LaunchedEffect(policy, renderedMessages.size) {
+        snapshotFlow {
+            renderedMessages.isNotEmpty() && !isFollowingState
+        }
+            .distinctUntilChanged()
+            .collect { show -> showJumpToBottom.value = show }
+    }
+
     // -- callbacks exposed on the handle ---------------------------------------
     val onStreamLayoutSettled: () -> Unit = {
         val decision = policy.onStreamingBubbleResized()
@@ -307,12 +322,25 @@ internal fun rememberChatScrollState(
         }
     }
 
+    val jumpToBottom: suspend () -> Unit = {
+        // Resume following without firing the multi-pass send follow.
+        // The user-initiated jump should be a single smooth animation, not
+        // the 3-pass scroll-to-bottom that sending a message uses.
+        executeDecision(policy.resumeFollowing())
+        val lastIndex = listState.layoutInfo.totalItemsCount - 1
+        if (lastIndex >= 0) {
+            listState.animateScrollToItem(lastIndex)
+        }
+    }
+
     return ChatScrollHandle(
         listState = listState,
         userScrollDetector = userScrollDetector,
         onStreamLayoutSettled = onStreamLayoutSettled,
         onSendMessage = onSendMessage,
         jumpToTop = jumpToTop,
+        showJumpToBottom = showJumpToBottom,
+        jumpToBottom = jumpToBottom,
     )
 }
 // endregion

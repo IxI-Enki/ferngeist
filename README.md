@@ -22,7 +22,7 @@ Ferngeist is currently in **closed testing** on Google Play. To install:
 Alternatively, download the APK from [GitHub Releases](https://github.com/arafatamim/ferngeist/releases/latest) (manual updates only — Play Store is recommended for auto-updates).
 
 ## Screenshots
-<img height="500" alt="01-agents-list" src="https://github.com/user-attachments/assets/ea308065-dd67-4dac-af85-978b313642d9" />
+<img height="500" alt="01-agents-list" src="https://github.com/user-attachments/assets/6b3d8f2d-496c-474b-83b9-413d5fbd40cf" />
 <img height="500" alt="03-chat" src="https://github.com/user-attachments/assets/e6317469-0b97-42f4-aab4-44aee6acefee" />
 
 ## Usage

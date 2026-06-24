@@ -28,7 +28,8 @@ internal object AutoScrollConfig {
     const val RESUME_TOLERANCE_PX = 48
     const val SEND_FOLLOW_PASSES = 3
     const val SEND_FOLLOW_DELAY_MS = 32L
-    const val SCROLL_DEBOUNCE_MS = 250L
+    const val SCROLL_DEBOUNCE_MS = 1000L
+    const val SCROLL_CORRECTION_MAX_PASSES = 2
 }
 // endregion
 

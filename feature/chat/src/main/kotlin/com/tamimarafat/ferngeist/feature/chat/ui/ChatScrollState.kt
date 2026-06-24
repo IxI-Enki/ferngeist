@@ -21,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 // region: Public Handle
@@ -179,14 +180,17 @@ internal fun rememberChatScrollState(
 
     // == LaunchedEffects =======================================================
 
-    // 1. Idle timeout loop
-    LaunchedEffect(policy) {
-        while (true) {
-            delay(AutoScrollConfig.USER_RESUME_IDLE_MS)
-            val atBottom = listState.isAtBottom(AutoScrollConfig.RESUME_TOLERANCE_PX)
-            val decision = policy.onIdleTimeout(atBottom)
-            executeDecision(decision)
+    // 1. Idle timeout observer - uses snapshotFlow instead of polling loop
+    LaunchedEffect(policy, listState) {
+        snapshotFlow {
+            listState.isAtBottom(AutoScrollConfig.RESUME_TOLERANCE_PX)
         }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect { atBottom ->
+                val decision = policy.onIdleTimeout(atBottom)
+                executeDecision(decision)
+            }
     }
 
     // 2. Manual bottom resume observer
@@ -390,17 +394,17 @@ internal suspend fun LazyListState.scrollToBottom() {
     scrollToItem(lastIndex)
     withFrameNanos { }
 
-    // Bounded loop (max 3): a single scrollBy capped at 720px may not cover
+    // Bounded loop: a single scrollBy capped at 720px may not cover
     // large composer/IME gaps. Each iteration waits a frame, re-measures the
     // remaining overflow, and scrolls again if needed.
-    repeat(3) {
+    repeat(AutoScrollConfig.SCROLL_CORRECTION_MAX_PASSES) {
         val info = layoutInfo
         val lastVisible = info.visibleItemsInfo.lastOrNull { it.index == lastIndex } ?: return
         val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
         if (overflow <= AutoScrollConfig.FOLLOW_TOLERANCE_PX) return
         val delta = overflow.coerceAtMost(AutoScrollConfig.MAX_SCROLL_BY_PX)
         scrollBy(delta.toFloat())
-        if (it < 2) withFrameNanos { }
+        if (it < AutoScrollConfig.SCROLL_CORRECTION_MAX_PASSES - 1) withFrameNanos { }
     }
 }
 // endregion

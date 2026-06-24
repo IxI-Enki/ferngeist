@@ -32,8 +32,6 @@ jobs:
         with:
           config: cliff.toml
           args: -l --prepend CHANGELOG.md
-        env:
-          OUTPUT: CHANGELOG.md
 
       - name: Commit and push changes
         run: |

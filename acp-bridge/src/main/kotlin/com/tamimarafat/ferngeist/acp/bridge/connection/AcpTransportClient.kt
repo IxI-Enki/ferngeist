@@ -41,13 +41,37 @@ internal class AcpTransportClient(
     private var reconnectAttempts = 0
     private var currentConfig: AcpConnectionConfig? = null
 
-    private var httpClient: HttpClient? = null
+    // Reused across all connect/reconnect attempts. CIO's HttpClient is heavyweight
+    // (coroutine machinery, thread pools, websocket engine), so creating one per
+    // session is wasteful. Initialized lazily on first use; nulled by [close].
+    private var sharedHttpClient: HttpClient? = null
+
     private var activeTransportGeneration: Long = 0L
     private var ignoreTransportCallbacks = false
     var sdkClient: Client? = null
         private set
 
     fun currentConnectionConfig(): AcpConnectionConfig? = currentConfig
+
+    /**
+     * Tears down the shared [HttpClient]. Intended for graceful shutdown of the
+     * owning connection manager; not called on normal disconnects (the client
+     * is reused across reconnects). Idempotent.
+     */
+    fun close() {
+        val client = sharedHttpClient ?: return
+        sharedHttpClient = null
+        runCatching { client.close() }
+    }
+
+    /** Returns the shared [HttpClient], creating it on first call. */
+    private fun acquireHttpClient(): HttpClient =
+        sharedHttpClient
+            ?: HttpClient(CIO) {
+                install(WebSockets) {
+                    pingIntervalMillis = WEB_SOCKET_PING_INTERVAL_MILLIS
+                }
+            }.also { sharedHttpClient = it }
 
     suspend fun connect(
         config: AcpConnectionConfig,
@@ -281,23 +305,14 @@ internal class AcpTransportClient(
     ): Boolean {
         diagnosticsStore.startConnect(diagnosticsUrl)
 
-        val client =
-            HttpClient(CIO) {
-                install(WebSockets) {
-                    pingIntervalMillis = WEB_SOCKET_PING_INTERVAL_MILLIS
-                }
-            }
+        // Reuse the shared HttpClient rather than spinning up a new CIO
+        // engine + websocket plugin on every reconnect.
         val webSocketSession =
-            try {
-                client.webSocketSession {
-                    url(wsUrl)
-                    bearerToken?.takeIf { it.isNotBlank() }?.let {
-                        headers.append("Authorization", "Bearer $it")
-                    }
+            acquireHttpClient().webSocketSession {
+                url(wsUrl)
+                bearerToken?.takeIf { it.isNotBlank() }?.let {
+                    headers.append("Authorization", "Bearer $it")
                 }
-            } catch (e: Throwable) {
-                runCatching { client.close() }
-                throw e
             }
         // NOTE: Manual transport/Protocol setup instead of the SDK's
         // HttpClient.acpProtocolOnClientWebSocket() because Protocol.transport
@@ -336,7 +351,6 @@ internal class AcpTransportClient(
         }
         protocol.start()
 
-        httpClient = client
         sdkClient = Client(protocol)
 
         updateConnectionState(AcpConnectionState.Connected)
@@ -384,8 +398,6 @@ internal class AcpTransportClient(
         resetState()
         runCatching { sdkClient?.protocol?.close() }
         sdkClient = null
-        runCatching { httpClient?.close() }
-        httpClient = null
 
         if (error == null || isCancellationLikeError(error)) {
             updateConnectionState(AcpConnectionState.Disconnected)
@@ -406,8 +418,6 @@ internal class AcpTransportClient(
         runCatching { sdkClient?.protocol?.close() }
         sdkClient = null
 
-        runCatching { httpClient?.close() }
-        httpClient = null
         ignoreTransportCallbacks = false
     }
 

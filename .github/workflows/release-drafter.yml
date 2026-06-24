@@ -23,7 +23,7 @@ jobs:
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --current
+          args: -l
         env:
           OUTPUT: CHANGES.md
 
@@ -31,7 +31,7 @@ jobs:
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --current --prepend CHANGELOG.md
+          args: -l --prepend CHANGELOG.md
         env:
           OUTPUT: CHANGELOG.md
 

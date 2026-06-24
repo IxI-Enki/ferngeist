@@ -12,28 +12,19 @@ class SessionRepositoryImpl(
 ) : SessionRepository {
     override fun getSessions(serverId: String): Flow<List<SessionSummary>> =
         sessionDao.getSessionsByServerId(serverId).map { entities ->
-            entities.map { entity ->
-                SessionSummary(
-                    id = entity.sessionId,
-                    title = entity.title,
-                    cwd = entity.cwd,
-                    updatedAt = entity.updatedAt,
-                )
-            }
+            entities.map { it.toSummary() }
+        }
+
+    override fun getRecentSessions(limit: Int): Flow<List<SessionSummary>> =
+        sessionDao.getRecentSessions(limit).map { entities ->
+            entities.map { it.toSummary() }
         }
 
     override suspend fun getSession(
         serverId: String,
         sessionId: String,
     ): SessionSummary? =
-        sessionDao.getSessionById(sessionId)?.let { entity ->
-            SessionSummary(
-                id = entity.sessionId,
-                title = entity.title,
-                cwd = entity.cwd,
-                updatedAt = entity.updatedAt,
-            )
-        }
+        sessionDao.getSessionById(sessionId)?.toSummary()
 
     override suspend fun upsertSession(
         serverId: String,
@@ -60,4 +51,12 @@ class SessionRepositoryImpl(
     override suspend fun clearSessions(serverId: String) {
         sessionDao.deleteSessionsByServerId(serverId)
     }
+
+    private fun SessionEntity.toSummary() = SessionSummary(
+        id = sessionId,
+        title = title,
+        cwd = cwd,
+        updatedAt = updatedAt,
+        serverId = serverId,
+    )
 }

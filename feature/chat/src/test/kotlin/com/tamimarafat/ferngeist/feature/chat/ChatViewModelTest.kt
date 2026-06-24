@@ -298,6 +298,8 @@ private class FakeSessionRepository : SessionRepository {
 
     override fun getSessions(serverId: String): Flow<List<SessionSummary>> = emptyFlow()
 
+    override fun getRecentSessions(limit: Int): Flow<List<SessionSummary>> = emptyFlow()
+
     override suspend fun getSession(
         serverId: String,
         sessionId: String,

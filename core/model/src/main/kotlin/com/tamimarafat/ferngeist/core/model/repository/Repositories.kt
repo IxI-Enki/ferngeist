@@ -69,6 +69,8 @@ interface LaunchableTargetRepository {
 interface SessionRepository {
     fun getSessions(serverId: String): Flow<List<SessionSummary>>
 
+    fun getRecentSessions(limit: Int): Flow<List<SessionSummary>>
+
     suspend fun getSession(
         serverId: String,
         sessionId: String,

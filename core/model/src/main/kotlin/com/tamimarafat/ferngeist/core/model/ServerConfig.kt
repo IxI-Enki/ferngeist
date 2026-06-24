@@ -19,4 +19,5 @@ data class SessionSummary(
     val title: String? = null,
     val cwd: String? = null,
     val updatedAt: Long? = null,
+    val serverId: String = "",
 )

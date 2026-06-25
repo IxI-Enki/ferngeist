@@ -3,9 +3,13 @@ package com.tamimarafat.ferngeist.acp.bridge.connection
 import com.agentclientprotocol.client.ClientSession
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionBridge
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionPort
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
-internal class AcpSessionRegistry {
+internal class AcpSessionRegistry(
+    private val scope: CoroutineScope,
+) {
     private val sessionBridges = ConcurrentHashMap<String, SessionBridge>()
     private val sdkSessions = ConcurrentHashMap<String, ClientSession>()
 
@@ -51,7 +55,8 @@ internal class AcpSessionRegistry {
         sessionId: String,
         closeBridge: Boolean,
     ) {
-        sdkSessions.remove(sessionId)
+        val sdkSession = sdkSessions.remove(sessionId)
+        sdkSession?.let { scope.launch { it.close() } }
         if (closeBridge) {
             sessionBridges.remove(sessionId)?.close()
         } else {

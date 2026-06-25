@@ -62,7 +62,7 @@ class SessionBridge(
      */
     override val modelSelectionEvents: SharedFlow<AppSessionEvent.ModelSelectionConfirmed> =
         _events.filterIsInstance<AppSessionEvent.ModelSelectionConfirmed>()
-            .shareIn(eventScope, SharingStarted.Eagerly, replay = 1)
+            .shareIn(eventScope, SharingStarted.WhileSubscribed(), replay = 1)
 
     private val traceTag = "TSBridge"
 

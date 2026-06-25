@@ -3,9 +3,11 @@ package com.tamimarafat.ferngeist.feature.chat
 import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatImageData
+import com.tamimarafat.ferngeist.core.model.ChatOperationError
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -45,52 +47,30 @@ internal class ChatSessionCoordinator(
     }
 
     init {
+        // Connection state -> facade recovery decisions (StateFlow)
         scope.launch {
             facade.connectionState.collect { state ->
-                // Let the facade translate connection state into recovery decisions.
                 facade.onConnectionStateChanged(state)
             }
         }
+
+        // Session snapshot + capabilities (StateFlow) - combined in single coroutine
         scope.launch {
-            facade.sessionSnapshot.collect { snapshot ->
-                if (snapshot != null) callbacks.onSnapshot(snapshot)
-            }
-        }
-        scope.launch {
-            facade.agentCapabilities.collect { caps ->
+            combine(facade.sessionSnapshot, facade.agentCapabilities) { snapshot, caps ->
+                Pair(snapshot, caps)
+            }.collect { (snapshot, caps) ->
+                snapshot?.let { callbacks.onSnapshot(it) }
                 callbacks.onCapabilitiesChanged(caps)
             }
         }
-        scope.launch {
-            facade.sessionReady.collect {
-                callbacks.onSessionReady()
-            }
-        }
-        scope.launch {
-            facade.loadFailed.collect { message ->
-                callbacks.onLoadFailed(message)
-            }
-        }
-        scope.launch {
-            facade.operationError.collect { error ->
-                callbacks.onOperationError(error.message, error.stopStreaming)
-            }
-        }
-        scope.launch {
-            facade.streamingCancelled.collect {
-                callbacks.onStreamingCancelled()
-            }
-        }
-        scope.launch {
-            facade.cancelUnsupported.collect {
-                callbacks.onCancelUnsupported()
-            }
-        }
-        scope.launch {
-            facade.modelUpdated.collect {
-                callbacks.onModelUpdated()
-            }
-        }
+
+        // One-shot event flows (SharedFlow) - separate launches but grouped logically
+        scope.launch { facade.sessionReady.collect { callbacks.onSessionReady() } }
+        scope.launch { facade.loadFailed.collect { callbacks.onLoadFailed(it) } }
+        scope.launch { facade.operationError.collect { callbacks.onOperationError(it.message, it.stopStreaming) } }
+        scope.launch { facade.streamingCancelled.collect { callbacks.onStreamingCancelled() } }
+        scope.launch { facade.cancelUnsupported.collect { callbacks.onCancelUnsupported() } }
+        scope.launch { facade.modelUpdated.collect { callbacks.onModelUpdated() } }
     }
 
     /** Starts session load, then delegates to the facade. */

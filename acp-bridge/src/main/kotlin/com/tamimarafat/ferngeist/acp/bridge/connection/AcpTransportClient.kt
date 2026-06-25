@@ -367,26 +367,29 @@ internal class AcpTransportClient(
         reconnectJob =
             scope.launch {
                 val config = currentConfig ?: return@launch
-                while (sdkClient == null) {
-                    reconnectAttempts++
-                    // Linear backoff with ±50% jitter to prevent thundering-herd reconnects
-                    // when many clients retry against the same gateway. Capped at 30s.
-                    val baseDelayMs = 1000L * reconnectAttempts
-                    val jitteredDelayMs = (baseDelayMs * (0.5 + Random.nextDouble())).toLong()
-                    delay(jitteredDelayMs.coerceAtMost(MAX_RECONNECT_DELAY_MS))
+                try {
+                    while (sdkClient == null) {
+                        reconnectAttempts++
+                        // Linear backoff with ±50% jitter to prevent thundering-herd reconnects
+                        // when many clients retry against the same gateway. Capped at 30s.
+                        val baseDelayMs = 1000L * reconnectAttempts
+                        val jitteredDelayMs = (baseDelayMs * (0.5 + Random.nextDouble())).toLong()
+                        delay(jitteredDelayMs.coerceAtMost(MAX_RECONNECT_DELAY_MS))
 
-                    val reconnected = if (config.isResilientSession) {
-                        connectSessionResume(config, resetState, scheduleReconnectOnFailure = false)
-                    } else {
-                        connectInternal(config, resetState, scheduleReconnectOnFailure = false)
-                    }
+                        val reconnected = if (config.isResilientSession) {
+                            connectSessionResume(config, resetState, scheduleReconnectOnFailure = false)
+                        } else {
+                            connectInternal(config, resetState, scheduleReconnectOnFailure = false)
+                        }
 
-                    if (reconnected) {
-                        initialize()
-                        break
+                        if (reconnected) {
+                            initialize()
+                            break
+                        }
                     }
+                } finally {
+                    reconnectJob = null
                 }
-                reconnectJob = null
             }
     }
 

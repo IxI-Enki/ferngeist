@@ -54,7 +54,7 @@ internal class SessionGateway(
     private val bridgeFactory: (String) -> SessionBridge,
     private val scope: CoroutineScope,
 ) {
-    private val sessionRegistry = AcpSessionRegistry()
+    private val sessionRegistry = AcpSessionRegistry(scope)
     private val observerJobs = ConcurrentHashMap<String, List<Job>>()
 
     /**

@@ -28,6 +28,8 @@ import com.agentclientprotocol.model.ToolCallContent
 import io.github.diff.DeltaType
 import io.github.diff.generatePatch
 
+private const val MAX_DIFF_ROWS = 500
+
 /**
  * Renders a unified-diff view for a single file change.
  *
@@ -103,7 +105,14 @@ internal fun DiffRenderer(diff: ToolCallContent.Diff) {
             }
         }
 
-        result
+        // Cap rows to prevent excessive layout work for huge diffs.
+        if (result.size > MAX_DIFF_ROWS) {
+            val truncated = result.take(MAX_DIFF_ROWS).toMutableList()
+            truncated.add(LineDiffRow.Equal("… ${result.size - MAX_DIFF_ROWS} more lines"))
+            truncated
+        } else {
+            result
+        }
     }
 
     SelectionContainer {
@@ -257,6 +266,41 @@ internal fun ToolCallContent.Diff.computeDeletions(): Int {
     }
 }
 
+internal data class DiffStats(val additions: Int, val deletions: Int)
+
+internal fun List<ToolCallContent.Diff>.computeDiffStats(): DiffStats {
+    var totalAdditions = 0
+    var totalDeletions = 0
+    for (diff in this) {
+        val oldLines = diff.oldText?.lines() ?: emptyList()
+        val newLines = diff.newText.lines()
+        if (oldLines.isEmpty()) {
+            totalAdditions += newLines.size
+        } else {
+            val patch = generatePatch {
+                original = oldLines
+                revised = newLines
+            }
+            for (delta in patch.getDeltas()) {
+                when (delta.type) {
+                    DeltaType.INSERT -> {
+                        totalAdditions += delta.target.lines.size
+                    }
+                    DeltaType.DELETE -> {
+                        totalDeletions += delta.source.lines.size
+                    }
+                    DeltaType.CHANGE -> {
+                        totalAdditions += delta.target.lines.size
+                        totalDeletions += delta.source.lines.size
+                    }
+                    DeltaType.EQUAL -> {}
+                }
+            }
+        }
+    }
+    return DiffStats(totalAdditions, totalDeletions)
+}
+
 /**
  * Compact summary row aggregating all [ToolCallContent.Diff] entries
  * into a visual +N / diff-blocks / -N indicator.
@@ -276,8 +320,9 @@ internal fun DiffSummaryRow(
     if (!content.isNullOrEmpty()) {
         val diffs = content.filterIsInstance<ToolCallContent.Diff>()
         if (diffs.isNotEmpty()) {
-            val totalAdds = diffs.sumOf { it.computeAdditions() }
-            val totalDels = diffs.sumOf { it.computeDeletions() }
+            val stats = remember(diffs) { diffs.computeDiffStats() }
+            val totalAdds = stats.additions
+            val totalDels = stats.deletions
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,

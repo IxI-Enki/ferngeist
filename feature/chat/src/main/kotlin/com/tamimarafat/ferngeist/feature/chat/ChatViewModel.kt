@@ -293,7 +293,7 @@ class ChatViewModel
         }
 
         override fun onCleared() {
-            markdownStateStore.reset()
+            markdownStateStore.dispose()
             sessionCoordinator.clear()
             // Drop the active-chat record when the user leaves this chat, so push
             // suppression keys off the session actually on screen rather than the last

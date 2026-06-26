@@ -110,14 +110,15 @@ fun ChatScreen(
     val showComposerToolbar =
         !state.isLoading && !(state.error != null && state.messages.isEmpty())
     val composerContentHeightDp = with(density) { composerContentHeightPx.toDp() }
-    val screenWidthDp =
-        with(density) {
-            LocalWindowInfo.current.containerSize.width.toDp()
-        }
+    val containerSize = LocalWindowInfo.current.containerSize
     val systemBottomInsetDp = with(density) { systemBottomInsetPx.toDp() }
 
+    val screenWidthDp = remember(density, containerSize) {
+        with(density) { containerSize.width.toDp() }
+    }
+
     // Bottom padding for message list: composer height + system insets + floating offset + 36dp
-    val listBottomPadding =
+    val listBottomPadding = remember(showComposerToolbar, composerContentHeightDp, systemBottomInsetDp) {
         if (!showComposerToolbar) {
             0.dp
         } else {
@@ -126,9 +127,10 @@ fun ChatScreen(
                 FloatingToolbarDefaults.ScreenOffset +
                 36.dp
         }
+    }
 
     // Snackbar also needs to sit above the composer bar but with less extra padding (16dp)
-    val snackbarBottomPadding =
+    val snackbarBottomPadding = remember(showComposerToolbar, composerContentHeightDp, systemBottomInsetDp) {
         if (!showComposerToolbar) {
             0.dp
         } else {
@@ -137,6 +139,7 @@ fun ChatScreen(
                 FloatingToolbarDefaults.ScreenOffset +
                 16.dp
         }
+    }
 
     // --- Derived values from config options ---
     val activeModel =

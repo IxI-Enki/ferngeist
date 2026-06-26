@@ -85,11 +85,14 @@ import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.feature.chat.R
 import kotlin.random.Random
 import com.mikepenz.markdown.model.State as MarkdownRenderState
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.toPersistentMap
 
 @Composable
 fun MessageBubble(
     message: ChatMessage,
-    markdownStates: Map<String, MarkdownRenderState>,
+    markdownStates: ImmutableMap<String, MarkdownRenderState>,
     showStreamingIndicator: Boolean,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
@@ -169,7 +172,7 @@ private fun UserMessageContent(
 @Composable
 private fun AssistantMessageContent(
     message: ChatMessage,
-    markdownStates: Map<String, MarkdownRenderState>,
+    markdownStates: ImmutableMap<String, MarkdownRenderState>,
     showStreamingIndicator: Boolean,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,

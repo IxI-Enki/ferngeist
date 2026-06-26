@@ -28,10 +28,18 @@ import com.tamimarafat.ferngeist.feature.chat.R
 import com.agentclientprotocol.model.EmbeddedResourceResource
 import com.agentclientprotocol.model.ToolCallContent
 
+private const val MAX_TEXT_CHARS = 5000
+
+
 @Composable
 internal fun ContentBlockRenderer(block: ContentBlock) {
     when (block) {
         is ContentBlock.Text -> {
+            val text = if (block.text.length > MAX_TEXT_CHARS) {
+                block.text.substring(0, MAX_TEXT_CHARS) + "… (truncated)"
+            } else {
+                block.text
+            }
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -39,17 +47,17 @@ internal fun ContentBlockRenderer(block: ContentBlock) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                ) {
-                    SelectionContainer {
-                        Text(
-                            text = block.text,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(12.dp),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            softWrap = false,
-                            overflow = TextOverflow.Visible,
-                        )
-                    }
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp),
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        softWrap = false,
+                        overflow = TextOverflow.Visible,
+                    )
+                }
             }
         }
 

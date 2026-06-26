@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +73,13 @@ import com.tamimarafat.ferngeist.feature.chat.RecentSelectionStore
 import com.tamimarafat.ferngeist.core.model.UsageState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.toPersistentMap
+import com.mikepenz.markdown.model.State as MarkdownRenderState
+
+private const val INITIAL_WINDOW = 50
+private const val WINDOW_STEP = 50
 
 /**
  * Hosts the dialog/overlay surfaces that sit above the main chat UI.
@@ -251,6 +259,11 @@ private fun ChatMessageList(
     onToolCallClick: (String) -> Unit,
     onStreamLayoutSettled: () -> Unit = {},
 ) {
+    var windowSize by rememberSaveable(state.serverId) { mutableStateOf(INITIAL_WINDOW) }
+    val windowed = remember(state.messages, windowSize) {
+        state.messages.takeLast(windowSize)
+    }
+
     LazyColumn(
         state = listState,
         modifier =
@@ -260,10 +273,34 @@ private fun ChatMessageList(
         contentPadding = PaddingValues(start = 16.dp, top = listTopPadding + 8.dp, end = 16.dp, bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(items = state.messages, key = { it.id }) { message ->
+        if (windowSize < state.messages.size) {
+            item(key = "__load_older") {
+                OutlinedButton(
+                    onClick = { windowSize += WINDOW_STEP },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                ) {
+                    Text(text = "Load earlier messages")
+                }
+            }
+        }
+        items(items = windowed, key = { it.id }) { message ->
+            val messageMarkdown = remember(message, state.markdownStates) {
+                if (message.role != ChatMessage.Role.ASSISTANT) {
+                    persistentMapOf<String, MarkdownRenderState>()
+                } else {
+                    buildMap {
+                        message.segments.forEach { seg ->
+                            state.markdownStates[seg.id]?.let { put(seg.id, it) }
+                        }
+                        state.markdownStates[message.id]?.let { put(message.id, it) }
+                    }.toPersistentMap()
+                }
+            }
             MessageBubble(
                 message = message,
-                markdownStates = state.markdownStates,
+                markdownStates = messageMarkdown,
                 showStreamingIndicator = message.isStreaming && message.id == renderedLastMessageId,
                 onThoughtClick = onThoughtClick,
                 onToolCallClick = onToolCallClick,

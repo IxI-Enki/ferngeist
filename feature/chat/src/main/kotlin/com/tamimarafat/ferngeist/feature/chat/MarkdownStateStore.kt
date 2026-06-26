@@ -88,6 +88,16 @@ internal class MarkdownStateStore(
         markdownStateCache.clear()
         pendingMarkdownQueue.clear()
         markdownParsingKeys.clear()
+    }
+
+    /**
+     * Releases the dedicated parsing dispatcher. Call once when the owning
+     * ViewModel is cleared — NOT from [reset], which runs on every session load.
+     * Closing the executor here permanently shuts it down; any later parse would
+     * throw and cancel the snapshot collector.
+     */
+    fun dispose() {
+        reset()
         (markdownDispatcher as? kotlinx.coroutines.ExecutorCoroutineDispatcher)?.close()
     }
 

@@ -94,14 +94,8 @@ class FerngeistForegroundService : Service() {
                 return START_NOT_STICKY
             }
         }
-
-        if (connectionManager.connectionState.value !is AcpConnectionState.Connected &&
-            connectionManager.connectionState.value !is AcpConnectionState.Connecting
-        ) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
+        // startForeground() MUST happen unconditionally within 5 s of
+        // startForegroundService(), regardless of connection state.
         if (!isStarted) {
             isStarted = true
             val notification =
@@ -113,9 +107,17 @@ class FerngeistForegroundService : Service() {
             }
             getSystemService(NotificationManager::class.java)
                 .cancel(ERROR_NOTIFICATION_ID)
-            observeConnectionState()
         }
 
+        // Now safe to check state — startForeground() already called.
+        if (connectionManager.connectionState.value !is AcpConnectionState.Connected &&
+            connectionManager.connectionState.value !is AcpConnectionState.Connecting
+        ) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        observeConnectionState()
         return START_STICKY
     }
 

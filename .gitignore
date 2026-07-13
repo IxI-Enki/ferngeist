@@ -19,6 +19,16 @@ app/google-services.json
 ## Kotlin/Compose tooling
 .kotlin/
 
+## fastlane / Play Store (secrets + generated artifacts)
+fastlane/play-store-service-account.json
+fastlane/*.json
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/README.md
+.bundle/
+vendor/bundle/
+
 ## OS
 .DS_Store
 Thumbs.db

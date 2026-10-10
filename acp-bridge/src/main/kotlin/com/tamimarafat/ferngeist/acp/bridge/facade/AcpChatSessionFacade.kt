@@ -225,7 +225,7 @@ class AcpChatSessionFacade(
         cancelBridgeRecovery()
 
         if (!ensureConnectedAndInitialized()) {
-            _loadFailed.emit("Disconnected. Reconnect to refresh this session.")
+            _loadFailed.emit(connectionFailure("Disconnected. Reconnect to refresh this session."))
             return
         }
 
@@ -236,7 +236,7 @@ class AcpChatSessionFacade(
             // browser transport; this chat's own connection mints the session.
             val bridge = connectionManager.createSession(cwd)
             if (bridge == null) {
-                _loadFailed.emit("Failed to create a new session.")
+                _loadFailed.emit(connectionFailure("Failed to create a new session."))
                 return
             }
             attachSessionBridge(bridge)
@@ -327,7 +327,7 @@ class AcpChatSessionFacade(
             }
         if (bridge == null) {
             _operationError.emit(
-                ChatOperationError("Session is not ready. Please retry in a moment.", false),
+                ChatOperationError(connectionFailure("Session is not ready. Please retry in a moment."), false),
             )
             return false
         }
@@ -498,6 +498,19 @@ class AcpChatSessionFacade(
     }
 
     // ---- Internal ----
+
+    /**
+     * The server's own reason a connect, initialize or session/new just failed, which those
+     * calls report only as a boolean/null (the cause lands in the transport state or
+     * diagnostics). [fallback] when none was recorded.
+     */
+    private fun connectionFailure(fallback: String): String {
+        val state = connectionManager.connectionState.value
+        if (state is AcpConnectionState.Failed) return formatAcpErrorMessage(state.error, fallback)
+        return connectionManager.diagnostics.value.recentErrors
+            .lastOrNull { it.source == "initialize" || it.source == "session/new" }
+            ?.message ?: fallback
+    }
 
     /**
      * Ensures the transport is connected and initialised.

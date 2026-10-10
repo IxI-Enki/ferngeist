@@ -467,6 +467,7 @@ internal class SessionGateway(
             // in that case, so end the turn here — otherwise a transport or SDK
             // failure after navigation leaves the optimistic bubble streaming
             // forever. Still rethrown so a live awaiter can surface the error.
+            orchestra.diagnosticsStore.appendError("session/prompt", formatAcpErrorMessage(error, "Prompt failed"))
             bridge.emitEvent(AppSessionEvent.TurnComplete(consumeTurnEndReason(sessionId)))
             throw error
         }

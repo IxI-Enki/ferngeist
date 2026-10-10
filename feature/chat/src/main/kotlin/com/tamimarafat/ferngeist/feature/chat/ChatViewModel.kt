@@ -1146,9 +1146,9 @@ class ChatViewModel
             val dispatched = sessionCoordinator.sendMessage(prompt.text, prompt.images, prompt.files)
             inFlightClientId = null
             if (!dispatched) {
-                // No bridge / not ready / unsupported -> mark FAILED immediately.
+                // No bridge / not ready / unsupported -> mark FAILED immediately. The facade
+                // has already reported the cause; a second generic error would replace it.
                 setPendingStatus(prompt.clientId, MessageDeliveryStatus.SENDING, MessageDeliveryStatus.FAILED)
-                emitEffect(ChatEffect.ShowError("Failed to send message"))
             }
             // Only now is the durable copy dropped, and deliberately not from a
             // finally: until the send resolves the stored snapshot still contains

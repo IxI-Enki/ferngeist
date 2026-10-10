@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -93,6 +94,7 @@ import com.tamimarafat.ferngeist.core.common.ui.ConnectionDiagnosticsDialog
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionStatusPill
 import com.tamimarafat.ferngeist.core.common.ui.ErrorStateCard
 import com.tamimarafat.ferngeist.core.common.ui.ServerNameSharedBoundsKey
+import com.tamimarafat.ferngeist.core.common.ui.ServerSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.SessionSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.SessionTitleSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
@@ -491,8 +493,28 @@ private fun SessionListScaffold(
             collapse,
         )
 
+    // The whole list grows out of the agent card it was opened from. Not in the workspace: the
+    // card stays on screen beside this pane, and two live claimants scale to each other's bounds.
+    val transitionModifier =
+        if (sharedBoundsEnabled) {
+            with(sharedTransitionScope) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = ServerSharedBoundsKey(serverId)),
+                    animatedVisibilityScope = animatedContentScope,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                )
+            }
+        } else {
+            Modifier
+        }
+
     Box(
-        modifier = Modifier.sessionListContainer(state, onRefresh),
+        modifier =
+            transitionModifier
+                .sessionListContainer(state, onRefresh)
+                .background(MaterialTheme.colorScheme.surface),
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),

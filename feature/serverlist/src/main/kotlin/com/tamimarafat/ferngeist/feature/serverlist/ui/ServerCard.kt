@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.core.common.ui.AgentIconBadge
 import com.tamimarafat.ferngeist.core.common.ui.ServerNameSharedBoundsKey
+import com.tamimarafat.ferngeist.core.common.ui.ServerSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.common.ui.onSecondaryClick
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
@@ -157,8 +158,15 @@ private fun ServerCardSurface(
 ) {
     Card(
         modifier =
-            Modifier
-                .fillMaxWidth()
+            with(sharedTransitionScope) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = ServerSharedBoundsKey(server.id)),
+                    animatedVisibilityScope = animatedContentScope,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                )
+            }.fillMaxWidth()
                 .clip(cardShape)
                 .handCursor()
                 .onSecondaryClick(enabled = !connectionState.isConnecting) { onLongClick() }

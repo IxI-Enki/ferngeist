@@ -39,10 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -292,18 +290,18 @@ fun FerngeistNavHost(
         }
     }
 
-    // The compact sessions screen only drifts a short distance while it cross-fades; a full-height
-    // slide reads as a page push, which this pair is not.
-    val sessionListSlidePx = with(LocalDensity.current) { SESSION_LIST_SLIDE_DP.dp.roundToPx() }
-
     SharedTransitionLayout {
         NavHost(
             navController = navController,
             startDestination = "server_list",
-            enterTransition = { navEnterTransition(navSpring, navFadeSpring, sessionListSlidePx) },
-            exitTransition = { navExitTransition(navSpring, navFadeSpring, sessionListSlidePx) },
-            popEnterTransition = { navPopEnterTransition(navSpring, navFadeSpring, sessionListSlidePx) },
-            popExitTransition = { navPopExitTransition(navSpring, navFadeSpring, sessionListSlidePx) },
+            enterTransition = { navEnterTransition(navSpring, navFadeSpring) },
+            exitTransition = { navExitTransition(navSpring, navFadeSpring) },
+            popEnterTransition = { navPopEnterTransition(navSpring, navFadeSpring) },
+            popExitTransition = { navPopExitTransition(navSpring, navFadeSpring) },
+            // Navigation 2.10 drives back gestures through these instead of the pop pair, and its
+            // default scales the leaving screen to 70%. Keep gestures on the same motion as the arrow.
+            predictivePopEnterTransition = { _ -> navPopEnterTransition(navSpring, navFadeSpring) },
+            predictivePopExitTransition = { _ -> navPopExitTransition(navSpring, navFadeSpring) },
         ) {
             FerngeistDestinations(
                 navController = navController,
@@ -866,29 +864,12 @@ private fun NotificationPermissionEffect() {
     }
 }
 
-/** How far the compact sessions screen drifts while it cross-fades, in dp. */
-private const val SESSION_LIST_SLIDE_DP = 40
-
-/**
- * Returns `true` when navigating between `sessions/{id}` and `chat/{id}`.
- *
- * Used to suppress the default slide/fade animation so the shared-element
- * transition defined inside the two screens drives the visual change instead.
- */
-
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.navEnterTransition(
     navSpring: SpringSpec<IntOffset>,
     navFadeSpring: SpringSpec<Float>,
-    sessionListSlidePx: Int,
 ): EnterTransition =
     when {
-        isSessionChatTransition() -> EnterTransition.None
-        isServerListSessionsTransition() ->
-            slideIntoContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Up,
-                animationSpec = navSpring,
-                initialOffset = { sessionListSlidePx },
-            ) + fadeIn(animationSpec = navFadeSpring)
+        isSharedBoundsTransition() -> EnterTransition.None
         // One sheet: the incoming chat starts against the edge of the released one and both
         // cover the same remaining distance. A crossfade over the slide only ghosted the two.
         isChatChatTransition() -> {
@@ -909,16 +890,9 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.navEnterTransition
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.navExitTransition(
     navSpring: SpringSpec<IntOffset>,
     navFadeSpring: SpringSpec<Float>,
-    sessionListSlidePx: Int,
 ): ExitTransition =
     when {
-        isSessionChatTransition() -> ExitTransition.None
-        isServerListSessionsTransition() ->
-            slideOutOfContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Up,
-                animationSpec = navSpring,
-                targetOffset = { sessionListSlidePx },
-            ) + fadeOut(animationSpec = navFadeSpring)
+        isSharedBoundsTransition() -> ExitTransition.None
         isChatChatTransition() -> {
             // The released chat is already offset by the drag, so it only has the rest to go.
             val remaining = chatChatRemaining()
@@ -938,42 +912,35 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.navExitTransition(
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.navPopEnterTransition(
     navSpring: SpringSpec<IntOffset>,
     navFadeSpring: SpringSpec<Float>,
-    sessionListSlidePx: Int,
 ): EnterTransition =
-    when {
-        isSessionChatTransition() -> EnterTransition.None
-        isServerListSessionsTransition() ->
-            slideIntoContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Down,
-                animationSpec = navSpring,
-                initialOffset = { sessionListSlidePx },
-            ) + fadeIn(animationSpec = navFadeSpring)
-        else ->
-            slideIntoContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = navSpring,
-            ) + fadeIn(animationSpec = navFadeSpring)
+    if (isSharedBoundsTransition()) {
+        EnterTransition.None
+    } else {
+        slideIntoContainer(
+            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+            animationSpec = navSpring,
+        ) + fadeIn(animationSpec = navFadeSpring)
     }
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.navPopExitTransition(
     navSpring: SpringSpec<IntOffset>,
     navFadeSpring: SpringSpec<Float>,
-    sessionListSlidePx: Int,
 ): ExitTransition =
-    when {
-        isSessionChatTransition() -> ExitTransition.None
-        isServerListSessionsTransition() ->
-            slideOutOfContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Down,
-                animationSpec = navSpring,
-                targetOffset = { sessionListSlidePx },
-            ) + fadeOut(animationSpec = navFadeSpring)
-        else ->
-            slideOutOfContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = navSpring,
-            ) + fadeOut(animationSpec = navFadeSpring)
+    if (isSharedBoundsTransition()) {
+        ExitTransition.None
+    } else {
+        slideOutOfContainer(
+            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+            animationSpec = navSpring,
+        ) + fadeOut(animationSpec = navFadeSpring)
     }
+
+/**
+ * Pairs whose screen grows out of the tapped card: the default slide/fade is suppressed so the
+ * shared bounds inside the two screens drive the change instead.
+ */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isSharedBoundsTransition(): Boolean =
+    isSessionChatTransition() || isServerListSessionsTransition()
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.isSessionChatTransition(): Boolean {
     val fromRoute = initialState.destination.route ?: return false

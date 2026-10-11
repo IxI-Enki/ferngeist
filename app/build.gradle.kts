@@ -13,7 +13,7 @@ plugins {
 // literals, and the GitHub release asset names ("Ferngeist-$versionName.apk")
 // must all agree. F-Droid's checkupdates parses these literal values, so
 // they MUST NOT be computed (e.g. via git describe).
-val appVersionName = "1.1.0"
+val appVersionName = "1.2.0"
 val appVersionCode = 1605
 
 val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")?.trim()?.replaceFirst(Regex("[\\\\/]+$"), "")

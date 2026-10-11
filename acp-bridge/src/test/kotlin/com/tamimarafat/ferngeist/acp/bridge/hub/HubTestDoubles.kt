@@ -10,9 +10,13 @@ import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepositor
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.core.model.store.AuthEnvValueStore
 import com.tamimarafat.ferngeist.gateway.GatewayAgent
+import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
+import com.tamimarafat.ferngeist.gateway.GatewayProtocol
+import com.tamimarafat.ferngeist.gateway.GatewayRemoteStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.GatewaySessionResumeResponse
 import com.tamimarafat.ferngeist.gateway.GatewaySessionSummary
+import com.tamimarafat.ferngeist.gateway.GatewayStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -72,6 +76,9 @@ internal class FakeGatewayRepo : GatewayRepository {
     var listFailure: Exception? = null
     var resumeFailure: Exception? = null
     var resumedSessions = mutableListOf<String>()
+    var protocolVersion: String? = GatewayProtocol.CURRENT
+    var connectCalls = 0
+    var connectFailure: Exception? = null
 
     override suspend fun createWorktree(
         scheme: String,
@@ -99,7 +106,13 @@ internal class FakeGatewayRepo : GatewayRepository {
     override suspend fun fetchStatus(
         scheme: String,
         host: String,
-    ) = TODO("unused in these tests")
+    ): GatewayStatus =
+        GatewayStatus(
+            name = "gw",
+            version = "dev",
+            protocolVersion = protocolVersion,
+            remote = GatewayRemoteStatus(configured = true),
+        )
 
     override suspend fun startPairing(
         scheme: String,
@@ -131,7 +144,16 @@ internal class FakeGatewayRepo : GatewayRepository {
         host: String,
         gatewayCredential: String,
         agentId: String,
-    ) = TODO("unused in these tests")
+    ): GatewayConnectResponse {
+        connectCalls += 1
+        connectFailure?.let { throw it }
+        return GatewayConnectResponse(
+            runtimeId = "rt-1",
+            sessionId = "s-new",
+            attachToken = "token",
+            webSocketUrl = "ws://gw/v1/acp/rt-1",
+        )
+    }
 
     override suspend fun restartRuntime(
         scheme: String,

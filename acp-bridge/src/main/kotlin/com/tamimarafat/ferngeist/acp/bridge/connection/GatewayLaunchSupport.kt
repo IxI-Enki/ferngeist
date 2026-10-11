@@ -91,6 +91,10 @@ suspend fun buildGatewayLaunchContext(
         gatewaySourceRepository = gatewaySourceRepository,
         gatewaySource = server.gatewaySource,
         agentId = server.binding.agentId,
+        // The server list is a connect path like the chat screen: probe the
+        // protocol version first so a mismatch fails here with a clear
+        // message instead of opaquely on the connect call.
+        requireSupportedProtocol = true,
     ).map { result ->
         val source = result.gatewaySource
         val handoff = result.handoff

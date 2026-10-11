@@ -144,6 +144,9 @@ class SessionCatalogTest {
     fun `deleteSession closes the gateway session then drops row and tracking`() =
         runTest {
             val repo = FakeGatewayRepo()
+            // The best-effort ACP leg needs no gateway launch here: a
+            // mismatched protocol keeps it skipped and the delete still succeeds.
+            repo.protocolVersion = "v1"
             val sessions = FakeSessionRepo()
             val hub = newHub(repo = repo, sessionRepository = sessions)
             val targets = FakeLaunchableTargets().apply { target = gatewayTarget() }

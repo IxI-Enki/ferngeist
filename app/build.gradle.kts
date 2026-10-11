@@ -14,7 +14,7 @@ plugins {
 // must all agree. F-Droid's checkupdates parses these literal values, so
 // they MUST NOT be computed (e.g. via git describe).
 val appVersionName = "1.2.0"
-val appVersionCode = 1605
+val appVersionCode = 1606
 
 val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")?.trim()?.replaceFirst(Regex("[\\\\/]+$"), "")
 val releaseKeystorePassword: String? = System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -51,7 +51,7 @@ android {
         applicationId = "com.tamimarafat.ferngeist"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1605
+        versionCode = 1606
         versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

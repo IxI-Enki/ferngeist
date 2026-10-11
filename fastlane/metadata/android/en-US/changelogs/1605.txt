@@ -1,4 +1,9 @@
-Update your gateway first: this version needs gateway protocol v2. Older gateways show a version error.
+Worktrees, mid-turn steering, and keyboard and pointer support.
 
-• Failed prompts and connects now show the server's own error
-• Small fixes and under-the-hood cleanup
+• Open chats in gateway worktrees
+• Queued prompts steer into the running turn; swipe one up to send it now
+• Focus, hover and context menus throughout
+• Paste or drop files into the composer
+• ACP elicitation forms and URL sheets
+• Encrypted pushes over UnifiedPush, FOSS build included
+• Fixed: tool calls no longer spin forever after a cut-short turn

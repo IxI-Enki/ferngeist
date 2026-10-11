@@ -30,5 +30,6 @@ include(":gateway-client")
 include(":feature:serverlist")
 include(":feature:sessionlist")
 include(":feature:chat")
+include(":e2e")
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")

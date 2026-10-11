@@ -5,6 +5,7 @@ import org.jlleitschuh.gradle.ktlint.KtlintExtension
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.android.test) apply false
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ksp) apply false
@@ -18,6 +19,9 @@ subprojects {
         configureKtlintAndDetekt()
     }
     plugins.withId("com.android.application") {
+        configureKtlintAndDetekt()
+    }
+    plugins.withId("com.android.test") {
         configureKtlintAndDetekt()
     }
 }

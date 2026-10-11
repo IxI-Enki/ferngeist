@@ -478,12 +478,18 @@ internal data class DiffStats(
     val deletions: Int,
 )
 
+// A final newline ends the last line rather than starting an empty one, as git counts it.
+private fun String.diffLines(): List<String> {
+    val lines = lines()
+    return if (lines.size > 1 && lines.last().isEmpty()) lines.dropLast(1) else lines
+}
+
 internal fun List<ToolCallContent.Diff>.computeDiffStats(): DiffStats {
     var totalAdditions = 0
     var totalDeletions = 0
     for (diff in this) {
-        val oldLines = diff.oldText?.lines() ?: emptyList()
-        val newLines = diff.newText.lines()
+        val oldLines = diff.oldText?.diffLines() ?: emptyList()
+        val newLines = diff.newText.diffLines()
         if (oldLines.isEmpty()) {
             totalAdditions += newLines.size
         } else {

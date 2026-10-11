@@ -114,6 +114,13 @@ internal class FileChange(
 )
 
 /**
+ * Git's counts when the working tree has the file (newest turn only), else the reported diffs:
+ * summing every edit's diff overstates a file edited more than once.
+ */
+internal fun FileChange.stats(tree: List<ChatChangedFile>): DiffStats? =
+    tree.statsFor(path) ?: diffs.takeIf { it.isNotEmpty() }?.computeDiffStats()
+
+/**
  * The files a turn changed, in the order each was first touched. A failed call's diff never
  * landed, so it is left out. ponytail: repeated edits to one file sum their counts rather than
  * netting them; diff first-old against last-new if that ever misleads.
@@ -153,7 +160,7 @@ internal fun TurnChanges(
     val tree = LocalWorkingTreeChanges.current
     val stats =
         remember(files, tree) {
-            files.map { file -> file.diffs.takeIf { it.isNotEmpty() }?.computeDiffStats() ?: tree.statsFor(file.path) }
+            files.map { it.stats(tree) }
         }
     val total =
         stats.filterNotNull().takeIf { it.isNotEmpty() }?.let { counted ->

@@ -167,6 +167,27 @@ class FileChangesTest {
     }
 
     @Test
+    fun gitCountsWinOverSummedDiffsOfARepeatedlyEditedFile() {
+        val edits =
+            listOf(
+                ToolCallContent.Diff(path = "/repo/a.kt", oldText = "x", newText = "y"),
+                ToolCallContent.Diff(path = "/repo/a.kt", oldText = "y", newText = "z"),
+            )
+        val file = FileChange("/repo/a.kt", edits, "s1")
+        val tree = listOf(ChatChangedFile(path = "a.kt", status = "M", added = 1, removed = 1))
+
+        assertEquals(DiffStats(additions = 2, deletions = 2), file.stats(emptyList()))
+        assertEquals(DiffStats(additions = 1, deletions = 1), file.stats(tree))
+    }
+
+    @Test
+    fun aFinalNewlineDoesNotAddALine() {
+        val diff = ToolCallContent.Diff(path = "a.kt", oldText = null, newText = "one\ntwo\r\n")
+
+        assertEquals(DiffStats(additions = 2, deletions = 0), listOf(diff).computeDiffStats())
+    }
+
+    @Test
     fun onlyEditCallsAreReadAsWrites() {
         val read =
             ToolCallDisplay(

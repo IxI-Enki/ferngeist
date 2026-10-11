@@ -1,8 +1,10 @@
 package com.tamimarafat.ferngeist.workspace
 
 import android.net.Uri
+import com.tamimarafat.ferngeist.acp.bridge.facade.HubChatPresence
 import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
+import com.tamimarafat.ferngeist.core.model.ChatSessionPresence
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
@@ -10,7 +12,6 @@ import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import com.tamimarafat.ferngeist.feature.chat.ChatScrollStateStore
 import com.tamimarafat.ferngeist.feature.chat.PendingPromptStore
 import com.tamimarafat.ferngeist.feature.chat.SwitcherHintStore
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -35,7 +36,12 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelFactoryTest {
-    private val chatConnectionHub = mockk<ChatConnectionHub>(relaxed = true)
+    private val hub = mockk<ChatConnectionHub>(relaxed = true)
+    private val presence: ChatSessionPresence =
+        HubChatPresence(
+            hub = hub,
+            launchableTargetRepository = mockk<LaunchableTargetRepository>(relaxed = true),
+        )
     private val sessionFacadeFactory = mockk<ChatSessionFacadeFactory>(relaxed = true)
 
     private val factory =
@@ -46,8 +52,7 @@ class ChatViewModelFactoryTest {
             pendingPromptStore = mockk<PendingPromptStore>(relaxed = true),
             switcherHintStore = mockk<SwitcherHintStore>(relaxed = true),
             recentSelectionStore = mockk<RecentSelectionStore>(relaxed = true),
-            chatConnectionHub = chatConnectionHub,
-            gatewayRepository = mockk<GatewayRepository>(relaxed = true),
+            presence = presence,
             launchableTargetRepository = mockk<LaunchableTargetRepository>(relaxed = true),
         )
 
@@ -73,8 +78,9 @@ class ChatViewModelFactoryTest {
         assertEquals("/work/proj", viewModel.cwd)
         // Announcing screen presence is the view model's first act, so it proves both ids
         // arrived from the handle the factory built rather than the enclosing nav entry's.
-        // Presence opens under the minted id, the same id the screen later closes under.
-        verify { chatConnectionHub.chatScreenOpened("srv-1", "real-42", "/work/proj") }
+        // Presence opens under the minted id, the same id the screen later closes under,
+        // and reaches the hub through the presence adapter.
+        verify { hub.chatScreenOpened("srv-1", "real-42", "/work/proj") }
     }
 
     @Test

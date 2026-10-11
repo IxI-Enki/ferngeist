@@ -1,26 +1,20 @@
 package com.tamimarafat.ferngeist.acp.bridge.hub
 
 import app.cash.turbine.test
-import com.tamimarafat.ferngeist.acp.bridge.ConnectivityObserverStub
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
+import com.tamimarafat.ferngeist.acp.bridge.connection.GatewaySessionResumeRejectedException
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
 import com.tamimarafat.ferngeist.core.model.SessionSummary
-import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
-import com.tamimarafat.ferngeist.gateway.GatewayAgent
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.GatewayRequestException
-import com.tamimarafat.ferngeist.gateway.GatewaySessionResumeResponse
-import com.tamimarafat.ferngeist.gateway.GatewaySessionSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -33,328 +27,6 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatConnectionHubTest {
-    private class FakeGatewayRepo : GatewayRepository {
-        val closed = mutableListOf<String>()
-        var sessions: List<GatewaySessionSummary> = emptyList()
-        var closeFailure: Exception? = null
-        var listFailure: Exception? = null
-
-        override suspend fun createWorktree(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            repo: String,
-            base: String?,
-            branch: String?,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun listWorktrees(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun deleteWorktree(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            worktreeId: String,
-            force: Boolean,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun fetchStatus(
-            scheme: String,
-            host: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun startPairing(
-            scheme: String,
-            host: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun getPairingStatus(
-            scheme: String,
-            host: String,
-            challengeId: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun completePairing(
-            scheme: String,
-            host: String,
-            challengeId: String,
-            code: String,
-            deviceName: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun refreshCredential(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun fetchAgents(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun startAgent(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            agentId: String,
-            new: Boolean,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun connectRuntime(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            sessionMode: String?,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun restartRuntime(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            envVars: Map<String, String>,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun fetchRuntimeLogs(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun resumeSession(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            sessionId: String,
-        ): GatewaySessionResumeResponse = TODO("unused in hub tests")
-
-        override suspend fun listGatewaySessions(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-        ): List<GatewaySessionSummary> {
-            listFailure?.let { throw it }
-            return sessions
-        }
-
-        override suspend fun closeSession(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            sessionId: String,
-        ) {
-            closed += sessionId
-            closeFailure?.let { throw it }
-        }
-
-        override suspend fun getPushConfig(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-        ): com.tamimarafat.ferngeist.gateway.GatewayPushConfig = TODO()
-
-        override suspend fun registerPushSubscription(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            subscription: com.tamimarafat.ferngeist.gateway.GatewayPushSubscription,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun fetchWorkspaceFile(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            path: String,
-            acpSessionId: String?,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun fetchGitStatus(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            acpSessionId: String?,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun fetchGitDiff(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            path: String?,
-            acpSessionId: String?,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun createCustomAgent(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            displayName: String,
-            command: String,
-            args: List<String>,
-            hint: String,
-        ): GatewayAgent = TODO("unused in hub tests")
-
-        override suspend fun deleteCustomAgent(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            agentId: String,
-        ) = TODO("unused in hub tests")
-
-        override suspend fun stopAgent(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            agentId: String,
-        ) = TODO("unused in hub tests")
-    }
-
-    // Deterministic clock: each focus/register advances one tick.
-    private var ticks = 0L
-    private val clock: () -> Long = { ++ticks }
-
-    private class FakeSessionRepo : SessionRepository {
-        private val rows = linkedMapOf<String, SessionSummary>()
-
-        /** Title writes, so read-only paths can assert they wrote nothing. */
-        var titleWrites = 0
-            private set
-
-        /** Whole-table replacements, so read-only paths can assert they wrote nothing. */
-        var replaceCount = 0
-            private set
-
-        private fun key(
-            serverId: String,
-            sessionId: String,
-        ) = "$serverId/$sessionId"
-
-        override fun getSessions(serverId: String): Flow<List<SessionSummary>> =
-            flowOf(rows.filterKeys { it.startsWith("$serverId/") }.values.toList())
-
-        override fun getRecentSessions(limit: Int): Flow<List<SessionSummary>> =
-            flowOf(rows.values.sortedByDescending { it.updatedAt }.take(limit))
-
-        override suspend fun getSession(
-            serverId: String,
-            sessionId: String,
-        ): SessionSummary? = rows[key(serverId, sessionId)]
-
-        override suspend fun upsertSession(
-            serverId: String,
-            summary: SessionSummary,
-        ) {
-            rows[key(serverId, summary.id)] = summary.copy(serverId = serverId)
-        }
-
-        override suspend fun updateSessionTitle(
-            serverId: String,
-            sessionId: String,
-            title: String,
-        ) {
-            titleWrites++
-            rows[key(serverId, sessionId)]?.let { rows[key(serverId, sessionId)] = it.copy(title = title) }
-        }
-
-        override suspend fun touchSession(
-            serverId: String,
-            sessionId: String,
-            updatedAt: Long,
-        ) {
-            rows[key(serverId, sessionId)]?.let { rows[key(serverId, sessionId)] = it.copy(updatedAt = updatedAt) }
-        }
-
-        override suspend fun setGatewaySessionId(
-            serverId: String,
-            sessionId: String,
-            gatewaySessionId: String?,
-        ) {
-            rows[key(serverId, sessionId)]?.let {
-                rows[key(serverId, sessionId)] = it.copy(gatewaySessionId = gatewaySessionId)
-            }
-        }
-
-        override suspend fun deleteSession(
-            serverId: String,
-            sessionId: String,
-        ) {
-            rows.remove(key(serverId, sessionId))
-        }
-
-        override suspend fun clearStaleGatewaySessions(
-            serverId: String,
-            liveGatewaySessionIds: Set<String>,
-        ): Int {
-            val stale =
-                rows.keys.filter { key ->
-                    key.startsWith("$serverId/") &&
-                        rows[key]?.gatewaySessionId.let { id -> id != null && id !in liveGatewaySessionIds }
-                }
-            stale.forEach { rows[it] = rows.getValue(it).copy(gatewaySessionId = null) }
-            return stale.size
-        }
-
-        override suspend fun clearSessions(serverId: String) {
-            rows.keys.removeAll { it.startsWith("$serverId/") }
-        }
-
-        override suspend fun replaceSessions(
-            serverId: String,
-            sessions: List<SessionSummary>,
-        ) {
-            replaceCount++
-            clearSessions(serverId)
-            sessions.forEach { upsertSession(serverId, it) }
-        }
-    }
-
-    private fun newHub(
-        repo: GatewayRepository? = null,
-        maxHot: Int = 3,
-        maxGateway: Int = 5,
-        sessionRepository: SessionRepository? = null,
-    ): ChatConnectionHub =
-        ChatConnectionHub(
-            gatewayRepository = repo,
-            scope = CoroutineScope(Dispatchers.Unconfined),
-            connectivityObserver = ConnectivityObserverStub(initialState = true),
-            maxHotConnections = maxHot,
-            maxGatewaySessionsPerDevice = maxGateway,
-            clock = clock,
-            sessionRepository = sessionRepository,
-        )
-
-    private suspend fun ChatConnectionHub.registerChat(
-        serverId: String = "srv",
-        sessionId: String,
-        gatewaySessionId: String? = "gs-$sessionId",
-        gatewaySourceId: String = "src-1",
-        agentId: String = "agent-1",
-        connected: Boolean = true,
-        streaming: Boolean = false,
-        manager: AcpConnectionManager? = null,
-    ): String =
-        register(
-            serverId = serverId,
-            sessionId = sessionId,
-            gatewaySessionId = gatewaySessionId,
-            gatewaySourceId = gatewaySourceId,
-            agentId = agentId,
-            isConnected = { connected },
-            isStreaming = { streaming },
-            manager = manager,
-        )
-
     @Test
     fun `resolveSessionTitle is read-only and null while no transport is warm`() =
         runTest {
@@ -525,14 +197,45 @@ class ChatConnectionHubTest {
         }
 
     @Test
-    fun `hasLiveGatewaySession requires matching source agent and connection`() =
+    fun `resumeAttachToken returns the minted token`() =
         runTest {
-            val hub = newHub()
-            hub.registerChat(sessionId = "live", gatewaySourceId = "src-1", agentId = "agent-1", connected = true)
-            hub.registerChat(sessionId = "dead", gatewaySourceId = "src-1", agentId = "agent-1", connected = false)
-            assertTrue(hub.hasLiveGatewaySession("src-1", "agent-1"))
-            assertFalse(hub.hasLiveGatewaySession("src-2", "agent-1"))
-            assertFalse(hub.hasLiveGatewaySession("src-1", "agent-2"))
+            val repo = FakeGatewayRepo()
+            val hub = newHub(repo)
+
+            val token = hub.resumeAttachToken(gatewayConfig(), AcpConnectionConfig.ResumeInfo("s1", "old-token"))
+
+            assertEquals("fresh-token", token)
+            assertEquals(listOf("s1"), repo.resumedSessions)
+        }
+
+    @Test
+    fun `resumeAttachToken maps a 400 to GatewaySessionResumeRejectedException`() =
+        runTest {
+            val repo = FakeGatewayRepo()
+            repo.resumeFailure = GatewayRequestException(400, "session not found", null)
+            val hub = newHub(repo)
+
+            try {
+                hub.resumeAttachToken(gatewayConfig(), AcpConnectionConfig.ResumeInfo("s1", "old-token"))
+                fail("expected GatewaySessionResumeRejectedException")
+            } catch (expected: GatewaySessionResumeRejectedException) {
+                assertEquals("session not found", expected.message)
+            }
+        }
+
+    @Test
+    fun `resumeAttachToken leaves non-400 failures as gateway errors`() =
+        runTest {
+            val repo = FakeGatewayRepo()
+            repo.resumeFailure = GatewayRequestException(503, "gateway restarting", null)
+            val hub = newHub(repo)
+
+            try {
+                hub.resumeAttachToken(gatewayConfig(), AcpConnectionConfig.ResumeInfo("s1", "old-token"))
+                fail("expected GatewayRequestException")
+            } catch (expected: GatewayRequestException) {
+                assertEquals(503, expected.statusCode)
+            }
         }
 
     @Test
@@ -545,63 +248,6 @@ class ChatConnectionHubTest {
             assertEquals(listOf("g1"), repo.closed)
             assertFalse(hub.isTracked("srv", "s1"))
             assertEquals(0, hub.trackedCount())
-        }
-
-    @Test
-    fun `deleteSession removes local row and reports known for a cold session`() =
-        runTest {
-            val sessions = FakeSessionRepo()
-            val hub = newHub(sessionRepository = sessions)
-            sessions.upsertSession("srv", SessionSummary(id = "s1"))
-
-            val deleted = hub.deleteSession("srv", "s1", endpoint = null)
-
-            assertTrue(deleted)
-            assertNull(sessions.getSession("srv", "s1"))
-        }
-
-    @Test
-    fun `deleteSession closes the gateway session then drops row and tracking`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val sessions = FakeSessionRepo()
-            val hub = newHub(repo, sessionRepository = sessions)
-            sessions.upsertSession("srv", SessionSummary(id = "s1"))
-            hub.registerChat(sessionId = "s1", gatewaySessionId = "g1")
-
-            val deleted =
-                hub.deleteSession("srv", "s1", GatewayEndpoint("http", "gw", "cred"))
-
-            assertTrue(deleted)
-            assertEquals(listOf("g1"), repo.closed)
-            assertNull(sessions.getSession("srv", "s1"))
-            assertFalse(hub.isTracked("srv", "s1"))
-        }
-
-    @Test
-    fun `deleteSession without endpoint tears down a tracked chat with no REST call`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val sessions = FakeSessionRepo()
-            val hub = newHub(repo, sessionRepository = sessions)
-            sessions.upsertSession("srv", SessionSummary(id = "s1"))
-            hub.registerChat(sessionId = "s1", gatewaySessionId = "g1")
-
-            val deleted = hub.deleteSession("srv", "s1", endpoint = null)
-
-            assertTrue(deleted)
-            assertTrue(repo.closed.isEmpty())
-            assertNull(sessions.getSession("srv", "s1"))
-            assertFalse(hub.isTracked("srv", "s1"))
-        }
-
-    @Test
-    fun `deleteSession on an unknown session returns false without throwing`() =
-        runTest {
-            val sessions = FakeSessionRepo()
-            val hub = newHub(sessionRepository = sessions)
-
-            assertFalse(hub.deleteSession("srv", "ghost", endpoint = null))
         }
 
     @Test
@@ -655,122 +301,19 @@ class ChatConnectionHubTest {
             assertNull(sessions.getSession("srv", "s1")?.gatewaySessionId)
         }
 
-    @Test
-    fun `reconcileGatewaySessions clears stale pointers and keeps live ones`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val sessions = FakeSessionRepo()
-            val hub = newHub(repo, sessionRepository = sessions)
-            sessions.upsertSession("srv", SessionSummary(id = "alive", gatewaySessionId = "g-live"))
-            sessions.upsertSession("srv", SessionSummary(id = "dead", gatewaySessionId = "g-dead"))
-            sessions.upsertSession("srv", SessionSummary(id = "plain"))
-            repo.sessions =
-                listOf(GatewaySessionSummary("g-live", "r-live", "agent-1", "active", "2026-09-22T00:00:00Z"))
-
-            hub.reconcileGatewaySessions("srv", GatewayEndpoint("http", "gw", "cred"))
-
-            assertEquals("g-live", sessions.getSession("srv", "alive")?.gatewaySessionId)
-            assertNull(sessions.getSession("srv", "dead")?.gatewaySessionId)
-            assertNull(sessions.getSession("srv", "plain")?.gatewaySessionId)
-        }
-
-    @Test
-    fun `reconcileGatewaySessions keeps pointers when the gateway list fails`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val sessions = FakeSessionRepo()
-            val hub = newHub(repo, sessionRepository = sessions)
-            sessions.upsertSession("srv", SessionSummary(id = "s1", gatewaySessionId = "g-1"))
-            repo.listFailure = GatewayRequestException(500, "boom", null)
-
-            hub.reconcileGatewaySessions("srv", GatewayEndpoint("http", "gw", "cred"))
-
-            assertEquals("g-1", sessions.getSession("srv", "s1")?.gatewaySessionId)
-        }
-
-    @Test
-    fun `capacity closes oldest unprotected active session when device cap reached`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val hub = newHub(repo, maxGateway = 5)
-            hub.registerChat(serverId = "srv", sessionId = "mine", gatewaySessionId = "g-mine")
-            repo.sessions = (1..5).map { i ->
-                GatewaySessionSummary(
-                    sessionId = "g$i",
-                    runtimeId = "r$i",
-                    agentId = "agent-$i",
-                    status = "active",
-                    createdAt = "2026-01-0${i + 1}T00:00:00Z",
-                )
-            } + GatewaySessionSummary("g-mine", "r-mine", "agent-1", "active", "2026-01-06T00:00:00Z")
-            hub.ensureGatewayCapacity(GatewayEndpoint("http", "gw", "cred"))
-            // g1..g5 are freeable; g-mine is protected by a tracked entry.
-            // Oldest freeable by createdAt is g1.
-            assertEquals(listOf("g1"), repo.closed)
-        }
-
-    @Test
-    fun `capacity counts disconnected sessions the gateway still leases`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val hub = newHub(repo, maxGateway = 5)
-            // The gateway counts a disconnected session against MaxPerDevice — its
-            // runtime lease is still held (lifecycle.go: StatusActive||StatusDisconnected).
-            // Counting only `active` here reports a free slot the gateway does not
-            // have, so the spawn that follows comes back session-less.
-            repo.sessions =
-                (1..5).map { i ->
-                    GatewaySessionSummary(
-                        sessionId = "g$i",
-                        runtimeId = "r$i",
-                        agentId = "agent-$i",
-                        status = "disconnected",
-                        createdAt = "2026-01-0${i + 1}T00:00:00Z",
-                    )
-                }
-            hub.ensureGatewayCapacity(GatewayEndpoint("http", "gw", "cred"))
-            assertEquals(listOf("g1"), repo.closed)
-        }
-
-    @Test
-    fun `capacity ignores sessions whose runtime lease is dead`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val hub = newHub(repo, maxGateway = 5)
-            // `failed` holds no lease, so these occupy no slot and there is
-            // nothing to free — the helper must leave them alone.
-            repo.sessions =
-                (1..5).map { i ->
-                    GatewaySessionSummary(
-                        sessionId = "g$i",
-                        runtimeId = "r$i",
-                        agentId = "agent-$i",
-                        status = "failed",
-                        createdAt = "2026-01-0${i + 1}T00:00:00Z",
-                    )
-                }
-            hub.ensureGatewayCapacity(GatewayEndpoint("http", "gw", "cred"))
-            assertTrue(repo.closed.isEmpty())
-        }
-
-    @Test
-    fun `capacity throws when every active session is protected`() =
-        runTest {
-            val repo = FakeGatewayRepo()
-            val hub = newHub(repo, maxHot = 10, maxGateway = 5)
-            repeat(5) { i -> hub.registerChat(sessionId = "s$i", gatewaySessionId = "g$i") }
-            repo.sessions =
-                (0 until 5).map { i ->
-                    GatewaySessionSummary("g$i", "r$i", "agent-1", "active", "2026-01-0${i + 1}T00:00:00Z")
-                }
-            try {
-                hub.ensureGatewayCapacity(GatewayEndpoint("http", "gw", "cred"))
-                throw AssertionError("expected IllegalStateException")
-            } catch (expected: IllegalStateException) {
-                assertTrue(expected.message!!.contains("busy"))
-            }
-            assertTrue(repo.closed.isEmpty())
-        }
+    /** A gateway transport config: the hub's resume lambda reads only its scheme/host/credential. */
+    private fun gatewayConfig(): AcpConnectionConfig.Gateway =
+        AcpConnectionConfig.Gateway(
+            endpoint = "ws://gw/v1/acp/rt-1?sessionId=s1&attachToken=old-token",
+            runtimeId = "rt-1",
+            sourceId = "src-1",
+            gatewayCredential = "cred",
+            resume = AcpConnectionConfig.ResumeInfo("s1", "old-token"),
+            scheme = "http",
+            host = "gw",
+            preferredAuthMethodId = null,
+            displayName = null,
+        )
 
     private fun fakeSnapshot() =
         com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot(
@@ -1052,20 +595,16 @@ class ChatConnectionHubTest {
         }
 
     /**
-     * Drives a manager's live connection state the way a successful transport
+     * Drives a connection's live connection state the way a successful transport
      * connect would. Unit tests cannot run a real ACP server, so this flips the
      * same private StateFlow the transport updates — observers watching
-     * [AcpConnectionManager.connectionState] cannot tell the difference.
+     * [AcpConnection.connectionState] cannot tell the difference.
      */
-    private fun AcpConnectionManager.forceConnectionState(state: AcpConnectionState) {
-        val managerClass = AcpConnectionManager::class.java
-        val orchestraField = managerClass.getDeclaredField("orchestra")
-        orchestraField.isAccessible = true
-        val orchestra = orchestraField.get(this)
-        val stateField = orchestra.javaClass.getDeclaredField("_connectionState")
+    private fun AcpConnection.forceConnectionState(state: AcpConnectionState) {
+        val stateField = AcpConnection::class.java.getDeclaredField("_connectionState")
         stateField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val stateFlow = stateField.get(orchestra) as MutableStateFlow<AcpConnectionState>
+        val stateFlow = stateField.get(this) as MutableStateFlow<AcpConnectionState>
         stateFlow.value = state
     }
 }

@@ -1,5 +1,7 @@
 package com.tamimarafat.ferngeist.core.model
 
+import com.agentclientprotocol.model.ToolCallContent
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -185,6 +187,35 @@ data class GatewayWorkspaceConnection(
     val gatewayCredential: String,
 )
 
+/**
+ * One changed entry of a gateway working tree, in git's own terms.
+ *
+ * [status] is the porcelain status code (`M`, `??`, ...); [added]/[removed] are the
+ * line counts the gateway read from `git diff --numstat`.
+ */
+data class ChatChangedFile(
+    val path: String,
+    val status: String,
+    val added: Int = 0,
+    val removed: Int = 0,
+    val binary: Boolean = false,
+    /**
+     * True when the entry is a directory rather than a file: a submodule (gitlink) or a
+     * collapsed untracked directory. Directory entries are not diffable — tapping one
+     * must not ask for a diff. The gateway computes this from `git status
+     * --porcelain=v2`, since the client cannot tell a submodule from a file by path.
+     */
+    val isDir: Boolean = false,
+)
+
+/** Branch, ahead/behind counts, and changed entries of a gateway working tree. */
+data class ChatGitStatus(
+    val branch: String = "",
+    val ahead: Int = 0,
+    val behind: Int = 0,
+    val changed: List<ChatChangedFile> = emptyList(),
+)
+
 data class ChatSessionSnapshot(
     val loadState: ChatLoadState,
     val messages: List<ChatMessage>,
@@ -346,6 +377,76 @@ interface ChatSessionFacade {
      * externally-driven reconnect. Idempotent and safe to call repeatedly.
      */
     suspend fun reconnect()
+
+    /**
+     * Git status of this chat's gateway working tree, or null when it has none: a manual
+     * agent, a gateway chat whose runtime is not up yet, or a create-on-arrival chat that
+     * has not minted its real session id (the gateway would scope the read to whichever
+     * session it saw last).
+     */
+    suspend fun fetchGitStatus(): ChatGitStatus? = null
+
+    /**
+     * Unified diff of one file in the chat's gateway working tree, or null when it has no
+     * gateway workspace. Transport failures propagate to the caller.
+     */
+    suspend fun fetchGitDiff(path: String): List<ToolCallContent.Diff>? = null
+}
+
+/**
+ * Session-presence and session-lifecycle operations a chat screen needs from the
+ * process-wide connection hub: which servers/sessions are live (the chat switcher and
+ * notification deep links), this screen's own presence, and closing another session's
+ * gateway lease.
+ *
+ * A separate port from [ChatSessionFacade] because it is hub-wide rather than scoped to
+ * one session. Implemented by a hub-backed adapter in the ACP bridge, so the feature
+ * layer never sees the hub or gateway types.
+ */
+interface ChatSessionPresence {
+    /** Servers that hold at least one live chat connection. */
+    val warmServers: StateFlow<Set<String>>
+
+    /** Connected session ids tracked on [serverId], re-emitting as connections come and go. */
+    fun connectedSessionIds(serverId: String): Flow<Set<String>>
+
+    /** True when the tracked entry for [serverId]/[sessionId] is streaming. */
+    fun isStreaming(
+        serverId: String,
+        sessionId: String,
+    ): Boolean
+
+    /** Records that [sessionId]'s chat screen opened, making it the most recently focused. */
+    fun screenOpened(
+        serverId: String,
+        sessionId: String,
+        cwd: String,
+    )
+
+    /** Records that [sessionId]'s chat screen closed. */
+    fun screenClosed(
+        serverId: String,
+        sessionId: String,
+    )
+
+    /** The gateway session recorded for [chatId] (`"$serverId/$sessionId"`), or null. */
+    fun gatewaySessionIdFor(chatId: String): String?
+
+    /**
+     * True when [serverId] targets a paired gateway, whose sessions hold a gateway lease
+     * a close has to release. False for direct (manual) agents.
+     */
+    suspend fun isGatewayBacked(serverId: String): Boolean
+
+    /**
+     * Closes [sessionId] on [serverId]: tracked chats go through the tracked close, cold
+     * ones close the gateway session directly. Returns false when nothing was left to
+     * close.
+     */
+    suspend fun closeSession(
+        serverId: String,
+        sessionId: String,
+    ): Boolean
 }
 
 /**

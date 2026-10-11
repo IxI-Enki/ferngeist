@@ -47,24 +47,14 @@ interface GatewayRuntimeRepository {
     ): List<GatewayAgent>
 
     /**
-     * Starts a runtime for [agentId]. Pass [new] = true to spawn a distinct
-     * runtime rather than reusing an existing one — required to isolate a second
-     * concurrent chat, because a runtime leases exactly one session.
+     * Connects [agentId] on the gateway: one call that spawns (or reuses) the agent's
+     * runtime and returns the session handoff plus the ACP WebSocket URL to attach to.
      */
-    suspend fun startAgent(
+    suspend fun connectAgent(
         scheme: String,
         host: String,
         gatewayCredential: String,
         agentId: String,
-        new: Boolean = false,
-    ): GatewayRuntime
-
-    suspend fun connectRuntime(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-        sessionMode: String? = null,
     ): GatewayConnectResponse
 
     suspend fun restartRuntime(
@@ -73,7 +63,7 @@ interface GatewayRuntimeRepository {
         gatewayCredential: String,
         runtimeId: String,
         envVars: Map<String, String>,
-    ): GatewayConnectResponse
+    ): GatewayRestartResponse
 
     suspend fun fetchRuntimeLogs(
         scheme: String,

@@ -16,8 +16,8 @@ import kotlinx.coroutines.launch
  * Thin adapter that wraps [ChatSessionFacade] and exposes a callback-based
  * API for [ChatViewModel].
  *
- * All ACP-specific logic lives in the facade implementation
- * ([com.tamimarafat.ferngeist.acp.bridge.facade.AcpChatSessionFacade]).
+ * All ACP-specific logic lives in the [ChatSessionFacade] implementation
+ * (the ACP bridge's `AcpChatSessionFacade`).
  * This coordinator has zero ACP imports.
  */
 internal class ChatSessionCoordinator(

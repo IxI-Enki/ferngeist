@@ -31,7 +31,7 @@ class GatewayLaunchRuntimeCancellationTest {
         runTest {
             val engine =
                 MockEngine { request ->
-                    if (request.url.encodedPath.endsWith("/start")) {
+                    if (request.url.encodedPath.endsWith("/connect")) {
                         // The caller's scope going away mid-launch. Thrown from the
                         // repository call the launch awaits, so it surfaces exactly
                         // where a real cancellation would.

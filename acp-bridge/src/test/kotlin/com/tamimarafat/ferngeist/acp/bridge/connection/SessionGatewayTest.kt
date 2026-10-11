@@ -53,11 +53,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -138,14 +135,14 @@ class SessionGatewayTest {
 
     private fun newGateway(): SessionGateway {
         val scope = CoroutineScope(Dispatchers.Unconfined)
-        val orchestra =
-            ConnectionOrchestrator(
+        val connection =
+            AcpConnection(
                 connectivityObserver = ConnectivityStub(),
-                gatewayRepository = null,
+                resumeAttachToken = { _, _ -> error("no gateway resume in this test") },
                 scope = scope,
             )
         return SessionGateway(
-            orchestra = orchestra,
+            connection = connection,
             permissionFlow = PermissionFlow(),
             elicitationFlow = ElicitationFlow(),
             bridgeFactory = { sessionId -> SessionBridge(sessionId, null) },
@@ -156,7 +153,7 @@ class SessionGatewayTest {
     /**
      * The gateway builds its [AcpSessionRegistry] internally and exposes no injection
      * seam, so tests reach the private field reflectively — the same approach
-     * [com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHubTest] uses for `orchestra`.
+     * [com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHubTest] uses for `_connectionState`.
      */
     private fun gatewayField(
         gateway: SessionGateway,
@@ -203,7 +200,7 @@ class SessionGatewayTest {
         gatewayField(gateway, "permissionFlow") as PermissionFlow
 
     /**
-     * Installs an SDK client on the orchestrator's transport. `AcpTransportClient.sdkClient`
+     * Installs an SDK client on the connection's transport. `AcpTransportClient.sdkClient`
      * is `private set` and only assigned by a real connect, so a test that needs
      * `attachSession` past its disconnected check has to set it reflectively.
      */
@@ -211,10 +208,10 @@ class SessionGatewayTest {
         gateway: SessionGateway,
         client: Client,
     ) {
-        val orchestra = gatewayField(gateway, "orchestra")
-        val transportField = orchestra.javaClass.getDeclaredField("transportClient")
+        val connection = gatewayField(gateway, "connection")
+        val transportField = connection.javaClass.getDeclaredField("transportClient")
         transportField.isAccessible = true
-        val transport = transportField.get(orchestra)!!
+        val transport = transportField.get(connection)!!
         val clientField = transport.javaClass.getDeclaredField("sdkClient")
         clientField.isAccessible = true
         clientField.set(transport, client)
@@ -273,132 +270,6 @@ class SessionGatewayTest {
 
     private fun responseTurn(): Flow<Event> =
         flowOf(Event.PromptResponseEvent(PromptResponse(stopReason = StopReason.END_TURN)))
-
-    @Test
-    fun `JsonRpcException with INVALID_PARAMS code and non-matching message is not already loaded`() =
-        runTest {
-            val gateway = newGateway()
-            // -32602 is JSON-RPC's generic "invalid params": agents also return it for a
-            // bad cwd, an unknown session id and a malformed request. Reading it as
-            // "held" told those users to disconnect a session that was never held, and
-            // replaced the agent's own message with that instruction.
-            val error =
-                JsonRpcException(
-                    code = JsonRpcErrorCode.INVALID_PARAMS.code,
-                    message = "Some unrelated server error text",
-                    data = JsonNull,
-                )
-            assertFalse(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `message substring fallback matches without INVALID_PARAMS code`() =
-        runTest {
-            val gateway = newGateway()
-            val error =
-                JsonRpcException(
-                    code = JsonRpcErrorCode.INTERNAL_ERROR.code,
-                    message = "Session is already loaded on another client",
-                    data = JsonNull,
-                )
-            assertTrue(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `plain exception with already loaded message matches`() =
-        runTest {
-            val gateway = newGateway()
-            val error = IllegalStateException("Session already loaded")
-            assertTrue(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `INVALID_PARAMS code deep in cause chain is not enough without session wording`() =
-        runTest {
-            val gateway = newGateway()
-            val rpcError =
-                JsonRpcException(
-                    code = JsonRpcErrorCode.INVALID_PARAMS.code,
-                    message = "Bad request",
-                    data = JsonNull,
-                )
-            val error = IllegalStateException("outer failure", rpcError)
-            assertFalse(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `session wording still matches when the code is INVALID_PARAMS`() =
-        runTest {
-            val gateway = newGateway()
-            val error =
-                JsonRpcException(
-                    code = JsonRpcErrorCode.INVALID_PARAMS.code,
-                    message = "Invalid params: session is already active: s1",
-                    data = JsonNull,
-                )
-            assertTrue(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `unrelated error is not already loaded`() =
-        runTest {
-            val gateway = newGateway()
-            val error = IllegalStateException("Something else failed")
-            assertFalse(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `harness already active wording matches with a non-INVALID_PARAMS code`() =
-        runTest {
-            val gateway = newGateway()
-            val error =
-                JsonRpcException(
-                    code = JsonRpcErrorCode.INTERNAL_ERROR.code,
-                    message = "Invalid params: session is already active: 970999b8",
-                    data = JsonNull,
-                )
-            assertTrue(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `session store active write handle wording matches`() =
-        runTest {
-            val gateway = newGateway()
-            val error =
-                IllegalStateException(
-                    "Internal error: {\"details\":\"session \\\"x\\\" is already owned by an active write handle\"}",
-                )
-            assertTrue(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `write handle detail in json rpc data matches`() =
-        runTest {
-            val gateway = newGateway()
-            val error =
-                JsonRpcException(
-                    code = JsonRpcErrorCode.INTERNAL_ERROR.code,
-                    message = "Internal error",
-                    data =
-                        buildJsonObject {
-                            put("details", "session \"x\" is already owned by an active write handle")
-                        },
-                )
-            assertTrue(gateway.isSessionAlreadyLoadedError(error))
-        }
-
-    @Test
-    fun `unresumable session is not an already-loaded error`() =
-        runTest {
-            val gateway = newGateway()
-            val error =
-                JsonRpcException(
-                    code = JsonRpcErrorCode.INTERNAL_ERROR.code,
-                    message = "Invalid params: session is not resumable: 970999b8",
-                    data = JsonNull,
-                )
-            assertFalse(gateway.isSessionAlreadyLoadedError(error))
-        }
 
     @Test
     fun `createSession with blank cwd returns null`() =
@@ -487,42 +358,14 @@ class SessionGatewayTest {
             )
         }
 
-    @Test
-    fun `attachSession raises the actionable error when the agent still holds the session`() =
-        runTest {
-            val gateway = newGateway()
-            installBridge(gateway, "s1")
-            installSdkClient(
-                gateway,
-                clientFailingSessionLoad(
-                    JsonRpcException(
-                        code = JsonRpcErrorCode.INTERNAL_ERROR.code,
-                        message = "Invalid params: session is already active: s1",
-                        data = JsonNull,
-                    ),
-                ),
-            )
-
-            val result = runCatching { gateway.attachSession(SessionAttachRpc.Resume, "s1", "/some/cwd") }
-
-            assertEquals(
-                "This session is already active elsewhere. " +
-                    "Disconnect it from the session list, then reopen.",
-                result.exceptionOrNull()?.message,
-            )
-            assertNull(registeredBridge(gateway, "s1"))
-        }
-
     /**
      * The harness injects failures at the transport's `send()`, so the SDK wraps them and a
-     * wire-level JSON-RPC error response never reaches the classifier as a
-     * [JsonRpcException]. The bare-code rule is therefore covered by the predicate tests
-     * above; this pins the end-to-end guarantee that does survive here — a failure the
-     * classifier does not claim relays the agent's own message rather than the disconnect
-     * instruction.
+     * wire-level JSON-RPC error response never reaches the caller as a [JsonRpcException].
+     * This pins the end-to-end guarantee that does survive here — a failed attach relays the
+     * agent's own message rather than any invented diagnosis.
      */
     @Test
-    fun `attachSession relays the agent message instead of the held-session instruction`() =
+    fun `attachSession relays the agent's own failure message`() =
         runTest {
             val gateway = newGateway()
             installBridge(gateway, "s1")
@@ -540,12 +383,6 @@ class SessionGatewayTest {
             val result = runCatching { gateway.attachSession(SessionAttachRpc.Resume, "s1", "/some/cwd") }
 
             val message = result.exceptionOrNull()?.message
-            assertNotEquals(
-                "a bare INVALID_PARAMS is not evidence that the session is held",
-                "This session is already active elsewhere. " +
-                    "Disconnect it from the session list, then reopen.",
-                message,
-            )
             assertTrue(
                 "the agent's own message must reach the caller: $message",
                 message?.contains("cwd does not exist") == true,
@@ -567,6 +404,48 @@ class SessionGatewayTest {
             val snapshot = bridge.snapshot.value
             assertFalse(snapshot.isStreaming)
             assertTrue(snapshot.messages.none { it.isStreaming })
+        }
+
+    @Test
+    fun `a gateway-resumed replay hydrates through the normal path without dedup`() =
+        runTest {
+            val gateway = newGateway()
+            val bridge = installBridge(gateway, "s1")
+
+            // The agent refused the load as already loaded, so the gateway restores the
+            // session itself and announces the replay before the buffered update frames.
+            gateway.onRemoteResumed("s1", replayedFrames = 2)
+
+            assertEquals(
+                "the announced replay must buffer instead of overwriting live state",
+                SessionLoadState.HYDRATING,
+                bridge.snapshot.value.loadState,
+            )
+
+            // The buffered session/update frames arrive as ordinary events...
+            bridge.emitEvent(AppSessionEvent.AgentMessage("first"))
+            bridge.emitEvent(AppSessionEvent.AgentMessage("second"))
+            // ...and the session/load response commits the replay: `completeHydration`
+            // swaps the buffered state in, then `SessionLoadComplete` settles the reply
+            // (folds the chunk segments and derives their flat content), exactly as
+            // [SessionGateway.attachAndHydrate] does.
+            bridge.completeHydration()
+            bridge.emitEvent(AppSessionEvent.SessionLoadComplete)
+
+            assertEquals(SessionLoadState.READY, bridge.snapshot.value.loadState)
+            assertEquals(
+                "both replayed frames must land, in order, with nothing dropped",
+                listOf("first", "second"),
+                bridge.events.replayCache
+                    .filterIsInstance<AppSessionEvent.AgentMessage>()
+                    .map { it.text },
+            )
+            assertEquals(
+                "the hydrated transcript must carry the whole replay",
+                listOf("firstsecond"),
+                bridge.snapshot.value.messages
+                    .map { it.content },
+            )
         }
 
     @Test
@@ -610,18 +489,7 @@ class SessionGatewayTest {
         }
 
     @Test
-    fun `prompt stream ending without a response emits end_turn`() =
-        runTest {
-            val gateway = newGateway()
-            val bridge = installSession(gateway, "s1", FakeClientSession(listOf(emptyFlow())))
-
-            gateway.sendSessionMessage("s1", "hello")
-
-            assertEquals(listOf("end_turn"), turnReasons(bridge))
-        }
-
-    @Test
-    fun `a cancel while the turn is in flight reports cancelled and does not leak to the next turn`() =
+    fun `a prompt stream that ends without a response emits no turn end of its own`() =
         runTest {
             val gateway = newGateway()
             val turn = Channel<Event>(Channel.UNLIMITED)
@@ -636,7 +504,7 @@ class SessionGatewayTest {
                                 collecting.complete(Unit)
                                 turn.receiveAsFlow().collect { emit(it) }
                             },
-                            emptyFlow(),
+                            responseTurn(),
                         ),
                     ),
                 )
@@ -651,7 +519,12 @@ class SessionGatewayTest {
 
             gateway.sendSessionMessage("s1", "second")
 
-            assertEquals(listOf("cancelled", "end_turn"), turnReasons(bridge))
+            assertEquals(
+                "a stream that ends without a terminal response must not be papered over " +
+                    "with a synthetic turn end: only the second turn's real response counts",
+                listOf("end_turn"),
+                turnReasons(bridge),
+            )
         }
 
     @Test
@@ -662,7 +535,7 @@ class SessionGatewayTest {
                 installSession(
                     gateway,
                     "s1",
-                    FakeClientSession(listOf(responseTurn(), emptyFlow())),
+                    FakeClientSession(listOf(responseTurn(), responseTurn())),
                 )
 
             gateway.cancelSession("s1")
@@ -751,7 +624,7 @@ class SessionGatewayTest {
                 installSession(
                     gateway,
                     "s1",
-                    FakeClientSession(listOf(responseTurn(), emptyFlow())),
+                    FakeClientSession(listOf(responseTurn(), responseTurn())),
                 )
 
             // Turn 1 ends normally, with no response expected after it.
@@ -777,29 +650,28 @@ class SessionGatewayTest {
                             flow {
                                 collecting.complete(Unit)
                                 turn.receiveAsFlow().collect { emit(it) }
+                                throw IllegalStateException("aborted")
                             },
-                            emptyFlow(),
                         ),
                     // The RPC does not return until the test releases it, so the turn
-                    // stream ends while the cancel is still in flight.
+                    // stream dies while the cancel is still in flight.
                     cancelGate = CompletableDeferred(),
                 )
             val bridge = installSession(gateway, "s1", session)
 
-            val first = launch { gateway.sendSessionMessage("s1", "first") }
+            val first = launch { runCatching { gateway.sendSessionMessage("s1", "first") } }
             collecting.await()
             val cancelling = launch { gateway.cancelSession("s1") }
             session.cancelStarted.await()
-            turn.close() // the turn ends before session.cancel() returns
+            turn.close() // the turn dies before session.cancel() returns
             first.join()
+
+            // Marking before the RPC is what makes this the cancelled turn; marking after
+            // it would report end_turn here.
+            assertEquals(listOf("cancelled"), turnReasons(bridge))
+
             session.cancelGate?.complete(Unit) // now let the RPC return
             cancelling.join()
-
-            gateway.sendSessionMessage("s1", "second")
-
-            // Marking before the RPC is what makes this the cancelled turn; marking
-            // after it would report end_turn here and strand "cancelled" on turn two.
-            assertEquals(listOf("cancelled", "end_turn"), turnReasons(bridge))
         }
 
     @Test

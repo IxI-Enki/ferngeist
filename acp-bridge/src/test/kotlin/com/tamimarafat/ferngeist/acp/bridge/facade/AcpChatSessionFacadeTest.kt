@@ -1,28 +1,40 @@
 package com.tamimarafat.ferngeist.acp.bridge.facade
 
 import com.tamimarafat.ferngeist.acp.bridge.ConnectivityObserverStub
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpManagerEvent
 import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionSurface
-import com.tamimarafat.ferngeist.acp.bridge.hub.GatewayEndpoint
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
+import com.tamimarafat.ferngeist.core.model.GatewayAgentBinding
 import com.tamimarafat.ferngeist.core.model.GatewaySource
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.gateway.GatewayAgent
+import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
+import com.tamimarafat.ferngeist.gateway.GatewayProtocol
+import com.tamimarafat.ferngeist.gateway.GatewayRemoteStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
+import com.tamimarafat.ferngeist.gateway.GatewayRequestException
+import com.tamimarafat.ferngeist.gateway.GatewayStatus
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
- * Facade attendance behavior against a recording [ChatConnectionSurface].
+ * Facade behavior against a recording [ChatConnectionSurface] and a fake gateway.
  *
  * Only the transport-free paths are drivable here: everything past
- * registerConnectingWithHub sits behind a connected [AcpConnectionManager],
+ * registerConnectingWithHub sits behind a connected [AcpConnection],
  * which is a concrete final class that only reaches Connected through a real
  * gateway handshake — so registration timing, sentinel skipping, and snapshot
  * re-keying stay covered at the ChatViewModel level (fake facade) and hub
@@ -32,15 +44,15 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AcpChatSessionFacadeTest {
     private class RecordingSurface : ChatConnectionSurface {
-        val abandoned = mutableListOf<AcpConnectionManager>()
+        val abandoned = mutableListOf<AcpConnection>()
 
-        override fun acquireChatManager(): AcpConnectionManager = TODO("unused in facade attendance tests")
+        override fun acquireChatManager(): AcpConnection = TODO("unused in facade attendance tests")
 
-        override fun abandon(manager: AcpConnectionManager) {
+        override fun abandon(manager: AcpConnection) {
             abandoned += manager
         }
 
-        override fun managerFor(chatId: String): AcpConnectionManager? = null
+        override fun managerFor(chatId: String): AcpConnection? = null
 
         override fun snapshotFor(chatId: String): ChatSessionSnapshot? = null
 
@@ -57,20 +69,8 @@ class AcpChatSessionFacadeTest {
             agentId: String,
             isConnected: () -> Boolean,
             isStreaming: () -> Boolean,
-            manager: AcpConnectionManager?,
+            manager: AcpConnection?,
         ): String = TODO("unused in facade attendance tests")
-
-        override fun hasLiveGatewaySession(
-            gatewaySourceId: String,
-            agentId: String,
-        ): Boolean = false
-
-        override suspend fun persistedGatewaySessionId(
-            serverId: String,
-            sessionId: String,
-        ): String? = null
-
-        override suspend fun ensureGatewayCapacity(endpoint: GatewayEndpoint) = Unit
 
         override fun refresh() = Unit
 
@@ -82,9 +82,11 @@ class AcpChatSessionFacadeTest {
     }
 
     private class FakeLaunchableTargets : LaunchableTargetRepository {
-        override fun getTargets(): Flow<List<LaunchableTarget>> = flowOf(emptyList())
+        var target: LaunchableTarget? = null
 
-        override suspend fun getTarget(id: String): LaunchableTarget? = null
+        override fun getTargets(): Flow<List<LaunchableTarget>> = flowOf(listOfNotNull(target))
+
+        override suspend fun getTarget(id: String): LaunchableTarget? = target
 
         override suspend fun updatePreferredAuthMethod(
             targetId: String,
@@ -109,6 +111,37 @@ class AcpChatSessionFacadeTest {
     }
 
     private class FakeGatewayRepo : GatewayRepository {
+        /** Connect failures, so a test can drive the facade's error surfacing. */
+        var connectFailure: Exception? = null
+        var connectCalls = 0
+
+        override suspend fun fetchStatus(
+            scheme: String,
+            host: String,
+        ): GatewayStatus =
+            GatewayStatus(
+                name = "gw",
+                version = "1.0",
+                protocolVersion = GatewayProtocol.CURRENT,
+                remote = GatewayRemoteStatus(configured = true),
+            )
+
+        override suspend fun connectAgent(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            agentId: String,
+        ): GatewayConnectResponse {
+            connectCalls += 1
+            connectFailure?.let { throw it }
+            return GatewayConnectResponse(
+                runtimeId = "rt-1",
+                sessionId = "s-new",
+                attachToken = "token",
+                webSocketUrl = "ws://gw/v1/acp/rt-1",
+            )
+        }
+
         override suspend fun createWorktree(
             scheme: String,
             host: String,
@@ -130,11 +163,6 @@ class AcpChatSessionFacadeTest {
             gatewayCredential: String,
             worktreeId: String,
             force: Boolean,
-        ) = TODO("unused in facade tests")
-
-        override suspend fun fetchStatus(
-            scheme: String,
-            host: String,
         ) = TODO("unused in facade tests")
 
         override suspend fun startPairing(
@@ -166,22 +194,6 @@ class AcpChatSessionFacadeTest {
             scheme: String,
             host: String,
             gatewayCredential: String,
-        ) = TODO("unused in facade tests")
-
-        override suspend fun startAgent(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            agentId: String,
-            new: Boolean,
-        ) = TODO("unused in facade tests")
-
-        override suspend fun connectRuntime(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            sessionMode: String?,
         ) = TODO("unused in facade tests")
 
         override suspend fun restartRuntime(
@@ -283,28 +295,44 @@ class AcpChatSessionFacadeTest {
         ) = TODO("unused in facade tests")
     }
 
+    private fun newManager(scope: CoroutineScope): AcpConnection =
+        AcpConnection(
+            connectivityObserver = ConnectivityObserverStub(initialState = true),
+            resumeAttachToken = { _, _ -> error("no gateway resume in this test") },
+            scope = scope,
+        )
+
+    private fun gatewayTarget(): LaunchableTarget.GatewayAgent =
+        LaunchableTarget.GatewayAgent(
+            binding = GatewayAgentBinding(id = "srv", name = "srv", gatewaySourceId = "src", agentId = "agent-1"),
+            gatewaySource =
+                GatewaySource(
+                    id = "src",
+                    name = "gw",
+                    scheme = "http",
+                    host = "gw",
+                    gatewayCredential = "cred",
+                ),
+        )
+
     private fun newFacade(
         surface: RecordingSurface,
-        scope: kotlinx.coroutines.CoroutineScope,
-    ): AcpChatSessionFacade {
-        val manager =
-            AcpConnectionManager(
-                connectivityObserver = ConnectivityObserverStub(initialState = true),
-                gatewayRepository = null,
-                scope = scope,
-            )
-        return AcpChatSessionFacade(
+        scope: CoroutineScope,
+        manager: AcpConnection = newManager(scope),
+        targets: LaunchableTargetRepository = FakeLaunchableTargets(),
+        repo: GatewayRepository = FakeGatewayRepo(),
+    ): AcpChatSessionFacade =
+        AcpChatSessionFacade(
             scope = scope,
             connectionManager = manager,
-            launchableTargetRepository = FakeLaunchableTargets(),
+            launchableTargetRepository = targets,
             gatewaySourceRepository = FakeGatewaySources(),
-            gatewayRepository = FakeGatewayRepo(),
+            gatewayRepository = repo,
             serverId = "srv",
             initialSessionId = "s1",
             cwd = "/work",
             hub = surface,
         )
-    }
 
     @Test
     fun `clear on an unregistered facade abandons its pending chat manager`() =
@@ -320,4 +348,91 @@ class AcpChatSessionFacadeTest {
             // and keeps the process-wide aggregates alive.
             assertEquals(1, surface.abandoned.size)
         }
+
+    @Test
+    fun `a gateway connect failure surfaces the gateway's own error text`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val repo =
+                FakeGatewayRepo().apply {
+                    connectFailure = GatewayRequestException(502, "agent exited: boom", null)
+                }
+            val targets = FakeLaunchableTargets().apply { target = gatewayTarget() }
+            val facade = newFacade(RecordingSurface(), backgroundScope, targets = targets, repo = repo)
+            val failures = mutableListOf<String>()
+            val collector = backgroundScope.launch { facade.loadFailed.collect { failures += it } }
+            advanceUntilIdle()
+
+            var loaded = false
+            backgroundScope.launch {
+                facade.loadSession()
+                loaded = true
+            }
+            awaitRealWork { loaded }
+
+            // The gateway's 502 body is the only thing that explains the failure;
+            // a locally authored "Failed to reconnect to srv" hides it.
+            assertEquals("agent exited: boom", failures.first())
+            assertFalse(failures.any { it.contains("Failed to reconnect") })
+            collector.cancel()
+        }
+
+    @Test
+    fun `a rejected resume starts a fresh gateway connect`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val repo =
+                FakeGatewayRepo().apply {
+                    connectFailure = GatewayRequestException(502, "agent exited: boom", null)
+                }
+            val targets = FakeLaunchableTargets().apply { target = gatewayTarget() }
+            val manager = newManager(backgroundScope)
+            val facade =
+                newFacade(
+                    RecordingSurface(),
+                    backgroundScope,
+                    manager = manager,
+                    targets = targets,
+                    repo = repo,
+                )
+            val failures = mutableListOf<String>()
+            val collector = backgroundScope.launch { facade.loadFailed.collect { failures += it } }
+            advanceUntilIdle()
+
+            manager.emitEvent(AcpManagerEvent.SessionResumeRejected)
+            awaitRealWork { failures.isNotEmpty() }
+
+            // The gateway session is gone: the only path is POST /v1/agents/{id}/connect.
+            assertEquals(1, repo.connectCalls)
+            assertEquals("agent exited: boom", failures.first())
+            collector.cancel()
+        }
+}
+
+/**
+ * Lets the real-dispatcher work a facade path started (the gateway call hops to
+ * [kotlinx.coroutines.Dispatchers.IO]) finish, then pumps the test scheduler so the
+ * collectors observing it run. Virtual time alone would return before that work lands.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun kotlinx.coroutines.test.TestScope.awaitRealWork(done: () -> Boolean) {
+    val deadline = System.currentTimeMillis() + REAL_WORK_TIMEOUT_MS
+    while (!done() && System.currentTimeMillis() < deadline) {
+        Thread.sleep(REAL_WORK_POLL_MS)
+        advanceUntilIdle()
+    }
+}
+
+private const val REAL_WORK_TIMEOUT_MS = 10_000L
+private const val REAL_WORK_POLL_MS = 2L
+
+/**
+ * Drives the connection's event stream the way the transport does when the gateway
+ * rejects a resume. Unit tests cannot run a real ACP server, so this emits on the same
+ * private flow the transport uses — observers cannot tell the difference.
+ */
+private fun AcpConnection.emitEvent(event: AcpManagerEvent) {
+    val eventsField = AcpConnection::class.java.getDeclaredField("_events")
+    eventsField.isAccessible = true
+    @Suppress("UNCHECKED_CAST")
+    val events = eventsField.get(this) as MutableSharedFlow<AcpManagerEvent>
+    events.tryEmit(event)
 }

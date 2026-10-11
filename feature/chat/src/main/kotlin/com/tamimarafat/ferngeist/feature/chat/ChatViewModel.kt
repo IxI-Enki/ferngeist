@@ -4,57 +4,29 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import com.agentclientprotocol.model.ToolCallContent
-import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
-import com.tamimarafat.ferngeist.acp.bridge.hub.GatewayEndpoint
 import com.tamimarafat.ferngeist.core.common.MviViewModel
 import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
-import com.tamimarafat.ferngeist.core.model.ChatCommand
-import com.tamimarafat.ferngeist.core.model.ChatConfigOption
-import com.tamimarafat.ferngeist.core.model.ChatConfigValue
-import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
-import com.tamimarafat.ferngeist.core.model.ChatElicitationRequest
-import com.tamimarafat.ferngeist.core.model.ChatElicitationValue
-import com.tamimarafat.ferngeist.core.model.ChatFileData
-import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
+import com.tamimarafat.ferngeist.core.model.ChatSessionPresence
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
-import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
-import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.MessageDeliveryStatus
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
-import com.tamimarafat.ferngeist.core.model.QueuedPromptRecord
 import com.tamimarafat.ferngeist.core.model.SessionSummary
-import com.tamimarafat.ferngeist.core.model.SteerOutcome
-import com.tamimarafat.ferngeist.core.model.UsageState
 import com.tamimarafat.ferngeist.core.model.iconUrl
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.core.model.sessionTitleOrNull
-import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -74,8 +46,7 @@ class ChatViewModel
         private val pendingPromptStore: PendingPromptStore,
         private val switcherHintStore: SwitcherHintStore,
         val recentSelectionStore: RecentSelectionStore,
-        private val chatConnectionHub: ChatConnectionHub,
-        private val gatewayRepository: GatewayRepository,
+        private val presence: ChatSessionPresence,
         private val launchableTargetRepository: LaunchableTargetRepository,
         private val savedStateHandle: SavedStateHandle,
     ) : MviViewModel<ChatState, ChatIntent, ChatEffect>(initialChatState()) {
@@ -95,16 +66,6 @@ class ChatViewModel
              * minting a second one.
              */
             private const val KEY_MINTED_SESSION_ID = "mintedSessionId"
-
-            /**
-             * Byte-identical to the emitters the session list uses for the same
-             * refusals: one rule, one phrasing, and [localizeChatError] finds the
-             * resource for these keys.
-             */
-            private const val CLOSE_STREAMING_MESSAGE =
-                "This session is still responding. Cancel or close it from inside the chat first."
-            private const val CLOSE_GATEWAY_ONLY_MESSAGE = "Close is only available for gateway sessions."
-            private const val CLOSE_FAILED_MESSAGE = "Failed to close session."
 
             private fun initialChatState(): ChatState = ChatState()
         }
@@ -175,7 +136,7 @@ class ChatViewModel
                 cwd = cwd,
             )
         private val markdownStateStore = MarkdownStateStore.retainedFor(durableSessionId?.let { "$serverId/$it" })
-        private val sessionCoordinator =
+        private val sessionCoordinator: ChatSessionCoordinator =
             ChatSessionCoordinator(
                 scope = viewModelScope,
                 facade = sessionFacade,
@@ -236,22 +197,7 @@ class ChatViewModel
                             }
                             // If an operation error arrives while a queued prompt is in-flight,
                             // mark that prompt FAILED so it is visible for manual retry.
-                            inFlightClientId?.let { clientId ->
-                                inFlightClientId = null
-                                updateState {
-                                    val updated =
-                                        pendingMessages.map { msg ->
-                                            if (msg.clientId == clientId &&
-                                                msg.status == MessageDeliveryStatus.SENDING
-                                            ) {
-                                                msg.copy(status = MessageDeliveryStatus.FAILED)
-                                            } else {
-                                                msg
-                                            }
-                                        }
-                                    copy(pendingMessages = updated)
-                                }
-                            }
+                            offlineQueue.failInFlightPrompt()
                             emitEffect(ChatEffect.ShowError(message))
                         }
 
@@ -282,41 +228,42 @@ class ChatViewModel
                     },
             )
 
-        /** Queue of locally-created prompts that have not been delivered to the server yet. */
-        private val offlineQueue = OfflineQueue()
+        /** Durable prompt queue and the pending-message bubbles it mirrors into state. */
+        private val offlineQueue: ChatOfflineQueueController =
+            ChatOfflineQueueController(
+                scope = viewModelScope,
+                coordinator = sessionCoordinator,
+                store = pendingPromptStore,
+                serverId = serverId,
+                durableSessionId = { durableSessionId },
+                state = state,
+                update = { reducer -> updateState(reducer) },
+                emitError = { message -> emitEffect(ChatEffect.ShowError(message)) },
+            )
 
-        /** Restores [offlineQueue] from [pendingPromptStore] at most once per view model. */
-        private var pendingPromptsRestored = false
+        /** Gateway git status and per-file diff loading. */
+        private val gitDiffLoader =
+            ChatGitDiffLoader(
+                scope = viewModelScope,
+                facade = sessionFacade,
+                update = { reducer -> updateState(reducer) },
+                acpSessionId = { trackedSessionId.takeIf { it != NEW_SESSION_ARG } },
+            )
 
-        /** Serializes [persistQueue] writes so a slower, older snapshot cannot land last. */
-        private val persistMutex = Mutex()
-
-        /** The clientId of the prompt currently being dispatched via [flushOfflineQueue].
-         *  Used to wire [onOperationError] back to the specific SENDING bubble. */
-        private var inFlightClientId: String? = null
-
-        /** Guards [flushOfflineQueue] so overlapping sessionReady/retry calls cannot interleave. */
-        private val flushMutex = Mutex()
-        private var reconnectKickJob: Job? = null
-
-        /**
-         * In-flight [ChatIntent.LoadGitDiff] fetch. Cancelling it on a newer request
-         * (and checking it after the suspend call) guarantees a stale response can
-         * never overwrite the state a newer request set.
-         */
-        private var gitFileDiffJob: Job? = null
-
-        /**
-         * Serializes [ChatIntent.LoadGitDiff] request setup (job cancellation, state
-         * initialization, job assignment) and the post-fetch identity check, so rapid
-         * intents cannot race through those steps. `withLock` keeps the holder
-         * cancellable, and the identity guard inside the lock retains latest-wins.
-         */
-        private val gitFileDiffMutex = Mutex()
+        /** Chat switcher rows and the close-session action behind them. */
+        private val switcherController =
+            ChatSwitcherController(
+                scope = viewModelScope,
+                presence = presence,
+                sessionRepository = sessionRepository,
+                launchableTargetRepository = launchableTargetRepository,
+                serverId = serverId,
+                currentSessionId = { trackedSessionId },
+                emitError = { message -> emitEffect(ChatEffect.ShowError(message)) },
+            )
 
         /** Live sessions across all servers, current included, for the chat switcher. */
-        val switcherUiState: StateFlow<SwitcherUiState> =
-            switcherFlow().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SwitcherUiState())
+        val switcherUiState: StateFlow<SwitcherUiState> = switcherController.state
 
         /**
          * False until the first-run swipe hint has been seen: gates the bubble's
@@ -326,53 +273,6 @@ class ChatViewModel
         val switcherHintSeen: StateFlow<Boolean> =
             switcherHintStore.seen
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-
-        @OptIn(ExperimentalCoroutinesApi::class)
-        private fun switcherFlow(): Flow<SwitcherUiState> =
-            chatConnectionHub.warmServers
-                .flatMapLatest { serverIds ->
-                    if (serverIds.isEmpty()) {
-                        flowOf(SwitcherUiState())
-                    } else {
-                        combineSwitcherRows(serverIds.sorted())
-                    }
-                }
-
-        private fun combineSwitcherRows(serverIds: List<String>): Flow<SwitcherUiState> =
-            combine(
-                serverIds.map { sid ->
-                    combine(
-                        sessionRepository.getSessions(sid),
-                        chatConnectionHub.connectedSessionIds(sid),
-                    ) { sessions, liveIds ->
-                        Triple(sid, sessions, liveIds)
-                    }
-                },
-            ) { triples ->
-                val sessionsByServer = triples.associate { it.first to it.second }
-                val liveByServer = triples.associate { it.first to it.third }
-                val servers =
-                    triples.map { it.first }.distinct().map { sid ->
-                        SwitcherServer(
-                            id = sid,
-                            name = launchableTargetRepository.getTarget(sid)?.name ?: sid,
-                        )
-                    }
-                val groups =
-                    deriveSwitcherGroups(
-                        servers = servers,
-                        sessionsByServer = sessionsByServer,
-                        liveIdsByServer = liveByServer,
-                        isGenerating = { sid, sess -> chatConnectionHub.isStreaming(sid, sess) },
-                        currentServerId = serverId,
-                        currentSessionId = trackedSessionId,
-                    )
-                SwitcherUiState(
-                    groups = groups,
-                    liveTotalCount = groups.sumOf { it.sessions.size },
-                    hasOthers = groups.any { group -> group.sessions.any { !it.isCurrent } },
-                )
-            }
 
         init {
             updateState { copy(serverId = serverId) }
@@ -385,14 +285,14 @@ class ChatViewModel
             // trackedSessionId, not the nav arg: after process death a create-on-arrival
             // chat restores its minted id here, and onCleared closes under that same id.
             if (trackedSessionId != NEW_SESSION_ARG) {
-                chatConnectionHub.chatScreenOpened(serverId, trackedSessionId, cwd)
+                presence.screenOpened(serverId, trackedSessionId, cwd)
             }
             resolveSessionTitle()
             viewModelScope.launch {
                 val snapshot = durableSessionId?.let { chatScrollStateStore.restore(serverId, it) }
                 updateState { copy(restoredScrollSnapshot = snapshot) }
             }
-            viewModelScope.launch { restorePendingPrompts() }
+            viewModelScope.launch { offlineQueue.restorePendingPrompts() }
             viewModelScope.launch {
                 // The transport entry (created by the facade's register) becomes
                 // screen-open for real ids here. Existing-session chats were already
@@ -409,7 +309,7 @@ class ChatViewModel
                             // so without this a process death would re-enter the create
                             // path and mint a second session for one user intent.
                             savedStateHandle[KEY_MINTED_SESSION_ID] = trackedSessionId
-                            chatConnectionHub.chatScreenOpened(serverId, trackedSessionId, cwd)
+                            presence.screenOpened(serverId, trackedSessionId, cwd)
                             // The session list renders the store, and nothing else writes a
                             // row for a session minted here until the next listing; the
                             // gateway id below is an UPDATE that also needs the row to exist.
@@ -422,7 +322,7 @@ class ChatViewModel
                         // nav arg is still the __new__ sentinel. Record which
                         // gateway session owns it so cold closes and reattaches
                         // can find it after process death.
-                        val gatewaySessionId = chatConnectionHub.gatewaySessionIdFor(chatId)
+                        val gatewaySessionId = presence.gatewaySessionIdFor(chatId)
                         if (gatewaySessionId != null) {
                             val realSessionId = chatId.substringAfter('/')
                             withContext(Dispatchers.IO) {
@@ -460,10 +360,10 @@ class ChatViewModel
             // Flush offline queue when connection and session are both ready.
             viewModelScope.launch {
                 sessionFacade.sessionReady.collect {
-                    flushOfflineQueue()
+                    offlineQueue.flushOfflineQueue()
                     // Retry the git-status fetch once the session is fully initialized,
                     // in case an earlier attempt raced session setup and failed.
-                    state.value.gatewayWorkspaceConnection?.let { refreshGitStatus(it) }
+                    state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
                 }
             }
             viewModelScope.launch {
@@ -474,136 +374,9 @@ class ChatViewModel
             viewModelScope.launch {
                 sessionFacade.gatewayWorkspaceConnection.collect { connection ->
                     updateState { copy(gatewayWorkspaceConnection = connection) }
-                    if (connection != null) refreshGitStatus(connection)
+                    if (connection != null) gitDiffLoader.refresh()
                 }
             }
-        }
-
-        /**
-         * Fetches the git status for a gateway-backed working tree and stores line-based
-         * add/delete totals in [ChatState.gitDiffStats]. The gateway returns per-file
-         * `added`/`removed` counts (from `git diff --numstat`, with untracked files counted
-         * from disk), so the totals are git's own authoritative numbers.
-         *
-         * Errors keep the previous value so a transient poll failure does not clear the
-         * indicator.
-         */
-        private fun refreshGitStatus(connection: GatewayWorkspaceConnection) {
-            // Nothing to scope to until create-on-arrival mints a session; sessionReady retries.
-            val acpSessionId = acpSessionId() ?: return
-            viewModelScope.launch {
-                runCatching {
-                    val status =
-                        gatewayRepository.fetchGitStatus(
-                            scheme = connection.scheme,
-                            host = connection.host,
-                            gatewayCredential = connection.gatewayCredential,
-                            runtimeId = connection.runtimeId,
-                            acpSessionId = acpSessionId,
-                        )
-                    GitDiffStats(
-                        additions = status.changed.sumOf { it.added },
-                        deletions = status.changed.sumOf { it.removed },
-                    ).let { stats ->
-                        updateState { copy(gitStatus = status, gitDiffStats = stats) }
-                    }
-                }
-            }
-        }
-
-        /** The ACP session this chat shows, scoping workspace calls to its cwd; null before it is minted. */
-        private fun acpSessionId(): String? = trackedSessionId.takeIf { it != NEW_SESSION_ARG }
-
-        /**
-         * Fetches the unified diff for a single file in the gateway-backed working
-         * tree and stores it in [ChatState.gitFileDiff] (the UI renders the first
-         * item). The gateway returns a one-element list for a given [path].
-         *
-         * On exception the requested path is retained so the UI can retry the same
-         * file, the diff is cleared, and a nonblank error is exposed.
-         */
-        private suspend fun loadGitFileDiff(path: String) {
-            val connection = state.value.gatewayWorkspaceConnection
-            if (connection == null) {
-                setGitFileDiffError(path, "No gateway workspace connection to load git diff for $path")
-                return
-            }
-            gitFileDiffMutex.withLock {
-                gitFileDiffJob?.cancel()
-                updateState {
-                    copy(
-                        gitFileDiffPath = path,
-                        isGitFileDiffLoading = true,
-                        gitFileDiffError = null,
-                        gitFileDiff = null,
-                    )
-                }
-                gitFileDiffJob =
-                    viewModelScope.launch {
-                        val currentJob = coroutineContext[Job]
-                        val result =
-                            runCatching {
-                                gatewayRepository.fetchGitDiff(
-                                    scheme = connection.scheme,
-                                    host = connection.host,
-                                    gatewayCredential = connection.gatewayCredential,
-                                    runtimeId = connection.runtimeId,
-                                    path = path,
-                                    acpSessionId = acpSessionId(),
-                                )
-                            }
-                        gitFileDiffMutex.withLock {
-                            if (currentJob != gitFileDiffJob) return@withLock
-                            handleGitDiffResult(result, path)
-                        }
-                    }
-            }
-        }
-
-        private suspend fun setGitFileDiffError(
-            path: String,
-            error: String,
-        ) {
-            gitFileDiffMutex.withLock {
-                gitFileDiffJob?.cancel()
-                gitFileDiffJob = null
-                updateState {
-                    copy(
-                        gitFileDiffPath = path,
-                        isGitFileDiffLoading = false,
-                        gitFileDiff = null,
-                        gitFileDiffError = error,
-                    )
-                }
-            }
-        }
-
-        private fun handleGitDiffResult(
-            result: Result<List<ToolCallContent.Diff>>,
-            path: String,
-        ) {
-            result
-                .onSuccess { diffs ->
-                    updateState {
-                        copy(
-                            gitFileDiff = diffs,
-                            isGitFileDiffLoading = false,
-                            gitFileDiffError = null,
-                        )
-                    }
-                }.onFailure { throwable ->
-                    if (throwable is CancellationException) return
-                    val message =
-                        throwable.message?.takeIf { it.isNotBlank() }
-                            ?: "Failed to load git diff for $path"
-                    updateState {
-                        copy(
-                            gitFileDiff = null,
-                            isGitFileDiffLoading = false,
-                            gitFileDiffError = message,
-                        )
-                    }
-                }
         }
 
         /**
@@ -662,7 +435,7 @@ class ChatViewModel
             // turn starts on the bridge's scope, which outlives this screen. From here the
             // prompt is delivered, so its durable copy goes now rather than when the turn
             // ends: a screen closed mid-turn would otherwise restore and re-send it.
-            if (echoKeys.isNotEmpty()) persistQueue()
+            if (echoKeys.isNotEmpty()) offlineQueue.persistQueue()
             updateState {
                 copy(
                     messages = snapshot.messages,
@@ -858,7 +631,7 @@ class ChatViewModel
             // tap can still return to it. A screen that never attached a
             // transport (create-on-arrival that failed to mint) has no pooled
             // entry, so chatScreenClosed is a no-op there.
-            chatConnectionHub.chatScreenClosed(serverId, trackedSessionId)
+            presence.screenClosed(serverId, trackedSessionId)
         }
 
         /**
@@ -871,20 +644,20 @@ class ChatViewModel
                         state.value.isSessionReady &&
                             state.value.connectionState == ChatConnectionState.Connected
                     if (canSendNow) {
-                        enqueueThenSend(intent.text, intent.images, intent.files)
+                        offlineQueue.enqueueThenSend(intent.text, intent.images, intent.files)
                     } else {
-                        enqueuePrompt(intent.text, intent.images, intent.files)
+                        offlineQueue.enqueuePrompt(intent.text, intent.images, intent.files)
                     }
-                    state.value.gatewayWorkspaceConnection?.let { refreshGitStatus(it) }
+                    state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
                 }
                 is ChatIntent.CancelStreaming -> sessionCoordinator.cancelStreaming()
                 is ChatIntent.SetConfigOption -> sessionCoordinator.setConfigOption(intent.optionId, intent.value)
                 is ChatIntent.GrantPermission -> sessionCoordinator.grantPermission(intent.toolCallId, intent.optionId)
                 is ChatIntent.DenyPermission -> sessionCoordinator.denyPermission(intent.toolCallId)
                 is ChatIntent.RetryLoad -> sessionCoordinator.loadSession()
-                is ChatIntent.RetryMessage -> retryMessage(intent.clientId)
+                is ChatIntent.RetryMessage -> offlineQueue.retryMessage(intent.clientId)
                 is ChatIntent.RefreshGitStatus ->
-                    state.value.gatewayWorkspaceConnection?.let { refreshGitStatus(it) }
+                    state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
                 is ChatIntent.RemoveQueuedMessage,
                 is ChatIntent.ForceSendMessage,
                 is ChatIntent.LoadGitDiff,
@@ -900,341 +673,17 @@ class ChatViewModel
         /** One-shot intents outside the send/streaming core: diff fetch, hint flag, session close. */
         private suspend fun handleAuxIntent(intent: ChatIntent) {
             when (intent) {
-                is ChatIntent.RemoveQueuedMessage -> removeQueuedMessage(intent.clientId)
-                is ChatIntent.ForceSendMessage -> forceSend(intent.clientId)
-                is ChatIntent.LoadGitDiff -> loadGitFileDiff(intent.path)
+                is ChatIntent.RemoveQueuedMessage -> offlineQueue.removeQueuedMessage(intent.clientId)
+                is ChatIntent.ForceSendMessage -> offlineQueue.forceSend(intent.clientId)
+                is ChatIntent.LoadGitDiff -> gitDiffLoader.load(intent.path)
                 is ChatIntent.MarkSwitcherHintSeen -> switcherHintStore.markSeen()
-                is ChatIntent.CloseSession -> closeSwitcherSession(intent.serverId, intent.sessionId)
+                is ChatIntent.CloseSession -> switcherController.close(intent.serverId, intent.sessionId)
                 is ChatIntent.SubmitElicitation -> sessionCoordinator.submitElicitation(intent.key, intent.values)
                 is ChatIntent.DeclineElicitation -> sessionCoordinator.declineElicitation(intent.key)
                 is ChatIntent.CancelElicitation -> sessionCoordinator.cancelElicitation(intent.key)
                 else -> Unit
             }
         }
-
-        /**
-         * Releases a live session the switcher listed, through the same hub call the
-         * session list's Disconnect makes so both surfaces mean one thing by
-         * "close": the gateway process stops and the local transport is released.
-         * Refused while the session streams — the gateway would cut a live turn —
-         * and for manual agents, which have no gateway leg to release.
-         */
-        private suspend fun closeSwitcherSession(
-            targetServerId: String,
-            targetSessionId: String,
-        ) {
-            if (chatConnectionHub.isStreaming(targetServerId, targetSessionId)) {
-                emitEffect(ChatEffect.ShowError(CLOSE_STREAMING_MESSAGE))
-                return
-            }
-            val endpoint = gatewayEndpoint(targetServerId)
-            if (endpoint == null) {
-                emitEffect(ChatEffect.ShowError(CLOSE_GATEWAY_ONLY_MESSAGE))
-                return
-            }
-            runCatching {
-                chatConnectionHub.closeSession(targetServerId, targetSessionId, endpoint)
-            }.onFailure { error ->
-                emitEffect(ChatEffect.ShowError(error.message ?: CLOSE_FAILED_MESSAGE))
-            }
-        }
-
-        /** Gateway REST endpoint for [targetServerId], or null when the target is not gateway-backed. */
-        private suspend fun gatewayEndpoint(targetServerId: String): GatewayEndpoint? =
-            (launchableTargetRepository.getTarget(targetServerId) as? LaunchableTarget.GatewayAgent)
-                ?.let { target ->
-                    GatewayEndpoint(
-                        scheme = target.gatewaySource.scheme,
-                        host = target.gatewaySource.host,
-                        credential = target.gatewaySource.gatewayCredential,
-                    )
-                }
-
-        // region: Offline queue
-
-        /**
-         * Restores the prompts a previous screen lifetime persisted (see [persistQueue]) into
-         * [offlineQueue] and [ChatState.pendingMessages], then gives them a path forward: an
-         * immediate flush when the session is already live, otherwise the reconnect the offline
-         * enqueue path uses, so a restored prompt stays QUEUED until the session is ready
-         * instead of being marked FAILED by a flush that cannot dispatch it yet.
-         *
-         * Guarded so a second call cannot duplicate the queue.
-         */
-        private suspend fun restorePendingPrompts() {
-            if (pendingPromptsRestored) return
-            pendingPromptsRestored = true
-            val queueId = durableSessionId ?: return
-            val records = pendingPromptStore.restore(serverId, queueId)
-            if (records.isEmpty()) return
-            records.forEach { record ->
-                offlineQueue.enqueue(
-                    PendingPrompt(
-                        clientId = record.clientId,
-                        text = record.text,
-                        images = record.images,
-                        files = record.files,
-                    ),
-                )
-                val message =
-                    ChatMessage(
-                        id = record.clientId,
-                        role = ChatMessage.Role.USER,
-                        content = record.text,
-                        images = record.images,
-                        files = record.files,
-                        status = MessageDeliveryStatus.QUEUED,
-                        clientId = record.clientId,
-                    )
-                updateState { copy(pendingMessages = pendingMessages + message) }
-            }
-            val canSendNow =
-                state.value.isSessionReady && state.value.connectionState == ChatConnectionState.Connected
-            if (canSendNow) {
-                flushOfflineQueue()
-            } else {
-                kickReconnect()
-            }
-        }
-
-        /**
-         * Persists [offlineQueue] for this chat so a screen teardown cannot silently drop a
-         * queued prompt. The snapshot is taken at write time under [persistMutex], so an older
-         * write can never land after a newer one.
-         */
-        private suspend fun persistQueue() {
-            persistMutex.withLock {
-                val queueId = durableSessionId ?: return
-                val records =
-                    offlineQueue.snapshot().map {
-                        QueuedPromptRecord(it.clientId, it.text, it.images, it.files)
-                    }
-                pendingPromptStore.save(serverId, queueId, records)
-            }
-        }
-
-        /**
-         * Optimistically adds a user bubble with [MessageDeliveryStatus.QUEUED] and
-         * stores the prompt in [offlineQueue] for later delivery.
-         *
-         * Suspends only for the queue persist; the sole caller is the suspend intent
-         * dispatch path, so no signature ripples.
-         */
-        private suspend fun enqueuePrompt(
-            text: String,
-            images: List<ChatImageData>,
-            files: List<ChatFileData>,
-        ) {
-            if (text.isBlank() && images.isEmpty() && files.isEmpty()) return
-            val clientId =
-                java.util.UUID
-                    .randomUUID()
-                    .toString()
-            val message =
-                ChatMessage(
-                    id = clientId,
-                    role = ChatMessage.Role.USER,
-                    content = text,
-                    images = images,
-                    files = files,
-                    status = MessageDeliveryStatus.QUEUED,
-                    clientId = clientId,
-                )
-            offlineQueue.enqueue(
-                PendingPrompt(
-                    clientId = clientId,
-                    text = text,
-                    images = images,
-                    files = files,
-                ),
-            )
-            updateState {
-                copy(pendingMessages = pendingMessages + message)
-            }
-            if (state.value.connectionState != ChatConnectionState.Connected) {
-                kickReconnect()
-            }
-            persistQueue()
-        }
-
-        /**
-         * Ensures a single reconnect attempt is in flight so a prompt queued while
-         * offline has a path forward. The next enqueue re-triggers once this settles.
-         */
-        private fun kickReconnect() {
-            if (reconnectKickJob?.isActive == true) return
-            reconnectKickJob = viewModelScope.launch { sessionCoordinator.reconnect() }
-        }
-
-        /**
-         * Enqueues the prompt then immediately tries to send it while the session is ready.
-         * Used by [handleIntent] for the online-send path so the offline queue is always the
-         * source of truth and the flush path is uniform.
-         */
-        private suspend fun enqueueThenSend(
-            text: String,
-            images: List<ChatImageData>,
-            files: List<ChatFileData>,
-        ) {
-            if (text.isBlank() && images.isEmpty() && files.isEmpty()) return
-            val clientId =
-                java.util.UUID
-                    .randomUUID()
-                    .toString()
-            val message =
-                ChatMessage(
-                    id = clientId,
-                    role = ChatMessage.Role.USER,
-                    content = text,
-                    images = images,
-                    files = files,
-                    status = MessageDeliveryStatus.QUEUED,
-                    clientId = clientId,
-                )
-            val prompt =
-                PendingPrompt(
-                    clientId = clientId,
-                    text = text,
-                    images = images,
-                    files = files,
-                )
-            offlineQueue.enqueue(prompt)
-            persistQueue()
-            updateState {
-                copy(pendingMessages = pendingMessages + message)
-            }
-            flushOfflineQueue()
-        }
-
-        /**
-         * Drains [offlineQueue] in FIFO order under [flushMutex], one prompt per turn.
-         *
-         * Each send first waits for the agent to be idle. The mutex alone only covered
-         * turns this view model started: a screen re-entered mid-turn (or a restored queue)
-         * sent its prompt straight into the running turn. An agent that takes prompts
-         * mid-turn is the exception: it gets each one at once (see [steerIntoTurn]).
-         *
-         * Each prompt transitions QUEUED -> SENDING *without* being removed from
-         * [ChatState.pendingMessages].  The pending bubble stays visible until:
-         * - The reducer echo arrives via [applySnapshot] (SENT: the echo replaces it), or
-         * - [sendMessage] returns false (FAILED: no bridge), or
-         * - An [onOperationError] fires while the prompt is in-flight (FAILED).
-         */
-        private suspend fun flushOfflineQueue() {
-            flushMutex.withLock {
-                while (!offlineQueue.isEmpty) {
-                    val midTurn = state.first { !it.isStreaming || it.supportsSteering }.isStreaming
-                    val prompt = offlineQueue.dequeue() ?: break
-                    if (midTurn) steerIntoTurn(prompt) else startTurn(prompt)
-                }
-            }
-        }
-
-        /**
-         * Sends [prompt]. The send lasts the whole turn, so for a steering agent the flush is held
-         * only until the turn is under way: its next prompt must go into that turn, not behind it.
-         */
-        private suspend fun startTurn(prompt: PendingPrompt) {
-            if (!state.value.supportsSteering) return sendWhenIdle(prompt)
-            state.awaitTurnStartedOr(viewModelScope.launch { sendWhenIdle(prompt) })
-        }
-
-        private suspend fun sendWhenIdle(prompt: PendingPrompt) {
-            // Transition QUEUED -> SENDING, keep the bubble visible.
-            inFlightClientId = prompt.clientId
-            setPendingStatus(prompt.clientId, MessageDeliveryStatus.QUEUED, MessageDeliveryStatus.SENDING)
-            val dispatched = sessionCoordinator.sendMessage(prompt.text, prompt.images, prompt.files)
-            inFlightClientId = null
-            if (!dispatched) {
-                // No bridge / not ready / unsupported -> mark FAILED immediately. The facade
-                // has already reported the cause; a second generic error would replace it.
-                setPendingStatus(prompt.clientId, MessageDeliveryStatus.SENDING, MessageDeliveryStatus.FAILED)
-            }
-            // Only now is the durable copy dropped, and deliberately not from a
-            // finally: until the send resolves the stored snapshot still contains
-            // this prompt, so a screen teardown mid-send (which cancels
-            // sendMessage and skips this line) restores it as QUEUED rather than
-            // losing it. The cost is that a process death between a successful
-            // send and this write can re-send one prompt after restart
-            // (at-least-once); the record carries its clientId, so an echo-based
-            // dedupe could tighten that later if it ever matters.
-            persistQueue()
-        }
-
-        /**
-         * Hands a prompt to the running turn; the agent feeds it to the model at its next
-         * step. SENDING lets the runtime's local copy reconcile the bubble away as a normal
-         * send's echo does. A prompt the agent does not take goes back to the front and
-         * waits for the turn to end, so a refusal cannot spin the flush loop.
-         */
-        private suspend fun steerIntoTurn(prompt: PendingPrompt) {
-            setPendingStatus(prompt.clientId, MessageDeliveryStatus.QUEUED, MessageDeliveryStatus.SENDING)
-            val outcome = sessionCoordinator.steerMessage(prompt.text, prompt.images, prompt.files)
-            if (outcome == SteerOutcome.NotConsumed) {
-                offlineQueue.enqueueFirst(prompt)
-                setPendingStatus(prompt.clientId, MessageDeliveryStatus.SENDING, MessageDeliveryStatus.QUEUED)
-                persistQueue()
-                state.first { !it.isStreaming }
-            } else {
-                persistQueue()
-            }
-        }
-
-        /**
-         * Stops the running turn and makes [clientId]'s prompt the next one, folded together with
-         * every prompt queued ahead of it so they all go at once. Prompts behind it keep waiting.
-         * It keeps [clientId]'s bubble, whose content becomes the folded prompt the echo will carry.
-         */
-        private suspend fun forceSend(clientId: String) {
-            val (merged, folded) = offlineQueue.foldThrough(clientId) ?: return
-            updateState { copy(pendingMessages = pendingMessages.foldedInto(merged, folded)) }
-            persistQueue()
-            if (state.value.isStreaming) sessionCoordinator.cancelStreaming()
-            // Normally a flush is already waiting on the turn; this covers one that is not.
-            flushOfflineQueue()
-        }
-
-        /** Drops a prompt the user no longer wants sent. One already in flight cannot be recalled. */
-        private suspend fun removeQueuedMessage(clientId: String) {
-            val pending = state.value.pendingMessages.firstOrNull { it.clientId == clientId } ?: return
-            if (pending.status == MessageDeliveryStatus.SENDING) return
-            offlineQueue.removeByClientId(clientId)
-            updateState { copy(pendingMessages = pendingMessages.filterNot { it.clientId == clientId }) }
-            persistQueue()
-        }
-
-        /** Moves [clientId]'s pending bubble from [from] to [to]; any other status stays. */
-        private fun setPendingStatus(
-            clientId: String,
-            from: MessageDeliveryStatus,
-            to: MessageDeliveryStatus,
-        ) = updateState { copy(pendingMessages = pendingMessages.withStatus(clientId, from, to)) }
-
-        /** Retries a single FAILED message by re-enqueueing it and flushing.
-         *  Other QUEUED prompts are preserved in FIFO order. */
-        private suspend fun retryMessage(clientId: String) {
-            val pendingMessage = state.value.pendingMessages.firstOrNull { it.clientId == clientId }
-            if (pendingMessage == null || pendingMessage.status != MessageDeliveryStatus.FAILED) return
-
-            val prompt =
-                PendingPrompt(
-                    clientId = clientId,
-                    text = pendingMessage.content,
-                    images = pendingMessage.images,
-                    files = pendingMessage.files,
-                )
-            // Remove existing queue entry for this clientId, then enqueue at the back.
-            offlineQueue.removeByClientId(clientId)
-            offlineQueue.enqueue(prompt)
-            persistQueue()
-            // Reset the bubble's status from FAILED to QUEUED so flushOfflineQueue
-            // can transition it QUEUED -> SENDING and the echo-reconcile in
-            // applySnapshot can remove it on delivery confirmation.
-            setPendingStatus(clientId, MessageDeliveryStatus.FAILED, MessageDeliveryStatus.QUEUED)
-            flushOfflineQueue()
-        }
-
-        // endregion
 
         /**
          * Persists and mirrors the latest scroll snapshot for restore on re-entry.
@@ -1258,171 +707,3 @@ class ChatViewModel
             runCatching { Log.d(TRACE_TAG, message) }
         }
     }
-
-/** Suspends until a turn is streaming or [send] has finished, whichever comes first. */
-private suspend fun StateFlow<ChatState>.awaitTurnStartedOr(send: Job) {
-    val sendDone =
-        flow {
-            emit(false)
-            send.join()
-            emit(true)
-        }
-    combine(this, sendDone) { current, done -> current.isStreaming || done }.first { it }
-}
-
-private fun List<ChatMessage>.withStatus(
-    clientId: String,
-    from: MessageDeliveryStatus,
-    to: MessageDeliveryStatus,
-): List<ChatMessage> = map { if (it.clientId == clientId && it.status == from) it.copy(status = to) else it }
-
-/** Gives [merged]'s bubble the folded content and drops the bubbles of the prompts it [folded] in. */
-private fun List<ChatMessage>.foldedInto(
-    merged: PendingPrompt,
-    folded: Set<String>,
-): List<ChatMessage> =
-    mapNotNull {
-        when (it.clientId) {
-            merged.clientId -> it.copy(content = merged.text, images = merged.images, files = merged.files)
-            in folded -> null
-            else -> it
-        }
-    }
-
-/** UI state for the chat screen. */
-data class ChatState(
-    val serverId: String = "",
-    val title: String? = null,
-    val messages: List<ChatMessage> = emptyList(),
-    val pendingMessages: List<ChatMessage> = emptyList(),
-    /**
-     * Transcript list key per message id, where it differs from the id: the reducer's echo of a
-     * sent prompt has a new id, and keeps the pending bubble's key so the list moves the same
-     * item instead of swapping one for another.
-     */
-    val listKeys: Map<String, String> = emptyMap(),
-    val markdownDocuments: Map<String, MarkdownRenderedDocument> = emptyMap(),
-    val restoredScrollSnapshot: ChatScrollSnapshot? = null,
-    val isLoading: Boolean = false,
-    val isStreaming: Boolean = false,
-    val isSessionReady: Boolean = false,
-    val canCancelStreaming: Boolean = true,
-    val connectionState: ChatConnectionState = ChatConnectionState.Disconnected,
-    val connectionDiagnostics: ChatConnectionDiagnostics = ChatConnectionDiagnostics(),
-    val configOptions: List<ChatConfigOption> = emptyList(),
-    val usage: UsageState? = null,
-    val availableCommands: List<ChatCommand> = emptyList(),
-    val commandsAdvertised: Boolean = false,
-    val pendingElicitations: List<ChatElicitationRequest> = emptyList(),
-    val canSendImages: Boolean = false,
-    val supportsEmbeddedContext: Boolean = false,
-    val supportsSteering: Boolean = false,
-    /**
-     * True when this screen attached to an existing session whose agent cannot
-     * replay history, so earlier turns exist only on the agent's side and the
-     * transcript starts empty. Drives the top-of-transcript resumed-session notice.
-     */
-    val resumedSession: Boolean = false,
-    val gatewayWorkspaceConnection: GatewayWorkspaceConnection? = null,
-    val gitStatus: GatewayGitStatus? = null,
-    val gitDiffStats: GitDiffStats? = null,
-    val gitFileDiff: List<ToolCallContent.Diff>? = null,
-    val gitFileDiffPath: String? = null,
-    val isGitFileDiffLoading: Boolean = false,
-    val gitFileDiffError: String? = null,
-    val error: String? = null,
-    /**
-     * Registry logo URL for this chat's agent, for identity marks like the
-     * empty-session hero. Null for manual agents or when unresolved.
-     */
-    val iconUrl: String? = null,
-)
-
-/** User intents emitted from the chat UI. */
-sealed interface ChatIntent {
-    data class SendMessage(
-        val text: String,
-        val images: List<ChatImageData> = emptyList(),
-        val files: List<ChatFileData> = emptyList(),
-    ) : ChatIntent
-
-    data object CancelStreaming : ChatIntent
-
-    data class SetConfigOption(
-        val optionId: String,
-        val value: ChatConfigValue,
-    ) : ChatIntent
-
-    data class GrantPermission(
-        val toolCallId: String,
-        val optionId: String,
-    ) : ChatIntent
-
-    data class DenyPermission(
-        val toolCallId: String,
-    ) : ChatIntent
-
-    data class SubmitElicitation(
-        val key: String,
-        val values: Map<String, ChatElicitationValue>,
-    ) : ChatIntent
-
-    data class DeclineElicitation(
-        val key: String,
-    ) : ChatIntent
-
-    data class CancelElicitation(
-        val key: String,
-    ) : ChatIntent
-
-    data object RetryLoad : ChatIntent
-
-    /** Retry sending a previously failed (or queued) message identified by its [clientId]. */
-    data class RetryMessage(
-        val clientId: String,
-    ) : ChatIntent
-
-    /** Stop the turn and send this QUEUED prompt, with those queued ahead of it, right away. */
-    data class ForceSendMessage(
-        val clientId: String,
-    ) : ChatIntent
-
-    /** Drop a QUEUED or FAILED prompt without sending it. */
-    data class RemoveQueuedMessage(
-        val clientId: String,
-    ) : ChatIntent
-
-    /** Re-fetch the git status for the gateway-backed working tree (e.g. after a send). */
-    data object RefreshGitStatus : ChatIntent
-
-    /** Load the unified diff for a single changed file from the gateway-backed working tree. */
-    data class LoadGitDiff(
-        val path: String,
-    ) : ChatIntent
-
-    /** Consumes the switcher bubble's first-run swipe hint so it never shows again. */
-    data object MarkSwitcherHintSeen : ChatIntent
-
-    /**
-     * Releases another live session the switcher listed, the way the session
-     * list's Disconnect does. Carries the row's own ids: the sheet lists every
-     * warm server, so the target is not always this chat's server.
-     */
-    data class CloseSession(
-        val serverId: String,
-        val sessionId: String,
-    ) : ChatIntent
-}
-
-/** One-shot effects emitted to the UI layer (snackbar, navigation, etc.). */
-sealed interface ChatEffect {
-    data class ShowError(
-        val message: String,
-    ) : ChatEffect
-
-    data class ShowMessage(
-        val message: String,
-    ) : ChatEffect
-
-    data object NavigateBack : ChatEffect
-}

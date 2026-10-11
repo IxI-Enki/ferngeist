@@ -9,7 +9,6 @@ import com.tamimarafat.ferngeist.gateway.GatewayCredentialExpiredException
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.launchGatewayRuntime
 import com.tamimarafat.ferngeist.gateway.refreshGatewaySourceIfNeeded
-import com.tamimarafat.ferngeist.gateway.resolveGatewayWebSocketUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -79,8 +78,8 @@ suspend fun persistEnvValues(
 }
 
 /**
- * Gateway agents need a two-stage launch: start or reuse the gateway runtime,
- * then request a runtime-scoped ACP WebSocket handoff.
+ * Gateway agents get their runtime and session from the gateway's single connect
+ * call, which also returns the runtime-scoped ACP WebSocket handoff.
  */
 suspend fun buildGatewayLaunchContext(
     gatewayRepository: GatewayRepository,
@@ -97,23 +96,14 @@ suspend fun buildGatewayLaunchContext(
         val handoff = result.handoff
         GatewayLaunchContext(
             config =
-                AcpConnectionConfig(
-                    scheme = source.scheme,
-                    host = source.host,
-                    webSocketUrl = resolveGatewayWebSocketUrl(source, handoff),
-                    webSocketBearerToken = handoff.bearerToken,
-                    preferredAuthMethodId = server.preferredAuthMethodId,
-                    gatewayRuntimeId = result.runtime.id,
-                    gatewaySourceId = source.id,
-                    serverDisplayName = server.name,
-                    sessionId = handoff.sessionId,
-                    attachToken = handoff.attachToken,
-                    gatewayScheme = source.scheme,
-                    gatewayHost = source.host,
-                    gatewayCredential = source.gatewayCredential,
+                AcpConnectionConfig.fromGatewayHandoff(
+                    gatewaySource = source,
+                    handoff = handoff,
+                    authMethodId = server.preferredAuthMethodId,
+                    displayName = server.name,
                 ),
             gatewaySource = source,
-            runtimeId = result.runtime.id,
+            runtimeId = handoff.runtimeId,
         )
     }
 
@@ -125,7 +115,7 @@ suspend fun buildGatewayLaunchContext(
  * generic session initialization message.
  */
 suspend fun buildInitializeFailureMessage(
-    connectionManager: AcpConnectionManager,
+    connectionManager: AcpConnection,
     gatewayRepository: GatewayRepository,
     gatewaySourceRepository: GatewaySourceRepository,
     server: LaunchableTarget,

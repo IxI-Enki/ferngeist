@@ -55,6 +55,7 @@ import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.common.ui.initialPassLongPress
 import com.tamimarafat.ferngeist.core.common.ui.onSecondaryClick
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import io.github.diff.DeltaType
 import io.github.diff.generatePatch
 import kotlinx.coroutines.Dispatchers
@@ -65,13 +66,12 @@ internal fun isDirectoryPath(path: String): Boolean = path.endsWith('/')
 
 /**
  * True when a git status entry is a directory (submodule or collapsed
- * untracked dir) and therefore not diffable. [GatewayChangedFile.isDir] is
+ * untracked dir) and therefore not diffable. [ChatChangedFile.isDir] is
  * authoritative (submodule paths carry no trailing slash); the trailing-slash
  * check is a fallback for older gateways that report collapsed dirs only via
  * the path.
  */
-internal fun isDirectoryEntry(file: com.tamimarafat.ferngeist.gateway.GatewayChangedFile): Boolean =
-    file.isDir || isDirectoryPath(file.path)
+internal fun isDirectoryEntry(file: ChatChangedFile): Boolean = file.isDir || isDirectoryPath(file.path)
 
 /** Returns the last path segment of a file path, or the full path when it ends in '/'. */
 internal fun fileNameOf(path: String): String =

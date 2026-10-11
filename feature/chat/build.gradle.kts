@@ -46,8 +46,10 @@ dependencies {
     // === Core ===
     implementation(projects.core.model)
     implementation(projects.core.common)
-    implementation(projects.acpBridge)
-    implementation(projects.gatewayClient)
+    // ACP model types surface in the chat domain itself (`ToolCallContent.Diff` for git
+    // diffs, `ToolKind`/`ToolCallStatus` for tool rendering), so the SDK model module is a
+    // direct dependency rather than one inherited from the ACP bridge.
+    implementation(libs.acp.model)
 
     // === Android ===
     implementation(libs.androidx.core.ktx)
@@ -86,4 +88,8 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    // Test doubles build the real hub / gateway repositories; production code reaches both
+    // only through the core-model ports.
+    testImplementation(projects.acpBridge)
+    testImplementation(projects.gatewayClient)
 }

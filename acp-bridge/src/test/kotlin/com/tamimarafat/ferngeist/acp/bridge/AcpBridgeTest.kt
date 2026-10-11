@@ -11,14 +11,15 @@ import com.agentclientprotocol.model.SessionListCapabilities
 import com.agentclientprotocol.model.SessionResumeCapabilities
 import com.agentclientprotocol.protocol.JsonRpcException
 import com.agentclientprotocol.rpc.JsonRpcErrorCode
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpDiagnosticsStore
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpManagerEvent
 import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectivityObserver
 import com.tamimarafat.ferngeist.acp.bridge.connection.PermissionFlow
 import com.tamimarafat.ferngeist.acp.bridge.connection.SessionAttachRpc
+import com.tamimarafat.ferngeist.acp.bridge.connection.SessionListingUnavailableException
 import com.tamimarafat.ferngeist.acp.bridge.connection.displayLabels
 import com.tamimarafat.ferngeist.acp.bridge.connection.formatAcpErrorMessage
 import com.tamimarafat.ferngeist.acp.bridge.connection.isCancellationLikeError
@@ -53,6 +54,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+
+/** Manager wiring for tests that never reach the gateway resume path. */
+private val noGatewayResume: suspend (
+    gateway: AcpConnectionConfig.Gateway,
+    session: AcpConnectionConfig.ResumeInfo,
+) -> String = { _, _ -> error("no gateway resume in this test") }
 
 class SessionBridgeTest {
     @Test
@@ -174,35 +181,35 @@ class ConnectivityObserverStub(
     }
 }
 
-class AcpConnectionManagerTest {
+class AcpConnectionTest {
     @Test
-    fun `AcpConnectionManager should start in disconnected state`() =
+    fun `AcpConnection should start in disconnected state`() =
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = true)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, null, scope)
+            val manager = AcpConnection(connectivityObserver, noGatewayResume, scope)
 
             assertEquals(AcpConnectionState.Disconnected, manager.connectionState.value)
         }
 
     @Test
-    fun `AcpConnectionManager getSession should return null for unknown session`() =
+    fun `AcpConnection getSession should return null for unknown session`() =
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = true)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, null, scope)
+            val manager = AcpConnection(connectivityObserver, noGatewayResume, scope)
 
-            val session = manager.getSession("unknown")
+            val session = manager.sessions.getSession("unknown")
 
             assertEquals(null, session)
         }
 
     @Test
-    fun `AcpConnectionManager should track isConnected state`() =
+    fun `AcpConnection should track isConnected state`() =
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = false)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, null, scope)
+            val manager = AcpConnection(connectivityObserver, noGatewayResume, scope)
 
             assertFalse(manager.isConnected)
         }
@@ -211,17 +218,20 @@ class AcpConnectionManagerTest {
     fun `connect failure does not emit synthetic disconnected event`() =
         runTest {
             val manager =
-                AcpConnectionManager(
+                AcpConnection(
                     connectivityObserver = ConnectivityObserverStub(initialState = true),
-                    gatewayRepository = null,
+                    resumeAttachToken = noGatewayResume,
                     scope = CoroutineScope(Dispatchers.Unconfined),
                 )
 
             manager.events.test {
                 val connected =
                     manager.connect(
-                        AcpConnectionConfig(
+                        AcpConnectionConfig.Manual(
+                            scheme = "ws",
                             host = "127.0.0.1:1",
+                            preferredAuthMethodId = null,
+                            displayName = null,
                         ),
                     )
 
@@ -270,7 +280,7 @@ class AcpConnectionManagerTest {
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = true)
             val scope = CoroutineScope(Dispatchers.Unconfined)
-            val manager = AcpConnectionManager(connectivityObserver, null, scope)
+            val manager = AcpConnection(connectivityObserver, noGatewayResume, scope)
 
             assertNull(manager.diagnostics.value.supportsSessionCancel)
         }
@@ -296,9 +306,9 @@ class AcpConnectionManagerTest {
         runTest {
             val connectivityObserver = ConnectivityObserverStub(initialState = false)
             val manager =
-                AcpConnectionManager(
+                AcpConnection(
                     connectivityObserver = connectivityObserver,
-                    gatewayRepository = null,
+                    resumeAttachToken = noGatewayResume,
                     scope = CoroutineScope(Dispatchers.Unconfined),
                 )
 
@@ -312,15 +322,42 @@ class AcpConnectionManagerTest {
             waitJob.join()
             assertTrue(waitJob.isCompleted)
         }
+
+    /**
+     * The listing seam's failure contract: `listSessions` used to answer every failure
+     * with `emptyList()`, which no caller can tell apart from "the agent has no sessions"
+     * — and `ChatConnectionHub` persists what it gets, so a failed listing deleted the
+     * user's cached sessions, showed no error, and left the flag that drives the
+     * reconnect retry cleared.
+     */
+    @Test
+    fun `listing without a connected client fails instead of reporting no sessions`() =
+        runTest {
+            val connection =
+                AcpConnection(
+                    connectivityObserver = ConnectivityObserverStub(initialState = true),
+                    resumeAttachToken = noGatewayResume,
+                    scope = CoroutineScope(Dispatchers.Unconfined),
+                )
+
+            val result = runCatching { connection.listSessions(cwd = null) }
+
+            assertTrue(
+                "a listing that could not run must not read as an empty answer, got $result",
+                result.exceptionOrNull() is SessionListingUnavailableException,
+            )
+        }
 }
 
 class AcpConnectionConfigTest {
     @Test
     fun `should carry preferred auth method id`() {
         val config =
-            AcpConnectionConfig(
+            AcpConnectionConfig.Manual(
+                scheme = "ws",
                 host = "localhost:8080",
                 preferredAuthMethodId = "env:github_token",
+                displayName = null,
             )
 
         assertEquals("env:github_token", config.preferredAuthMethodId)
@@ -329,8 +366,11 @@ class AcpConnectionConfigTest {
     @Test
     fun `should default preferred auth method id to null`() {
         val config =
-            AcpConnectionConfig(
+            AcpConnectionConfig.Manual(
+                scheme = "ws",
                 host = "localhost:8080",
+                preferredAuthMethodId = null,
+                displayName = null,
             )
 
         assertNull(config.preferredAuthMethodId)

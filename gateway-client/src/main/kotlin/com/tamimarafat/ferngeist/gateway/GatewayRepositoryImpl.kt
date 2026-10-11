@@ -45,7 +45,7 @@ class GatewayRepositoryImpl
                     json = json,
                     scheme = scheme,
                     host = host,
-                    bearerToken = null,
+                    credential = null,
                     "v1",
                     "status",
                 )
@@ -64,7 +64,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = null,
+                credential = null,
                 "v1",
                 "pair",
                 "start",
@@ -79,7 +79,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = null,
+                credential = null,
                 "v1",
                 "pair",
                 "status",
@@ -103,27 +103,22 @@ class GatewayRepositoryImpl
             return response.agents
         }
 
-        override suspend fun startAgent(
+        override suspend fun connectAgent(
             scheme: String,
             host: String,
             gatewayCredential: String,
             agentId: String,
-            new: Boolean,
-        ): GatewayRuntime {
-            val response =
-                httpClient.postJson<GatewayStartAgentResponse>(
-                    json = json,
-                    scheme = scheme,
-                    host = host,
-                    bearerToken = gatewayCredential,
-                    "v1",
-                    "agents",
-                    agentId,
-                    "start",
-                    body = buildStartAgentRequestBody(new),
-                )
-            return response.runtime
-        }
+        ): GatewayConnectResponse =
+            httpClient.postJson(
+                json = json,
+                scheme = scheme,
+                host = host,
+                credential = gatewayCredential,
+                "v1",
+                "agents",
+                agentId,
+                "connect",
+            )
 
         override suspend fun createCustomAgent(
             scheme: String,
@@ -138,7 +133,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "agents",
                 "custom",
@@ -154,7 +149,7 @@ class GatewayRepositoryImpl
             httpClient.deleteJsonUnit(
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "agents",
                 "custom",
@@ -171,7 +166,7 @@ class GatewayRepositoryImpl
             httpClient.postJsonUnit(
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "agents",
                 agentId,
@@ -191,7 +186,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "worktrees",
                 body = buildCreateWorktreeRequestBody(repo, base, branch),
@@ -206,7 +201,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "worktrees",
             )
@@ -223,32 +218,13 @@ class GatewayRepositoryImpl
             httpClient.deleteJsonUnit(
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "worktrees",
                 worktreeId,
                 query = if (force) mapOf("force" to "true") else emptyMap(),
             )
         }
-
-        override suspend fun connectRuntime(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            sessionMode: String?,
-        ): GatewayConnectResponse =
-            httpClient.postJson(
-                json = json,
-                scheme = scheme,
-                host = host,
-                bearerToken = gatewayCredential,
-                "v1",
-                "runtimes",
-                runtimeId,
-                "connect",
-                body = buildConnectRequestBody(sessionMode = sessionMode),
-            )
 
         override suspend fun resumeSession(
             scheme: String,
@@ -260,7 +236,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "sessions",
                 sessionId,
@@ -277,7 +253,7 @@ class GatewayRepositoryImpl
                     json = json,
                     scheme = scheme,
                     host = host,
-                    bearerToken = gatewayCredential,
+                    credential = gatewayCredential,
                     "v1",
                     "sessions",
                 )
@@ -293,7 +269,7 @@ class GatewayRepositoryImpl
             httpClient.deleteJsonUnit(
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "sessions",
                 sessionId,
@@ -309,7 +285,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "devices",
                 "push-config",
@@ -324,7 +300,7 @@ class GatewayRepositoryImpl
             httpClient.postJsonUnit(
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "devices",
                 "push-token",
@@ -338,12 +314,12 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             runtimeId: String,
             envVars: Map<String, String>,
-        ): GatewayConnectResponse =
+        ): GatewayRestartResponse =
             httpClient.postJson(
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 "v1",
                 "runtimes",
                 runtimeId,
@@ -362,7 +338,7 @@ class GatewayRepositoryImpl
                     json = json,
                     scheme = scheme,
                     host = host,
-                    bearerToken = gatewayCredential,
+                    credential = gatewayCredential,
                     "v1",
                     "runtimes",
                     runtimeId,
@@ -434,7 +410,7 @@ class GatewayRepositoryImpl
                 json = json,
                 scheme = scheme,
                 host = host,
-                bearerToken = gatewayCredential,
+                credential = gatewayCredential,
                 segments = arrayOf("v1", "runtimes", runtimeId, "git", "status"),
                 query = acpSessionQuery(acpSessionId),
             )
@@ -456,7 +432,7 @@ class GatewayRepositoryImpl
                     json = json,
                     scheme = scheme,
                     host = host,
-                    bearerToken = gatewayCredential,
+                    credential = gatewayCredential,
                     segments = segments,
                     query = query,
                 )
@@ -467,7 +443,7 @@ class GatewayRepositoryImpl
                         json = json,
                         scheme = scheme,
                         host = host,
-                        bearerToken = gatewayCredential,
+                        credential = gatewayCredential,
                         segments = segments,
                         query = query,
                     )
@@ -488,7 +464,7 @@ class GatewayRepositoryImpl
                     json = json,
                     scheme = scheme,
                     host = host,
-                    bearerToken = null,
+                    credential = null,
                     "v1",
                     "pair",
                     "complete",
@@ -528,7 +504,7 @@ class GatewayRepositoryImpl
                         json = json,
                         scheme = scheme,
                         host = host,
-                        bearerToken = gatewayCredential,
+                        credential = gatewayCredential,
                         "v1",
                         "auth",
                         "refresh",
@@ -564,13 +540,13 @@ private suspend inline fun <reified T> HttpClient.getJson(
     json: Json,
     scheme: String,
     host: String,
-    bearerToken: String? = null,
+    credential: String? = null,
     vararg segments: String,
     query: Map<String, String> = emptyMap(),
 ): T {
     val endpoint = buildGatewayEndpoint(scheme, host, segments = segments, query = query)
     val authHeaders =
-        bearerToken?.takeIf { it.isNotBlank() }?.let {
+        credential?.takeIf { it.isNotBlank() }?.let {
             GatewayProofAuth.buildAuthHeaders(
                 gatewayCredential = it,
                 method = "GET",
@@ -599,13 +575,13 @@ private suspend inline fun <reified T> HttpClient.postJson(
     json: Json,
     scheme: String,
     host: String,
-    bearerToken: String? = null,
+    credential: String? = null,
     vararg segments: String,
     body: String? = null,
 ): T {
     val endpoint = buildGatewayEndpoint(scheme, host, *segments)
     val authHeaders =
-        bearerToken?.takeIf { it.isNotBlank() }?.let {
+        credential?.takeIf { it.isNotBlank() }?.let {
             GatewayProofAuth.buildAuthHeaders(
                 gatewayCredential = it,
                 method = "POST",
@@ -637,13 +613,13 @@ private suspend inline fun <reified T> HttpClient.postJson(
 private suspend fun HttpClient.postJsonUnit(
     scheme: String,
     host: String,
-    bearerToken: String? = null,
+    credential: String? = null,
     vararg segments: String,
     body: String? = null,
 ) {
     val endpoint = buildGatewayEndpoint(scheme, host, *segments)
     val authHeaders =
-        bearerToken?.takeIf { it.isNotBlank() }?.let {
+        credential?.takeIf { it.isNotBlank() }?.let {
             GatewayProofAuth.buildAuthHeaders(
                 gatewayCredential = it,
                 method = "POST",
@@ -674,13 +650,13 @@ private suspend fun HttpClient.postJsonUnit(
 private suspend fun HttpClient.deleteJsonUnit(
     scheme: String,
     host: String,
-    bearerToken: String? = null,
+    credential: String? = null,
     vararg segments: String,
     query: Map<String, String> = emptyMap(),
 ) {
     val endpoint = buildGatewayEndpoint(scheme, host, segments = segments, query = query)
     val authHeaders =
-        bearerToken?.takeIf { it.isNotBlank() }?.let {
+        credential?.takeIf { it.isNotBlank() }?.let {
             GatewayProofAuth.buildAuthHeaders(
                 gatewayCredential = it,
                 method = "DELETE",
@@ -729,27 +705,6 @@ private val requestBodyJson =
     Json {
         encodeDefaults = false
         ignoreUnknownKeys = true
-    }
-
-/**
- * Serializes the connect request body, omitting null fields so the gateway never
- * receives explicit nulls. Uses its own [Json] with encodeDefaults = false rather
- * than the injected shared instance (whose encodeDefaults default is true), making
- * the omission structural and independent of DI configuration.
- */
-internal fun buildConnectRequestBody(sessionMode: String?): String =
-    requestBodyJson.encodeToString(GatewayConnectRequest(sessionMode = sessionMode))
-
-/**
- * Serializes the start request body, or null when no body is needed: the
- * gateway treats an absent body as `new = false`, so only the isolated-start
- * case has anything to say.
- */
-internal fun buildStartAgentRequestBody(new: Boolean): String? =
-    if (new) {
-        requestBodyJson.encodeToString(GatewayStartRequest(new = true))
-    } else {
-        null
     }
 
 /**
@@ -860,14 +815,19 @@ private fun gatewayRequestException(
                 }
             }
             else -> {
+                // Prefer the gateway's own error text: a failed connect carries the
+                // agent's exit error there, and callers render this message verbatim.
+                val detail =
+                    gatewayErrorMessage(normalizedBody)
+                        ?: normalizedBody.takeIf { it.isNotBlank() }
                 buildString {
                     append("Gateway request failed: ")
                     append(statusLine)
                     append(" at ")
                     append(endpoint)
-                    if (normalizedBody.isNotBlank()) {
-                        append(". Response: ")
-                        append(normalizedBody)
+                    if (detail != null) {
+                        append(". ")
+                        append(detail)
                     }
                 }
             }

@@ -1,6 +1,7 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import androidx.lifecycle.SavedStateHandle
+import com.tamimarafat.ferngeist.acp.bridge.facade.HubChatPresence
 import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
 import com.tamimarafat.ferngeist.core.model.ChatCommand
 import com.tamimarafat.ferngeist.core.model.ChatConfigOption
@@ -8,6 +9,7 @@ import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ChatPresence
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
+import com.tamimarafat.ferngeist.core.model.ChatSessionPresence
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.MessageDeliveryStatus
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
@@ -59,8 +61,8 @@ open class ChatViewModelTestBase {
         sessionRepository: SessionRepository = FakeSessionRepository(),
         launchableTargetRepository: LaunchableTargetRepository = FakeLaunchableTargetRepository(),
         facadeFactory: ChatSessionFacadeFactory = FakeChatSessionFacadeFactory(),
-        gatewayRepository: GatewayRepository = FakeGatewayRepository(),
-        chatConnectionHub: ChatConnectionHub = newChatConnectionHub(),
+        chatConnectionHub: ChatConnectionHub = newTestHub(),
+        presence: ChatSessionPresence = HubChatPresence(chatConnectionHub, launchableTargetRepository),
         pendingPromptStore: PendingPromptStore = InMemoryPendingPromptStore(),
         switcherHintStore: SwitcherHintStore = InMemorySwitcherHintStore(),
     ): ChatViewModel =
@@ -71,18 +73,22 @@ open class ChatViewModelTestBase {
             pendingPromptStore = pendingPromptStore,
             switcherHintStore = switcherHintStore,
             recentSelectionStore = FakeRecentSelectionStore(),
-            chatConnectionHub = chatConnectionHub,
-            gatewayRepository = gatewayRepository,
+            presence = presence,
             launchableTargetRepository = launchableTargetRepository,
             savedStateHandle = savedStateHandle,
         )
 }
 
-/** Builds a hub over the test dispatcher scope, like the pre-refactor default. */
-private fun newChatConnectionHub(): ChatConnectionHub =
+/**
+ * Builds a hub over the test dispatcher scope with in-memory doubles for every
+ * dependency, so presence tests can attach real transports.
+ */
+internal fun newTestHub(gatewayRepository: GatewayRepository = FakeGatewayRepository()): ChatConnectionHub =
     ChatConnectionHub(
-        gatewayRepository = null,
+        gatewayRepository = gatewayRepository,
         scope = CoroutineScope(Dispatchers.Unconfined),
+        connectivityObserver = FakeConnectivityObserver(),
+        sessionRepository = FakeSessionRepository(),
     )
 
 /** JUnit rule that swaps the main dispatcher for tests. */
@@ -180,7 +186,7 @@ class ChatViewModelPresenceTest : ChatViewModelTestBase() {
     @Test
     fun `opening a real session chat publishes hub presence`() =
         runTest {
-            val hub = newPresenceHub()
+            val hub = newTestHub()
             val viewModel =
                 createViewModel(
                     chatConnectionHub = hub,
@@ -207,7 +213,7 @@ class ChatViewModelPresenceTest : ChatViewModelTestBase() {
     @Test
     fun `create on arrival chat publishes presence only after a real liveChatId arrives`() =
         runTest {
-            val hub = newPresenceHub()
+            val hub = newTestHub()
             val facadeFactory = FakeChatSessionFacadeFactory()
             val viewModel =
                 createViewModel(
@@ -244,7 +250,7 @@ class ChatViewModelPresenceTest : ChatViewModelTestBase() {
     @Test
     fun `clearing the screen drops on screen presence but keeps a transport attached entry pooled`() =
         runTest {
-            val hub = newPresenceHub()
+            val hub = newTestHub()
             // The real flow attaches the transport first (facade register); the
             // view model's init then flips the same entry to screen-open.
             hub.register(
@@ -283,14 +289,6 @@ class ChatViewModelPresenceTest : ChatViewModelTestBase() {
             assertEquals("session_1", hub.tapTarget.value?.sessionId)
         }
 }
-
-/** Builds a hub with a connectivity observer so presence tests can attach real transports. */
-private fun newPresenceHub(): ChatConnectionHub =
-    ChatConnectionHub(
-        gatewayRepository = null,
-        scope = CoroutineScope(Dispatchers.Unconfined),
-        connectivityObserver = FakeConnectivityObserver(),
-    )
 
 /**
  * Invokes the protected [androidx.lifecycle.ViewModel.onCleared] the way a

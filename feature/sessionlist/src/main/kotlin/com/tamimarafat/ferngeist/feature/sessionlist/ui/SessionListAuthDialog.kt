@@ -25,7 +25,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthMethodInfo
+import com.tamimarafat.ferngeist.acp.bridge.catalog.CatalogAuthMethod
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.feature.sessionlist.R
 import com.tamimarafat.ferngeist.feature.sessionlist.SessionListPendingAuthentication
@@ -33,7 +33,7 @@ import com.tamimarafat.ferngeist.feature.sessionlist.SessionListPendingAuthentic
 @Composable
 internal fun SessionAuthDialogBody(
     pendingAuthentication: SessionListPendingAuthentication,
-    selectedMethod: AcpAuthMethodInfo?,
+    selectedMethod: CatalogAuthMethod?,
     onSelectedAuthMethodChange: (String) -> Unit,
     envValues: MutableMap<String, String>,
     onOpenLink: (String) -> Unit,
@@ -80,7 +80,7 @@ internal fun SessionAuthDialogBody(
 
 @Composable
 internal fun SessionAuthMethodRow(
-    method: AcpAuthMethodInfo,
+    method: CatalogAuthMethod,
     selected: Boolean,
     isSelected: Boolean,
     isGatewayBacked: Boolean,
@@ -139,7 +139,7 @@ internal fun SessionAuthMethodRow(
 
 @Composable
 internal fun SessionAuthConfirmButton(
-    selectedMethod: AcpAuthMethodInfo?,
+    selectedMethod: CatalogAuthMethod?,
     isGatewayEnvAuth: Boolean,
     isManualEnvAuth: Boolean,
     requiredEnvVarsFilled: Boolean,
@@ -188,7 +188,7 @@ internal fun SessionAuthConfirmButton(
  */
 @Composable
 internal fun AuthenticationMethodDetails(
-    method: AcpAuthMethodInfo,
+    method: CatalogAuthMethod,
     envValues: MutableMap<String, String>,
     isGatewayBacked: Boolean,
     onOpenLink: (String) -> Unit,
@@ -217,7 +217,7 @@ internal fun AuthenticationMethodDetails(
 }
 
 @Composable
-private fun AuthTerminalCommandHint(method: AcpAuthMethodInfo) {
+private fun AuthTerminalCommandHint(method: CatalogAuthMethod) {
     Text(
         text =
             stringResource(
@@ -230,7 +230,7 @@ private fun AuthTerminalCommandHint(method: AcpAuthMethodInfo) {
 }
 
 @Composable
-private fun AuthManualEnvVars(method: AcpAuthMethodInfo) {
+private fun AuthManualEnvVars(method: CatalogAuthMethod) {
     Text(
         text =
             stringResource(
@@ -262,7 +262,7 @@ private fun AuthManualEnvVars(method: AcpAuthMethodInfo) {
 
 @Composable
 private fun AuthGatewayEnvFields(
-    method: AcpAuthMethodInfo,
+    method: CatalogAuthMethod,
     envValues: MutableMap<String, String>,
     onEnvValueChange: (String, String) -> Unit,
 ) {

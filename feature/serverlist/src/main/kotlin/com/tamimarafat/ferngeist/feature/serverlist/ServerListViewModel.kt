@@ -3,24 +3,13 @@ package com.tamimarafat.ferngeist.feature.serverlist
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthMethodInfo
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthenticateResult
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpInitializeResult
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpManagerEvent
-import com.tamimarafat.ferngeist.acp.bridge.connection.GatewayLaunchContext
-import com.tamimarafat.ferngeist.acp.bridge.connection.buildEnvPayload
-import com.tamimarafat.ferngeist.acp.bridge.connection.buildGatewayLaunchContext
-import com.tamimarafat.ferngeist.acp.bridge.connection.buildInitializeFailureMessage
-import com.tamimarafat.ferngeist.acp.bridge.connection.displayLabels
-import com.tamimarafat.ferngeist.acp.bridge.connection.formatAcpErrorMessage
-import com.tamimarafat.ferngeist.acp.bridge.connection.loadPersistedEnvValues
-import com.tamimarafat.ferngeist.acp.bridge.connection.logConnectionFailure
-import com.tamimarafat.ferngeist.acp.bridge.connection.persistEnvValues
-import com.tamimarafat.ferngeist.acp.bridge.connection.shortInitializeFailureMessage
-import com.tamimarafat.ferngeist.core.model.GatewaySource
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentAuthMethod
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentAuthOutcome
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLaunchEvent
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLaunchOutcome
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLaunchSession
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLauncher
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.SessionSummary
 import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
@@ -28,14 +17,10 @@ import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepositor
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetSessionSettingsRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.core.model.store.AuthEnvValueStore
-import com.tamimarafat.ferngeist.core.model.store.AuthEnvValuesUnreadableException
 import com.tamimarafat.ferngeist.core.model.store.RecentCwdStore
 import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import com.tamimarafat.ferngeist.feature.serverlist.consent.AgentLaunchConsentStore
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
-import com.tamimarafat.ferngeist.gateway.resolveGatewayWebSocketUrl
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,7 +52,7 @@ data class ConnectedServerState(
  * Full UI state for the server list screen.
  */
 data class ServerListUiState(
-    val connectionState: AcpConnectionState = AcpConnectionState.Disconnected,
+    val connectionState: ChatConnectionState = ChatConnectionState.Disconnected,
     val connectingServerId: String? = null,
     val connectedServerState: ConnectedServerState? = null,
     val showConnectionError: String? = null,
@@ -88,14 +73,11 @@ data class PendingAuthentication(
     val serverId: String,
     val serverName: String,
     val agentName: String,
-    val authMethods: List<AcpAuthMethodInfo>,
+    val authMethods: List<AgentAuthMethod>,
     val persistedEnvValues: Map<String, String> = emptyMap(),
     val authErrorMessage: String? = null,
-    val gatewayRuntime: PendingGatewayRuntime? = null,
-)
-
-data class PendingGatewayRuntime(
-    val runtimeId: String,
+    /** True when a gateway runtime backs this agent, so its env vars arrive by restarting it. */
+    val gatewayBacked: Boolean = false,
 )
 
 data class PendingLaunchConsent(
@@ -116,15 +98,16 @@ class ServerListViewModel
         private val gatewaySourceRepository: GatewaySourceRepository,
         private val launchableTargetRepository: LaunchableTargetRepository,
         private val sessionRepository: SessionRepository,
-        private val gatewayRepository: GatewayRepository,
         private val authEnvValueStore: AuthEnvValueStore,
         private val agentLaunchConsentStore: AgentLaunchConsentStore,
         private val sessionSettingsRepository: LaunchableTargetSessionSettingsRepository,
         private val recentCwdStore: RecentCwdStore,
         private val recentSelectionStore: RecentSelectionStore,
-        private val chatConnectionHub: com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub,
+        private val agentLauncher: AgentLauncher,
     ) : ViewModel() {
-        private val connectionManager: AcpConnectionManager = chatConnectionHub.createBrowserManager(viewModelScope)
+        /** This screen's verification transport; [AgentLauncher] owns everything behind it. */
+        private val session: AgentLaunchSession = agentLauncher.session(viewModelScope)
+
         val servers: StateFlow<List<LaunchableTarget>> =
             launchableTargetRepository
                 .getTargets()
@@ -140,7 +123,7 @@ class ServerListViewModel
 
         /** Server ids with a live hub-tracked chat. Dots track this, not the verification socket. */
         val liveServerIds: StateFlow<Set<String>> =
-            chatConnectionHub.warmServers
+            agentLauncher.liveServerIds
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
         val recentSessions: StateFlow<List<RecentSession>> =
@@ -173,17 +156,17 @@ class ServerListViewModel
         val events = _events.asSharedFlow()
 
         init {
-            // Observe connection manager state changes
+            // Observe the verification transport's state changes
             viewModelScope.launch {
-                connectionManager.connectionState.collect { state ->
+                session.connectionState.collect { state ->
                     _uiState.update { it.copy(connectionState = state) }
                 }
             }
 
-            // Observe ACP manager events
+            // Observe the agent events a launch can also raise on its own
             viewModelScope.launch {
-                connectionManager.events.collect { event ->
-                    handleManagerEvent(event)
+                session.events.collect { event ->
+                    handleLaunchEvent(event)
                 }
             }
 
@@ -234,18 +217,11 @@ class ServerListViewModel
             return false
         }
 
-        /**
-         * True when a hub-tracked chat for this server still holds a live
-         * transport. Its socket is already initialized, so the tap path must
-         * not open a competing handshake.
-         */
-        private fun hasWarmHubChat(serverId: String): Boolean = chatConnectionHub.warmManagerFor(serverId) != null
-
         fun connectAndOpenServer(server: LaunchableTarget) {
             viewModelScope.launch {
                 // REUSE GUARD: If already connected to this server (and no pending auth), skip re-connection
                 if (_uiState.value.connectedServerState?.serverId == server.id &&
-                    connectionManager.isConnected &&
+                    session.isConnected &&
                     _uiState.value.pendingAuthentication == null
                 ) {
                     _uiState.update { it.copy(connectingServerId = null) }
@@ -257,7 +233,7 @@ class ServerListViewModel
                 // a fresh start+connect would steal the single-attach slot and
                 // evict the live chat socket (gateway logs the intentional
                 // CloseNow as "use of closed network connection").
-                if (hasWarmHubChat(server.id) && _uiState.value.pendingAuthentication == null) {
+                if (agentLauncher.hasWarmChat(server.id) && _uiState.value.pendingAuthentication == null) {
                     _uiState.update { it.copy(connectingServerId = null) }
                     openConnectedServer(server.id, server.name)
                     return@launch
@@ -268,9 +244,9 @@ class ServerListViewModel
                 // request a new gateway handoff before closing the existing socket,
                 // the old runtime can survive long enough to be reused, which some
                 // stdio agents do not handle correctly on reattach.
-                if (_uiState.value.connectionState !is AcpConnectionState.Disconnected) {
+                if (_uiState.value.connectionState !is ChatConnectionState.Disconnected) {
                     withContext(Dispatchers.IO) {
-                        connectionManager.disconnect()
+                        session.disconnect()
                     }
                 }
 
@@ -278,7 +254,7 @@ class ServerListViewModel
                 _uiState.update {
                     it.copy(
                         connectingServerId = server.id,
-                        connectionState = AcpConnectionState.Connecting,
+                        connectionState = ChatConnectionState.Connecting,
                         showConnectionError = null,
                         pendingAuthentication = null,
                         pendingLaunchConsent = null,
@@ -290,190 +266,80 @@ class ServerListViewModel
                     )
                 }
 
-                // Only gateway-backed targets require a launch context. For manual
-                // servers null means "no context needed", so proceed with null.
-                val launchContext = resolveLaunchContext(server)
-                if (server is LaunchableTarget.GatewayAgent && launchContext == null) {
-                    return@launch
+                when (val outcome = session.launch(server)) {
+                    is AgentLaunchOutcome.Ready -> openLaunchedServer(server, outcome)
+                    is AgentLaunchOutcome.AuthenticationRequired -> showAuthenticationPrompt(server, outcome)
+                    is AgentLaunchOutcome.Failed -> showLaunchFailure(outcome)
                 }
-                val resolvedConfig = resolveConnectionConfig(server, launchContext)
-
-                val initializeResult =
-                    connectAndInitializeOrReport(server, launchContext, resolvedConfig) ?: return@launch
-                handleInitializeResult(server, launchContext, initializeResult)
             }
         }
 
-        /**
-         * Builds the gateway launch context, surfacing a launch error when the
-         * gateway runtime could not be started. Returns null to stop the connect.
-         */
-        private suspend fun resolveLaunchContext(server: LaunchableTarget): GatewayLaunchContext? {
-            val gatewayLaunch =
-                when (server) {
-                    is LaunchableTarget.GatewayAgent ->
-                        buildGatewayLaunchContext(
-                            gatewayRepository,
-                            gatewaySourceRepository,
-                            server,
-                        )
-                    is LaunchableTarget.Manual -> Result.success<GatewayLaunchContext?>(null)
-                }
-            return gatewayLaunch.getOrElse { error ->
-                _uiState.update {
-                    it.copy(
-                        connectingServerId = null,
-                        connectionState = AcpConnectionState.Failed(error),
-                        connectedServerState = null,
-                        showConnectionError = error.message ?: "Failed to launch ${server.name}",
-                    )
-                }
-                null
-            }
-        }
-
-        /** Resolves the transport config from the launch context or the manual server. */
-        private fun resolveConnectionConfig(
+        /** Surfaces the auth prompt an agent raised, with the values it already knows. */
+        private fun showAuthenticationPrompt(
             server: LaunchableTarget,
-            launchContext: GatewayLaunchContext?,
-        ): AcpConnectionConfig =
-            launchContext?.config ?: when (server) {
-                is LaunchableTarget.Manual ->
-                    AcpConnectionConfig(
-                        scheme = server.server.scheme,
-                        host = server.server.host,
-                        preferredAuthMethodId = server.server.preferredAuthMethodId,
-                        serverDisplayName = server.name,
-                    )
-
-                is LaunchableTarget.GatewayAgent ->
-                    error(
-                        "Gateway-backed targets must launch through the gateway runtime flow",
-                    )
-            }
-
-        /**
-         * Connects the transport and runs the initialize handshake via
-         * [AcpConnectionManager.connectAndInitialize], then surfaces a
-         * connection- or initialization-specific error when it fails.
-         * Returns the initialize result, or null after surfacing the error.
-         */
-        private suspend fun connectAndInitializeOrReport(
-            server: LaunchableTarget,
-            launchContext: GatewayLaunchContext?,
-            resolvedConfig: AcpConnectionConfig,
-        ): AcpInitializeResult? {
-            val initializeResult =
-                withContext(Dispatchers.IO) {
-                    connectionManager.connectAndInitialize(resolvedConfig)
-                }
-            if (initializeResult != null) return initializeResult
-
-            if (!connectionManager.isConnected) {
-                val connectMessage =
-                    connectionManager.diagnostics.value.recentErrors
-                        .lastOrNull { entry -> entry.source == "connect" || entry.source == "connection" }
-                        ?.message
-                        ?: "Failed to connect to ${server.name}"
-                _uiState.update {
-                    it.copy(
-                        connectingServerId = null,
-                        connectionState = AcpConnectionState.Failed(Exception(connectMessage)),
-                        connectedServerState = null,
-                        showConnectionError = connectMessage,
-                    )
-                }
-            } else {
-                val initializeDetail =
-                    buildInitializeFailureMessage(
-                        connectionManager = connectionManager,
-                        gatewayRepository = gatewayRepository,
-                        gatewaySourceRepository = gatewaySourceRepository,
-                        server = server,
-                        gatewaySource = launchContext?.gatewaySource,
-                        runtimeId = launchContext?.runtimeId,
-                    )
-                logConnectionFailure(server, "initialize", initializeDetail)
-                _uiState.update {
-                    it.copy(
-                        connectingServerId = null,
-                        showConnectionError = shortInitializeFailureMessage(server),
-                        connectedServerState = null,
-                    )
-                }
-            }
-            return null
-        }
-
-        /**
-         * Applies the initialize outcome: marks the server ready and opens it, or
-         * surfaces the pending-authentication prompt with persisted env values.
-         */
-        private suspend fun handleInitializeResult(
-            server: LaunchableTarget,
-            launchContext: GatewayLaunchContext?,
-            initializeResult: AcpInitializeResult,
+            outcome: AgentLaunchOutcome.AuthenticationRequired,
         ) {
-            when (initializeResult) {
-                is AcpInitializeResult.Ready -> {
-                    initializeResult.authenticatedMethodId?.let { authenticatedMethodId ->
-                        savePreferredAuthMethod(server.id, authenticatedMethodId)
-                    }
-                    val capabilityLabels = initializeResult.agentCapabilities.displayLabels()
-                    // Keep connectingServerId set through the prewarm listing:
-                    // the spinner stays up until navigation, with no dead gap.
-                    _uiState.update {
-                        it.copy(
-                            pendingAuthentication = null,
-                            connectedServerState =
-                                it.connectedServerState?.copy(
-                                    agentName = initializeResult.agentInfo.name,
-                                    capabilities = capabilityLabels,
-                                    isInitializing = false,
-                                ),
-                        )
-                    }
-                    // The gateway allows one live attach per session: disconnect
-                    // this verification transport so it doesn't steal the slot from
-                    // a hot chat and trigger mutual reconnect-loops.
-                    connectionManager.disconnect()
-                    // Warm the session cache before navigating so the session
-                    // list paints rows instantly instead of showing a second
-                    // spinner. Safe here: the verification transport above is
-                    // already down, so the listing can't contend for the slot.
-                    openConnectedServer(server.id, server.name, prewarmSessions = true)
-                }
-
-                is AcpInitializeResult.AuthenticationRequired -> {
-                    val capabilityLabels = initializeResult.agentCapabilities.displayLabels()
-                    val persistedEnvValues =
-                        loadPersistedEnvValues(authEnvValueStore, server.id, initializeResult.authMethods)
-                    _uiState.update {
-                        it.copy(
-                            connectingServerId = null,
-                            pendingAuthentication =
-                                PendingAuthentication(
-                                    serverId = server.id,
-                                    serverName = server.name,
-                                    agentName = initializeResult.agentInfo.name,
-                                    authMethods = initializeResult.authMethods,
-                                    persistedEnvValues = persistedEnvValues,
-                                    authErrorMessage = initializeResult.authErrorMessage,
-                                    gatewayRuntime =
-                                        launchContext?.let {
-                                            PendingGatewayRuntime(runtimeId = it.runtimeId)
-                                        },
-                                ),
-                            connectedServerState =
-                                it.connectedServerState?.copy(
-                                    agentName = initializeResult.agentInfo.name,
-                                    capabilities = capabilityLabels,
-                                    isInitializing = false,
-                                ),
-                        )
-                    }
-                }
+            _uiState.update {
+                it.copy(
+                    connectingServerId = null,
+                    pendingAuthentication =
+                        PendingAuthentication(
+                            serverId = server.id,
+                            serverName = server.name,
+                            agentName = outcome.agentName,
+                            authMethods = outcome.methods,
+                            persistedEnvValues = outcome.persistedEnvValues,
+                            authErrorMessage = outcome.errorMessage,
+                            gatewayBacked = outcome.gatewayBacked,
+                        ),
+                    connectedServerState =
+                        it.connectedServerState?.copy(
+                            agentName = outcome.agentName,
+                            capabilities = outcome.capabilities,
+                            isInitializing = false,
+                        ),
+                )
             }
+        }
+
+        /** Surfaces a launch that never reached a usable agent. */
+        private fun showLaunchFailure(outcome: AgentLaunchOutcome.Failed) {
+            _uiState.update {
+                it.copy(
+                    connectingServerId = null,
+                    connectionState = ChatConnectionState.Failed(outcome.message),
+                    connectedServerState = null,
+                    showConnectionError = outcome.message,
+                )
+            }
+        }
+
+        /**
+         * Applies a successful launch: remembers an unprompted auth method, then
+         * navigates. The launch already hung the verification transport up, so the
+         * single-attach slot is free for the session list.
+         */
+        private suspend fun openLaunchedServer(
+            server: LaunchableTarget,
+            outcome: AgentLaunchOutcome.Ready,
+        ) {
+            outcome.authenticatedMethodId?.let { authenticatedMethodId ->
+                savePreferredAuthMethod(server.id, authenticatedMethodId)
+            }
+            // Keep connectingServerId set through the prewarm listing:
+            // the spinner stays up until navigation, with no dead gap.
+            _uiState.update {
+                it.copy(
+                    pendingAuthentication = null,
+                    connectedServerState =
+                        it.connectedServerState?.copy(
+                            agentName = outcome.agentName,
+                            capabilities = outcome.capabilities,
+                            isInitializing = false,
+                        ),
+                )
+            }
+            openConnectedServer(server.id, server.name, prewarmSessions = true)
         }
 
         fun authenticate(
@@ -484,7 +350,7 @@ class ServerListViewModel
             viewModelScope.launch {
                 val pending = _uiState.value.pendingAuthentication
                 if (pending == null || pending.serverId != serverId) return@launch
-                val method = pending.authMethods.firstOrNull { it.id == methodId } ?: return@launch
+                if (pending.authMethods.none { it.id == methodId }) return@launch
 
                 _uiState.update {
                     it.copy(
@@ -494,35 +360,17 @@ class ServerListViewModel
                     )
                 }
 
-                if (method.type == "env" && pending.gatewayRuntime != null) {
-                    authenticateGatewayEnvVar(
-                        pending = pending,
-                        method = method,
-                        envValues = envValues,
-                    )
-                    return@launch
-                }
-
-                when (
-                    val result =
-                        withContext(Dispatchers.IO) {
-                            connectionManager.authenticate(methodId)
-                        }
-                ) {
-                    is AcpAuthenticateResult.Failure -> {
-                        _uiState.update {
-                            it.copy(
-                                connectingServerId = null,
-                                pendingAuthentication =
-                                    pending.copy(
-                                        authErrorMessage = result.message,
-                                    ),
-                            )
-                        }
-                        return@launch
+                val outcome = session.authenticate(serverId, methodId, envValues)
+                if (outcome is AgentAuthOutcome.Failure) {
+                    _uiState.update {
+                        it.copy(
+                            connectingServerId = null,
+                            showConnectionError = outcome.connectionError ?: it.showConnectionError,
+                            pendingAuthentication =
+                                it.pendingAuthentication?.copy(authErrorMessage = outcome.message),
+                        )
                     }
-
-                    AcpAuthenticateResult.Success -> Unit
+                    return@launch
                 }
 
                 savePreferredAuthMethod(serverId, methodId)
@@ -535,8 +383,7 @@ class ServerListViewModel
                         connectedServerState = it.connectedServerState?.copy(isInitializing = false),
                     )
                 }
-                val serverName = pending.serverName
-                openConnectedServer(serverId, serverName, prewarmSessions = true)
+                openConnectedServer(serverId, pending.serverName, prewarmSessions = true)
             }
         }
 
@@ -548,7 +395,7 @@ class ServerListViewModel
                     } ?: return@launch
 
                 withContext(Dispatchers.IO) {
-                    connectionManager.disconnect()
+                    session.disconnect()
                 }
                 connectAndOpenServer(server)
             }
@@ -588,10 +435,10 @@ class ServerListViewModel
 
         fun disconnect() {
             viewModelScope.launch {
-                connectionManager.disconnect()
+                session.disconnect()
                 _uiState.update {
                     it.copy(
-                        connectionState = AcpConnectionState.Disconnected,
+                        connectionState = ChatConnectionState.Disconnected,
                         connectingServerId = null,
                         connectedServerState = null,
                     )
@@ -632,254 +479,21 @@ class ServerListViewModel
             _uiState.update { it.copy(showConnectionError = null) }
         }
 
-        /**
-         * Runs initialize + authenticate after a gateway reconnection. Returns false
-         * (after updating UI state with the error) when initialization or auth fails.
-         */
-        private suspend fun completeGatewayAuthentication(
-            server: LaunchableTarget,
-            gatewaySource: com.tamimarafat.ferngeist.core.model.GatewaySource,
-            handoff: com.tamimarafat.ferngeist.gateway.GatewayConnectResponse,
-            updatedPending: PendingAuthentication,
-            method: AcpAuthMethodInfo,
-        ): Boolean {
-            val initializeResult =
-                withContext(Dispatchers.IO) {
-                    connectionManager.initialize()
-                }
-            if (initializeResult == null) {
-                val message =
-                    buildInitializeFailureMessage(
-                        connectionManager = connectionManager,
-                        gatewayRepository = gatewayRepository,
-                        gatewaySourceRepository = gatewaySourceRepository,
-                        server = server,
-                        gatewaySource = gatewaySource,
-                        runtimeId = handoff.runtimeId,
-                    )
-                _uiState.update {
-                    it.copy(
-                        connectingServerId = null,
-                        pendingAuthentication = updatedPending.copy(authErrorMessage = message),
-                        showConnectionError = shortInitializeFailureMessage(server),
-                    )
-                }
-                return false
-            }
-
-            applyInitializeUiState(server.id, updatedPending, initializeResult)
-            if (!authenticateWithMethod(method.id)) return false
-            savePreferredAuthMethod(server.id, method.id)
-            // Spinner stays up through the prewarm listing below;
-            // openConnectedServer clears it on navigate.
-            _uiState.update {
-                it.copy(
-                    pendingAuthentication = null,
-                    connectedServerState = it.connectedServerState?.copy(isInitializing = false),
-                )
-            }
-            return true
-        }
-
-        /** Applies the agent-info + env values from initialize to the pending prompt. */
-        private suspend fun applyInitializeUiState(
-            serverId: String,
-            updatedPending: PendingAuthentication,
-            initializeResult: AcpInitializeResult,
-        ) {
-            val capabilityLabels = initializeResult.agentCapabilities.displayLabels()
-            val persistedEnvValues = loadPersistedEnvValues(authEnvValueStore, serverId, initializeResult.authMethods)
-            _uiState.update {
-                it.copy(
-                    pendingAuthentication =
-                        updatedPending.copy(
-                            agentName = initializeResult.agentInfo.name,
-                            authMethods = initializeResult.authMethods,
-                            persistedEnvValues = persistedEnvValues,
-                            authErrorMessage = null,
-                        ),
-                    connectedServerState =
-                        it.connectedServerState?.copy(
-                            agentName = initializeResult.agentInfo.name,
-                            capabilities = capabilityLabels,
-                            isInitializing = false,
-                        ),
-                )
-            }
-        }
-
-        /** Runs the authenticate handshake; surfaces a failure and returns false. */
-        private suspend fun authenticateWithMethod(methodId: String): Boolean {
-            val result =
-                withContext(Dispatchers.IO) {
-                    connectionManager.authenticate(methodId)
-                }
-            if (result is AcpAuthenticateResult.Failure) {
-                _uiState.update {
-                    it.copy(
-                        connectingServerId = null,
-                        pendingAuthentication = it.pendingAuthentication?.copy(authErrorMessage = result.message),
-                    )
-                }
-                return false
-            }
-            return true
-        }
-
-        private suspend fun resolveGatewayAuthContext(pending: PendingAuthentication): GatewayAuthContext? =
-            resolveGatewayAuthContext(
-                pending = pending,
-                uiState = _uiState,
-                launchableTargetRepository = launchableTargetRepository,
-                gatewayRepository = gatewayRepository,
-                gatewaySourceRepository = gatewaySourceRepository,
-            )
-
-        // Each failure path exits early — a missing runtime, no auth context, an unreadable
-        // stored copy, a failed handoff — so the exit count is inherent to the sequence, not a
-        // sign of nested conditions that want flattening.
-        @Suppress("ReturnCount")
-        private suspend fun authenticateGatewayEnvVar(
-            pending: PendingAuthentication,
-            method: AcpAuthMethodInfo,
-            envValues: Map<String, String>,
-        ) {
-            val gatewayRuntime = pending.gatewayRuntime ?: return
-            val gatewayContext =
-                resolveGatewayAuthContext(pending) ?: return
-            val server = gatewayContext.server
-            val gatewaySource = gatewayContext.gatewaySource
-
-            val envPayload = buildEnvPayload(method, envValues)
-            try {
-                persistEnvValues(authEnvValueStore, server.id, method, envValues)
-            } catch (error: AuthEnvValuesUnreadableException) {
-                // The stored copy decrypts but cannot be parsed, so this write's base was an
-                // empty map. Continuing would destroy secrets the user still has; the stored
-                // blob is left untouched for them to replace.
-                _uiState.update {
-                    it.copy(pendingAuthentication = pending.copy(authErrorMessage = error.message))
-                }
-                return
-            }
-            val handoff =
-                restartGatewayRuntime(pending, server, gatewaySource, gatewayRuntime, envPayload) ?: return
-            val updatedPending =
-                pending.copy(
-                    authErrorMessage = null,
-                    gatewayRuntime = PendingGatewayRuntime(runtimeId = handoff.runtimeId),
-                )
-            _uiState.update { it.copy(pendingAuthentication = updatedPending) }
-
-            if (
-                !reconnectWithHandoff(server, gatewaySource, method, updatedPending, handoff) ||
-                !completeGatewayAuthentication(server, gatewaySource, handoff, updatedPending, method)
-            ) {
-                return
-            }
-            openConnectedServer(server.id, server.name, prewarmSessions = true)
-        }
-
-        /**
-         * Restarts the gateway runtime with the env payload. Returns the handoff,
-         * or null after surfacing the restart error.
-         */
-        private suspend fun restartGatewayRuntime(
-            pending: PendingAuthentication,
-            server: LaunchableTarget,
-            gatewaySource: com.tamimarafat.ferngeist.core.model.GatewaySource,
-            gatewayRuntime: PendingGatewayRuntime,
-            envPayload: Map<String, String>,
-        ): com.tamimarafat.ferngeist.gateway.GatewayConnectResponse? =
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    gatewayRepository.restartRuntime(
-                        scheme = gatewaySource.scheme,
-                        host = gatewaySource.host,
-                        gatewayCredential = gatewaySource.gatewayCredential,
-                        runtimeId = gatewayRuntime.runtimeId,
-                        envVars = envPayload,
-                    )
-                }
-            }.getOrElse { error ->
-                _uiState.update {
-                    it.copy(
-                        connectingServerId = null,
-                        pendingAuthentication =
-                            pending.copy(
-                                authErrorMessage =
-                                    error.message ?: "Failed to restart ${server.name}.",
-                            ),
-                    )
-                }
-                null
-            }
-
-        /**
-         * Disconnects the old transport and reconnects with the new handoff.
-         * Returns false after surfacing the reconnect error.
-         */
-        private suspend fun reconnectWithHandoff(
-            server: LaunchableTarget,
-            gatewaySource: com.tamimarafat.ferngeist.core.model.GatewaySource,
-            method: AcpAuthMethodInfo,
-            updatedPending: PendingAuthentication,
-            handoff: com.tamimarafat.ferngeist.gateway.GatewayConnectResponse,
-        ): Boolean {
-            withContext(Dispatchers.IO) {
-                connectionManager.disconnect()
-            }
-            val reconnected =
-                withContext(Dispatchers.IO) {
-                    connectionManager.connect(
-                        AcpConnectionConfig(
-                            scheme = gatewaySource.scheme,
-                            host = gatewaySource.host,
-                            webSocketUrl = resolveGatewayWebSocketUrl(gatewaySource, handoff),
-                            webSocketBearerToken = handoff.bearerToken,
-                            preferredAuthMethodId = method.id,
-                            gatewayRuntimeId = handoff.runtimeId,
-                            gatewaySourceId = gatewaySource.id,
-                            sessionId = handoff.sessionId,
-                            attachToken = handoff.attachToken,
-                            gatewayScheme = gatewaySource.scheme,
-                            gatewayHost = gatewaySource.host,
-                            gatewayCredential = gatewaySource.gatewayCredential,
-                        ),
-                    )
-                }
-            if (reconnected) return true
-            val message =
-                connectionManager.diagnostics.value.recentErrors
-                    .lastOrNull { entry -> entry.source == "connect" || entry.source == "connection" }
-                    ?.message
-                    ?: "Failed to reconnect to ${server.name}"
-            _uiState.update {
-                it.copy(
-                    connectingServerId = null,
-                    pendingAuthentication = updatedPending.copy(authErrorMessage = message),
-                    showConnectionError = message,
-                )
-            }
-            return false
-        }
-
-        private fun handleManagerEvent(event: AcpManagerEvent) {
+        private fun handleLaunchEvent(event: AgentLaunchEvent) {
             when (event) {
-                is AcpManagerEvent.Initialized -> {
+                is AgentLaunchEvent.Initialized -> {
                     _uiState.update { current ->
                         current.copy(
                             connectedServerState =
                                 current.connectedServerState?.copy(
-                                    agentName = event.result.agentInfo.name,
+                                    agentName = event.agentName,
                                     isInitializing = false,
                                 ),
                         )
                     }
                 }
-                is AcpManagerEvent.Authenticated -> Unit
-                is AcpManagerEvent.Error -> {
-                    val message = formatAcpErrorMessage(event.throwable, "Unknown error")
+
+                is AgentLaunchEvent.Failed -> {
                     _uiState.update { current ->
                         val pendingAuthentication = current.pendingAuthentication
                         if (pendingAuthentication != null &&
@@ -887,12 +501,12 @@ class ServerListViewModel
                         ) {
                             current.copy(
                                 connectingServerId = null,
-                                pendingAuthentication = pendingAuthentication.copy(authErrorMessage = message),
+                                pendingAuthentication = pendingAuthentication.copy(authErrorMessage = event.message),
                                 connectedServerState = current.connectedServerState?.copy(isInitializing = false),
                             )
                         } else {
                             current.copy(
-                                showConnectionError = message,
+                                showConnectionError = event.message,
                                 connectedServerState =
                                     current.connectedServerState?.copy(
                                         isInitializing = false,
@@ -901,8 +515,6 @@ class ServerListViewModel
                         }
                     }
                 }
-                is AcpManagerEvent.Connected -> { /* Handled by connection state */ }
-                is AcpManagerEvent.Disconnected -> { /* Handled by connection state */ }
             }
         }
 
@@ -916,11 +528,15 @@ class ServerListViewModel
         }
 
         /**
-         * Warms the Room session cache through the hub's listing seam before
+         * Warms the session cache through the launcher's listing seam before
          * navigating, so the session list paints rows instantly instead of
          * showing a second spinner. Best-effort: any failure (including auth
          * challenges) still navigates — the session screen surfaces listing
          * failures exactly as it does today.
+         *
+         * Single choke point for navigation: the spinner clears exactly
+         * when the next screen is coming, so no dead gap — and no
+         * stranded spinner — can survive past this point.
          */
         private suspend fun openConnectedServer(
             serverId: String,
@@ -928,15 +544,8 @@ class ServerListViewModel
             prewarmSessions: Boolean = false,
         ) {
             if (prewarmSessions) {
-                runCatching {
-                    chatConnectionHub.listSessions(serverId, cwd = null)
-                }.onFailure { error ->
-                    if (error is CancellationException) throw error
-                }
+                agentLauncher.prewarmSessions(serverId)
             }
-            // Single choke point for navigation: the spinner clears exactly
-            // when the next screen is coming, so no dead gap — and no
-            // stranded spinner — can survive past this point.
             _uiState.update { it.copy(connectingServerId = null) }
             _events.emit(
                 ServerListEvent.NavigateToSessions(

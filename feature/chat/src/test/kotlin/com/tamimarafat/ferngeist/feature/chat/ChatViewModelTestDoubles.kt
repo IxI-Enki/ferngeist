@@ -1,11 +1,13 @@
 package com.tamimarafat.ferngeist.feature.chat
 
+import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectivityObserver
 import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatFileData
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatOperationError
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
@@ -13,6 +15,7 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
 import com.tamimarafat.ferngeist.core.model.QueuedPromptRecord
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -207,6 +210,47 @@ open class FakeChatSessionFacade : ChatSessionFacade {
     override suspend fun fetchSessionTitle(): String? {
         fetchSessionTitleCalls++
         return fetchedSessionTitlesByCall[fetchSessionTitleCalls] ?: fetchedSessionTitle
+    }
+
+    // ---- Gateway working tree ----
+
+    /** Git status this facade answers with; null stands for a chat with no gateway workspace. */
+    var gitStatus: ChatGitStatus? = null
+
+    /** Diff [fetchGitDiff] answers with when no per-path result matches. */
+    var fetchGitDiffResult: List<ToolCallContent.Diff> = emptyList()
+
+    /** Thrown by [fetchGitDiff] instead of answering, when set. */
+    var fetchGitDiffError: Throwable? = null
+
+    /** When set, [fetchGitDiff] suspends until it completes, so tests can observe the loading state. */
+    var fetchGitDiffGate: CompletableDeferred<Unit>? = null
+
+    /** Per-path gates for [fetchGitDiff]; take precedence over [fetchGitDiffGate]. */
+    val fetchGitDiffGates: MutableMap<String, CompletableDeferred<Unit>> = mutableMapOf()
+
+    /** Per-path results for [fetchGitDiff]; take precedence over [fetchGitDiffResult]. */
+    val fetchGitDiffResults: MutableMap<String, List<ToolCallContent.Diff>> = mutableMapOf()
+
+    /** Paths [fetchGitDiff] was asked for, in request order. */
+    val gitDiffRequests: MutableList<String> = mutableListOf()
+
+    /**
+     * Both git reads mirror the real facade's contract: with no gateway workspace connection
+     * to read through (nothing emitted via [emitGatewayWorkspaceConnection]) they answer null
+     * instead of asking a gateway, so a caller never sees a fake that reads a workspace it
+     * does not have.
+     */
+    override suspend fun fetchGitStatus(): ChatGitStatus? =
+        gitStatus.takeIf { gatewayWorkspaceConnectionFlow.value != null }
+
+    override suspend fun fetchGitDiff(path: String): List<ToolCallContent.Diff>? {
+        if (gatewayWorkspaceConnectionFlow.value == null) return null
+        gitDiffRequests.add(path)
+        fetchGitDiffGates[path]?.await()
+        fetchGitDiffGate?.await()
+        fetchGitDiffError?.let { throw it }
+        return fetchGitDiffResults[path] ?: fetchGitDiffResult
     }
 
     protected suspend fun emitOperationError() {

@@ -1,29 +1,17 @@
 package com.tamimarafat.ferngeist.feature.chat
 
-import com.agentclientprotocol.model.ToolCallContent
-import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
 import com.tamimarafat.ferngeist.gateway.GatewayAgent
 import com.tamimarafat.ferngeist.gateway.GatewayFileRead
 import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
-import kotlinx.coroutines.CompletableDeferred
 
-/** No-op [GatewayRepository] for chat view-model tests. Only [fetchGitDiff] is implemented; all
- * other methods return [TODO] as they are not exercised. */
+/**
+ * No-op [GatewayRepository] for chat tests that build the real hub: only [closeSession] is
+ * implemented (it records the sessions it was asked to delete). Every other method returns
+ * [TODO] as it is not exercised — the chat's own git reads go through
+ * [com.tamimarafat.ferngeist.core.model.ChatSessionFacade] now.
+ */
 class FakeGatewayRepository : GatewayRepository {
-    var fetchGitDiffError: Throwable? = null
-    var fetchGitDiffResult: List<ToolCallContent.Diff> = emptyList()
-
-    /** When set, [fetchGitDiff] suspends until the gate completes, so tests can observe the loading state. */
-    var fetchGitDiffGate: CompletableDeferred<Unit>? = null
-
-    /** Per-path gates for [fetchGitDiff], keyed by requested path; take precedence over [fetchGitDiffGate]. */
-    val fetchGitDiffGates: MutableMap<String, CompletableDeferred<Unit>> = mutableMapOf()
-
-    /** Per-path results for [fetchGitDiff], keyed by requested path; take precedence over [fetchGitDiffResult]. */
-    val fetchGitDiffResults: MutableMap<String, List<ToolCallContent.Diff>> = mutableMapOf()
-    val gitDiffRequests: MutableList<Pair<String?, GatewayWorkspaceConnection>> = mutableListOf()
-
     /** Gateway sessions a close asked to delete, as (host, sessionId). */
     val closedSessions: MutableList<Pair<String, String>> = mutableListOf()
 
@@ -72,20 +60,11 @@ class FakeGatewayRepository : GatewayRepository {
         gatewayCredential: String,
     ) = TODO()
 
-    override suspend fun startAgent(
+    override suspend fun connectAgent(
         scheme: String,
         host: String,
         gatewayCredential: String,
         agentId: String,
-        new: Boolean,
-    ) = TODO()
-
-    override suspend fun connectRuntime(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-        sessionMode: String?,
     ) = TODO()
 
     override suspend fun restartRuntime(
@@ -176,13 +155,7 @@ class FakeGatewayRepository : GatewayRepository {
         runtimeId: String,
         path: String?,
         acpSessionId: String?,
-    ): List<ToolCallContent.Diff> {
-        gitDiffRequests.add(path to GatewayWorkspaceConnection(runtimeId, scheme, host, gatewayCredential))
-        path?.let { fetchGitDiffGates[it] }?.await()
-        fetchGitDiffGate?.await()
-        fetchGitDiffError?.let { throw it }
-        return path?.let { fetchGitDiffResults[it] } ?: fetchGitDiffResult
-    }
+    ) = TODO()
 
     override suspend fun createCustomAgent(
         scheme: String,

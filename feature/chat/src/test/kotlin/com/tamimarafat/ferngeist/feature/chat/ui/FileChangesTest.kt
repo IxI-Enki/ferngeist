@@ -4,8 +4,8 @@ import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
-import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -157,8 +157,8 @@ class FileChangesTest {
     fun gitCountsMatchAnAbsolutePathByItsRepoRelativeSuffix() {
         val tree =
             listOf(
-                GatewayChangedFile(path = "src/Old.kt", status = "M", added = 1, removed = 1),
-                GatewayChangedFile(path = "src/New.kt", status = "??", added = 12, removed = 0),
+                ChatChangedFile(path = "src/Old.kt", status = "M", added = 1, removed = 1),
+                ChatChangedFile(path = "src/New.kt", status = "??", added = 12, removed = 0),
             )
 
         assertEquals(DiffStats(additions = 12, deletions = 0), tree.statsFor("/repo/src/New.kt"))

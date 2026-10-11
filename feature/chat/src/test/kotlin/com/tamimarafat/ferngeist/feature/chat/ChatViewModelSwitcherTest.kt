@@ -1,7 +1,7 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import androidx.lifecycle.SavedStateHandle
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
 import com.tamimarafat.ferngeist.core.model.GatewayAgentBinding
@@ -9,8 +9,6 @@ import com.tamimarafat.ferngeist.core.model.GatewaySource
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.ServerConfig
 import com.tamimarafat.ferngeist.core.model.SessionSummary
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -32,12 +30,7 @@ class ChatViewModelSwitcherTest : ChatViewModelTestBase() {
     @Test
     fun `switcher state lists all live sessions with current flagged`() =
         runTest {
-            val hub =
-                ChatConnectionHub(
-                    gatewayRepository = null,
-                    scope = CoroutineScope(Dispatchers.Unconfined),
-                    connectivityObserver = FakeConnectivityObserver(),
-                )
+            val hub = newTestHub()
             val targets =
                 FakeLaunchableTargetRepository(
                     listOf(
@@ -104,7 +97,6 @@ class ChatViewModelSwitcherTest : ChatViewModelTestBase() {
             val viewModel =
                 createViewModel(
                     chatConnectionHub = hub,
-                    gatewayRepository = gateway,
                     sessionRepository = sessions,
                     launchableTargetRepository = FakeLaunchableTargetRepository(listOf(gatewayTarget())),
                     savedStateHandle = sessionHandle(),
@@ -140,7 +132,6 @@ class ChatViewModelSwitcherTest : ChatViewModelTestBase() {
             val viewModel =
                 createViewModel(
                     chatConnectionHub = hub,
-                    gatewayRepository = gateway,
                     sessionRepository = sessions,
                     launchableTargetRepository = FakeLaunchableTargetRepository(listOf(gatewayTarget())),
                     savedStateHandle = sessionHandle(),
@@ -193,12 +184,7 @@ class ChatViewModelSwitcherTest : ChatViewModelTestBase() {
                 ),
         )
 
-    private fun newHub(gatewayRepository: FakeGatewayRepository): ChatConnectionHub =
-        ChatConnectionHub(
-            gatewayRepository = gatewayRepository,
-            scope = CoroutineScope(Dispatchers.Unconfined),
-            connectivityObserver = FakeConnectivityObserver(),
-        )
+    private fun newHub(gatewayRepository: FakeGatewayRepository): ChatConnectionHub = newTestHub(gatewayRepository)
 
     private suspend fun connectSession(
         hub: ChatConnectionHub,
@@ -221,19 +207,15 @@ class ChatViewModelSwitcherTest : ChatViewModelTestBase() {
     }
 
     /**
-     * Drives a manager to Connected the way a successful transport connect
+     * Drives a connection to Connected the way a successful transport connect
      * would (mirrors the hub suite's helper: flips the private StateFlow the
      * transport updates, so presence observers cannot tell the difference).
      */
-    private fun AcpConnectionManager.forceConnected() {
-        val managerClass = AcpConnectionManager::class.java
-        val orchestraField = managerClass.getDeclaredField("orchestra")
-        orchestraField.isAccessible = true
-        val orchestra = orchestraField.get(this)
-        val stateField = orchestra.javaClass.getDeclaredField("_connectionState")
+    private fun AcpConnection.forceConnected() {
+        val stateField = AcpConnection::class.java.getDeclaredField("_connectionState")
         stateField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val stateFlow = stateField.get(orchestra) as MutableStateFlow<AcpConnectionState>
+        val stateFlow = stateField.get(this) as MutableStateFlow<AcpConnectionState>
         stateFlow.value = AcpConnectionState.Connected
     }
 }

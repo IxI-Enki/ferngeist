@@ -86,39 +86,38 @@ data class GatewayAgentSecurity(
     val allowsRemoteStart: Boolean,
 )
 
-@Serializable
-data class GatewayStartAgentResponse(
-    val runtime: GatewayRuntime,
-)
-
-@Serializable
-data class GatewayRuntime(
-    val id: String,
-    val status: String,
-    val agentId: String,
-)
-
+/**
+ * Response of `POST /v1/agents/{id}/connect` (protocol v2): the gateway spawns (or
+ * reuses) the agent's runtime and binds it to a fresh session in one call. Auth uses
+ * the device credential; [attachToken] authorises the ACP WebSocket attach.
+ */
 @Serializable
 data class GatewayConnectResponse(
     val runtimeId: String,
-    val scheme: String,
-    val host: String,
+    @SerialName("sessionId")
+    val sessionId: String,
+    @SerialName("attachToken")
+    val attachToken: String,
     @SerialName("websocketUrl")
     val webSocketUrl: String,
-    @SerialName("websocketPath")
-    val webSocketPath: String,
-    val bearerToken: String,
-    @SerialName("tokenExpiresAt")
-    val tokenExpiresAt: String? = null,
-    @SerialName("sessionId")
-    val sessionId: String? = null,
-    @SerialName("attachToken")
-    val attachToken: String? = null,
 )
 
 @Serializable
 data class GatewayRestartRequest(
     val env: Map<String, String>,
+)
+
+/**
+ * Response of `POST /v1/runtimes/{id}/restart` (protocol v2): the restarted runtime
+ * keeps the id the caller passed, so the attach URL is rebuilt from it; the gateway
+ * only hands back the new session and its attach token.
+ */
+@Serializable
+data class GatewayRestartResponse(
+    @SerialName("sessionId")
+    val sessionId: String,
+    @SerialName("attachToken")
+    val attachToken: String,
 )
 
 @Serializable
@@ -148,24 +147,6 @@ data class GatewayPairStatusResponse(
     @SerialName("completedDevice") val completedDevice: String? = null,
     @SerialName("completedDeviceId") val completedDeviceId: String? = null,
     @SerialName("completedDeviceExpiresAt") val completedDeviceExpiresAt: String? = null,
-)
-
-@Serializable
-data class GatewayConnectRequest(
-    @SerialName("sessionMode") val sessionMode: String? = null,
-)
-
-/**
- * Body of `POST /v1/agents/{id}/start`.
- *
- * `new = true` makes the gateway spawn a distinct runtime instead of reusing
- * an existing one for the agent. That is the only lever that isolates a second
- * concurrent chat: the connect endpoint ignores this flag, because a runtime
- * reuses the one session it leases.
- */
-@Serializable
-data class GatewayStartRequest(
-    @SerialName("new") val new: Boolean,
 )
 
 /** Body of `POST /v1/agents/custom`. */
@@ -321,14 +302,14 @@ data class GatewayWorktree(
  */
 object GatewayProtocol {
     /** The current protocol version (see gateway `internal/api/server.go`). */
-    const val CURRENT = "v1"
+    const val CURRENT = "v2"
 
     /**
-     * All gateway protocol versions this client can talk to. The current version is
-     * [CURRENT]; older stable versions remain supported so a gateway that has not been
-     * updated yet keeps working (the client may simply not use newer endpoints).
+     * All gateway protocol versions this client can talk to. The gateway is v2-only:
+     * it no longer serves the removed start/connect-runtime endpoints, so a v1
+     * gateway must fail the version check instead of failing opaquely later.
      */
-    val SUPPORTED: Set<String> = setOf(CURRENT, "v1alpha1")
+    val SUPPORTED: Set<String> = setOf(CURRENT)
 }
 
 /** Thrown when a gateway's reported protocol version is incompatible with this client. */

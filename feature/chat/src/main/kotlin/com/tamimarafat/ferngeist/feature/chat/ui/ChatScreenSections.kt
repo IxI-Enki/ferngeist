@@ -98,6 +98,7 @@ import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatElicitationRequest
 import com.tamimarafat.ferngeist.core.model.ChatElicitationValue
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.core.model.UsageState
@@ -110,7 +111,6 @@ import com.tamimarafat.ferngeist.feature.chat.RecentSelectionStore
 import com.tamimarafat.ferngeist.feature.chat.displayBlocks
 import com.tamimarafat.ferngeist.feature.chat.localizeChatError
 import com.tamimarafat.ferngeist.feature.chat.thoughtRuns
-import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentMap
 import kotlinx.coroutines.launch
@@ -977,7 +977,7 @@ private fun ThoughtDetailsSheet(
  */
 @Composable
 internal fun GitStatusSheet(
-    status: GatewayGitStatus,
+    status: ChatGitStatus,
     gitFileDiff: List<ToolCallContent.Diff>?,
     gitFileDiffPath: String?,
     isGitFileDiffLoading: Boolean,

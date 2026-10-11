@@ -4,7 +4,7 @@ import com.agentclientprotocol.model.PlanEntry
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
 import com.tamimarafat.ferngeist.core.model.ChatFileData
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.SteerOutcome
@@ -32,8 +32,8 @@ private const val EVENT_REPLAY_TAIL = 8
 /**
  * SessionBridge is the UI-facing handle to a single ACP session, implementing [SessionPort].
  *
- * It owns a [SessionStateEngine] (the runtime) and forwards user actions to the
- * [AcpConnectionManager]. Events from the SDK are fed into the runtime via [emitEvent],
+ * It owns a [SessionRuntime] (the runtime) and forwards user actions to the
+ * [AcpConnection]. Events from the SDK are fed into the runtime via [emitEvent],
  * which also forwards them to the raw [events] stream and to the narrow
  * [modelSelectionEvents] flow.
  *
@@ -41,7 +41,7 @@ private const val EVENT_REPLAY_TAIL = 8
  * SessionBridge implements [SessionPort] so the chat layer never imports the concrete
  * type. Methods that are NOT on [SessionPort] — [emitEvent], [beginHydration],
  * [completeHydration], [failHydration], [markReady] — are called exclusively by
- * [AcpConnectionManager] (which retains a [SessionBridge] reference internally).
+ * [AcpConnection] (which retains a [SessionBridge] reference internally).
  *
  * ## Lifecycle
  * An internal event scope CoroutineScope backs [startTurn]: a prompt turn must outlive
@@ -51,9 +51,9 @@ private const val EVENT_REPLAY_TAIL = 8
  */
 class SessionBridge(
     override val sessionId: String,
-    private val connectionManager: AcpConnectionManager?,
+    private val connectionManager: AcpConnection?,
 ) : SessionPort {
-    internal val runtime: SessionStateEngine = SessionRuntime(sessionId = sessionId)
+    internal val runtime: SessionRuntime = SessionRuntime(sessionId = sessionId)
     override val snapshot: StateFlow<SessionSnapshot> = runtime.snapshot
 
     // Raw event stream, for an observer that needs the events as they are emitted. No app
@@ -161,7 +161,7 @@ class SessionBridge(
         files: List<ChatFileData>,
     ) {
         try {
-            connectionManager?.sendSessionMessage(sessionId, text, images, files)
+            connectionManager?.sessions?.sendSessionMessage(sessionId, text, images, files)
         } catch (e: CancellationException) {
             // Propagate structured cancellation without swallowing; the coroutine's
             // parent will handle it and the streaming placeholder remains cancellable.
@@ -184,7 +184,9 @@ class SessionBridge(
         images: List<ChatImageData>,
         files: List<ChatFileData>,
     ): SteerOutcome {
-        val outcome = connectionManager?.steerSession(sessionId, text, images, files) ?: SteerOutcome.NotConsumed
+        val outcome =
+            connectionManager?.sessions?.steerSession(sessionId, text, images, files)
+                ?: SteerOutcome.NotConsumed
         if (outcome != SteerOutcome.NotConsumed) {
             runtime.onPromptSteered(text, images, files, injected = outcome == SteerOutcome.Injected)
         }
@@ -192,7 +194,7 @@ class SessionBridge(
     }
 
     override suspend fun cancel() {
-        connectionManager?.cancelSession(sessionId)
+        connectionManager?.sessions?.cancelSession(sessionId)
         runtime.onLocalCancel()
     }
 
@@ -215,17 +217,17 @@ class SessionBridge(
         val action = SessionConfigPolicy.mapToDispatchAction(option, value) ?: return
         when (action) {
             is SessionConfigPolicy.DispatchAction.SetLegacyMode -> {
-                connectionManager?.setSessionMode(sessionId, action.modeId)
+                connectionManager?.sessions?.setSessionMode(sessionId, action.modeId)
                 runtime.onEvent(action.event)
             }
 
             is SessionConfigPolicy.DispatchAction.SetLegacyModel -> {
-                connectionManager?.setSessionModel(sessionId, action.modelId)
+                connectionManager?.sessions?.setSessionModel(sessionId, action.modelId)
                 runtime.onEvent(action.event)
             }
 
             is SessionConfigPolicy.DispatchAction.SetNativeConfig -> {
-                connectionManager?.setSessionConfigOption(sessionId, action.optionId, action.value)
+                connectionManager?.sessions?.setSessionConfigOption(sessionId, action.optionId, action.value)
                 runtime.onEvent(action.event)
             }
         }
@@ -235,27 +237,27 @@ class SessionBridge(
         toolCallId: String,
         optionId: String,
     ) {
-        connectionManager?.respondPermissionSelected(sessionId, toolCallId, optionId)
+        connectionManager?.sessions?.respondPermissionSelected(sessionId, toolCallId, optionId)
     }
 
     /** Declines a permission prompt for a tool call. */
     override suspend fun denyPermission(toolCallId: String) {
-        connectionManager?.respondPermissionCancelled(sessionId, toolCallId)
+        connectionManager?.sessions?.respondPermissionCancelled(sessionId, toolCallId)
     }
 
     override suspend fun submitElicitation(
         key: String,
         values: Map<String, com.tamimarafat.ferngeist.core.model.ChatElicitationValue>,
     ) {
-        connectionManager?.submitElicitation(sessionId, key, values)
+        connectionManager?.sessions?.submitElicitation(sessionId, key, values)
     }
 
     override suspend fun declineElicitation(key: String) {
-        connectionManager?.declineElicitation(sessionId, key)
+        connectionManager?.sessions?.declineElicitation(sessionId, key)
     }
 
     override suspend fun cancelElicitation(key: String) {
-        connectionManager?.cancelElicitation(sessionId, key)
+        connectionManager?.sessions?.cancelElicitation(sessionId, key)
     }
 
     /**

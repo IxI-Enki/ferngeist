@@ -14,17 +14,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.AlertDialog
@@ -34,10 +31,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -61,8 +56,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.booleanResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.core.common.ui.formContentMaxWidth
@@ -71,11 +64,8 @@ import com.tamimarafat.ferngeist.feature.serverlist.AddGatewayEvent
 import com.tamimarafat.ferngeist.feature.serverlist.AddGatewayUiState
 import com.tamimarafat.ferngeist.feature.serverlist.AddGatewayViewModel
 import com.tamimarafat.ferngeist.feature.serverlist.R
-import com.tamimarafat.ferngeist.gateway.GatewayPairingPayload
-import com.tamimarafat.ferngeist.gateway.GatewayStatus
 import kotlin.math.abs
 
-private const val CHALLENGE_ID_DISPLAY_LENGTH = 10
 private const val STEP_CARD_SLIDE_MS = 260
 private const val STEP_CARD_SLIDE_FRACTION = 0.08f
 private const val STEP_CARD_MIN_ALPHA = 0.6f
@@ -428,6 +418,33 @@ private fun AddGatewayTopBar(
 }
 
 @Composable
+private fun PairingStepProgress(
+    currentStep: Int,
+    totalSteps: Int,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        repeat(totalSteps) { index ->
+            val color =
+                if (index <= currentStep) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                }
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .background(color = color, shape = RoundedCornerShape(999.dp)),
+            )
+        }
+    }
+}
+
+@Composable
 private fun ColumnScope.AddGatewayStepCard(
     step: GatewayPairingStep,
     stepIndex: Int,
@@ -662,596 +679,6 @@ private fun PairingCodeDialog(
             }
         },
     )
-}
-
-@Composable
-private fun RunFerngeistPairStep() {
-    val instruction1 = stringResource(R.string.serverlist_add_gateway_instruction_1)
-    val instruction2 = stringResource(R.string.serverlist_add_gateway_instruction_2)
-    val instruction3 = stringResource(R.string.serverlist_add_gateway_instruction_3)
-    val instruction4 = stringResource(R.string.serverlist_add_gateway_instruction_4)
-    OnboardingBulletList(
-        items = listOf(instruction1, instruction2, instruction3, instruction4),
-    )
-
-    ElevatedCard(
-        colors =
-            CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.serverlist_add_gateway_command_label),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            ) {
-                Text(
-                    text = "ferngeist-gateway pair",
-                    modifier = Modifier.padding(14.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Text(
-                text = stringResource(R.string.serverlist_add_gateway_scan_instruction),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun EditGatewayScreen(
-    onNavigateBack: () -> Unit,
-    snackbarHostState: SnackbarHostState,
-    viewModel: AddGatewayViewModel,
-    name: String,
-    scheme: String,
-    host: String,
-    uiState: com.tamimarafat.ferngeist.feature.serverlist.AddGatewayUiState,
-) {
-    Scaffold(
-        topBar = {
-            androidx.compose.material3.TopAppBar(
-                title = { Text(stringResource(R.string.serverlist_add_gateway_edit_title)) },
-                navigationIcon = {
-                    FilledTonalIconButton(onClick = onNavigateBack, modifier = Modifier.handCursor()) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.serverlist_back_desc),
-                        )
-                    }
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Column(
-                modifier =
-                    Modifier
-                        .formContentMaxWidth()
-                        .fillMaxSize()
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                EditGatewayDetailsSection(
-                    name = name,
-                    scheme = scheme,
-                    host = host,
-                    uiState = uiState,
-                    onUpdateName = viewModel::updateName,
-                    onSelectScheme = viewModel::updateScheme,
-                    onUpdateHost = viewModel::updateHost,
-                    onCheckStatus = viewModel::checkStatus,
-                    onSave = viewModel::saveGateway,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EditGatewayDetailsSection(
-    name: String,
-    scheme: String,
-    host: String,
-    uiState: com.tamimarafat.ferngeist.feature.serverlist.AddGatewayUiState,
-    onUpdateName: (String) -> Unit,
-    onSelectScheme: (String) -> Unit,
-    onUpdateHost: (String) -> Unit,
-    onCheckStatus: () -> Unit,
-    onSave: () -> Unit,
-) {
-    SectionCard(
-        title = stringResource(R.string.serverlist_add_gateway_details_title),
-        subtitle = stringResource(R.string.serverlist_add_gateway_details_subtitle),
-        icon = Icons.Default.Computer,
-    ) {
-        OutlinedTextField(
-            value = name,
-            onValueChange = onUpdateName,
-            label = { Text(stringResource(R.string.serverlist_add_gateway_name_label)) },
-            placeholder = { Text(stringResource(R.string.serverlist_add_gateway_name_placeholder)) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        GatewayProtocolSelector(selected = scheme, onSelect = onSelectScheme)
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedTextField(
-            value = host,
-            onValueChange = onUpdateHost,
-            label = { Text(stringResource(R.string.serverlist_add_gateway_host_label)) },
-            placeholder = { Text(stringResource(R.string.serverlist_add_gateway_host_placeholder)) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Link,
-                    contentDescription = stringResource(R.string.serverlist_add_server_host_label),
-                )
-            },
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Button(
-            onClick = onCheckStatus,
-            enabled = !uiState.isCheckingStatus,
-            modifier = Modifier.handCursor(enabled = !uiState.isCheckingStatus),
-        ) {
-            if (uiState.isCheckingStatus) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Text(stringResource(R.string.serverlist_add_gateway_check))
-            }
-        }
-        uiState.status?.let { status ->
-            Spacer(modifier = Modifier.height(12.dp))
-            GatewayStatusCard(status = status)
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = onSave,
-            enabled = !uiState.isSaving,
-            modifier = Modifier.handCursor(enabled = !uiState.isSaving),
-        ) {
-            if (uiState.isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Text(stringResource(R.string.serverlist_add_gateway_save))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ImportPairingStep(
-    pairingQrPayload: String,
-    importedPayload: GatewayPairingPayload?,
-    onUpdatePayload: (String) -> Unit,
-    onScanQr: () -> Unit,
-) {
-    val innerPadding = 14.dp
-
-    ElevatedCard(
-        colors =
-            CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(innerPadding),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            OutlinedTextField(
-                value = pairingQrPayload,
-                onValueChange = onUpdatePayload,
-                label = { Text(stringResource(R.string.serverlist_add_gateway_payload_label)) },
-                placeholder = { Text(stringResource(R.string.serverlist_add_gateway_payload_placeholder)) },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.ContentPaste,
-                        contentDescription = null,
-                    )
-                },
-            )
-
-            if (booleanResource(R.bool.serverlist_qr_scan_available)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    HorizontalDivider(modifier = Modifier.weight(1f))
-                    Text(
-                        text = stringResource(R.string.serverlist_add_gateway_or),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                    )
-                    HorizontalDivider(modifier = Modifier.weight(1f))
-                }
-
-                OutlinedButton(
-                    onClick = onScanQr,
-                    modifier = Modifier.fillMaxWidth().handCursor(),
-                ) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.serverlist_add_gateway_step_scan_title))
-                }
-            }
-
-            importedPayload?.let { payload ->
-                ImportedPayloadCard(payload = payload)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReviewGatewayStep(
-    name: String,
-    onUpdateName: (String) -> Unit,
-    deviceName: String,
-    onUpdateDeviceName: (String) -> Unit,
-    scheme: String,
-    onSelectScheme: (String) -> Unit,
-    host: String,
-    onUpdateHost: (String) -> Unit,
-    status: GatewayStatus?,
-    isCheckingStatus: Boolean,
-    importedPayload: GatewayPairingPayload?,
-    onCheckStatus: () -> Unit,
-) {
-    importedPayload?.let { payload ->
-        ImportedPayloadCard(payload = payload)
-        Spacer(modifier = Modifier.height(4.dp))
-    }
-
-    GatewayReviewForm(
-        name = name,
-        onUpdateName = onUpdateName,
-        deviceName = deviceName,
-        onUpdateDeviceName = onUpdateDeviceName,
-        scheme = scheme,
-        onSelectScheme = onSelectScheme,
-        host = host,
-        onUpdateHost = onUpdateHost,
-        status = status,
-        isCheckingStatus = isCheckingStatus,
-        onCheckStatus = onCheckStatus,
-    )
-}
-
-@Composable
-private fun GatewayReviewActions(
-    isCheckingStatus: Boolean,
-    onCheckStatus: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(
-            text = stringResource(R.string.serverlist_add_gateway_manual_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Button(
-            onClick = onCheckStatus,
-            enabled = !isCheckingStatus,
-            modifier = Modifier.handCursor(enabled = !isCheckingStatus),
-        ) {
-            if (isCheckingStatus) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Text(stringResource(R.string.serverlist_add_gateway_check))
-            }
-        }
-    }
-}
-
-@Composable
-private fun GatewayReviewForm(
-    name: String,
-    onUpdateName: (String) -> Unit,
-    deviceName: String,
-    onUpdateDeviceName: (String) -> Unit,
-    scheme: String,
-    onSelectScheme: (String) -> Unit,
-    host: String,
-    onUpdateHost: (String) -> Unit,
-    status: GatewayStatus?,
-    isCheckingStatus: Boolean,
-    onCheckStatus: () -> Unit,
-) {
-    ElevatedCard(
-        colors =
-            CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            OutlinedTextField(
-                value = name,
-                onValueChange = onUpdateName,
-                label = { Text(stringResource(R.string.serverlist_add_gateway_name_label)) },
-                placeholder = { Text(stringResource(R.string.serverlist_add_gateway_name_placeholder)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = deviceName,
-                onValueChange = onUpdateDeviceName,
-                label = { Text(stringResource(R.string.serverlist_add_gateway_device_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            GatewayProtocolSelector(selected = scheme, onSelect = onSelectScheme)
-            OutlinedTextField(
-                value = host,
-                onValueChange = onUpdateHost,
-                label = { Text(stringResource(R.string.serverlist_add_gateway_host_label)) },
-                placeholder = { Text(stringResource(R.string.serverlist_add_gateway_host_placeholder)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Link,
-                        contentDescription = stringResource(R.string.serverlist_add_server_host_label),
-                    )
-                },
-            )
-
-            GatewayReviewActions(
-                isCheckingStatus = isCheckingStatus,
-                onCheckStatus = onCheckStatus,
-            )
-
-            status?.let { GatewayStatusCard(status = it) }
-        }
-    }
-}
-
-@Composable
-private fun ImportedPayloadCard(payload: GatewayPairingPayload) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                stringResource(R.string.serverlist_add_gateway_imported_title),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                stringResource(R.string.serverlist_gateway_url_format, payload.scheme, payload.host),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                stringResource(
-                    R.string.serverlist_add_gateway_challenge_label,
-                    payload.challengeId.take(CHALLENGE_ID_DISPLAY_LENGTH),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                stringResource(R.string.serverlist_payload_code_label, payload.code),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-}
-
-@Composable
-private fun GatewayStatusCard(status: GatewayStatus) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(status.name, fontWeight = FontWeight.SemiBold)
-            Text(
-                stringResource(R.string.serverlist_payload_version_label, status.version),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                stringResource(
-                    R.string.serverlist_payload_remote_label,
-                    status.remote.mode?.let { gatewayRemoteModeLabel(it) }
-                        ?: stringResource(R.string.serverlist_payload_remote_local_only),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            status.remote.warning?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PairingStepProgress(
-    currentStep: Int,
-    totalSteps: Int,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        repeat(totalSteps) { index ->
-            val color =
-                if (index <= currentStep) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                }
-            Box(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .height(6.dp)
-                        .background(color = color, shape = RoundedCornerShape(999.dp)),
-            )
-        }
-    }
-}
-
-@Composable
-private fun OnboardingBulletList(items: List<String>) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items.forEach { item ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Text(
-                    text = "-",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = item,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun GatewayProtocolSelector(
-    selected: String,
-    onSelect: (String) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        GatewayProtocolOption(
-            label = stringResource(R.string.serverlist_add_gateway_http),
-            code = "http",
-            isSelected = selected.equals("http", ignoreCase = true) || selected.equals("ws", ignoreCase = true),
-            onClick = { onSelect("http") },
-            modifier = Modifier.weight(1f),
-        )
-        GatewayProtocolOption(
-            label = stringResource(R.string.serverlist_add_gateway_https),
-            code = "https",
-            isSelected = selected.equals("https", ignoreCase = true) || selected.equals("wss", ignoreCase = true),
-            onClick = { onSelect("https") },
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun GatewayProtocolOption(
-    label: String,
-    code: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val containerColor =
-        if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        }
-    val contentColor =
-        if (isSelected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        }
-    val borderColor =
-        if (isSelected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-        } else {
-            MaterialTheme.colorScheme.outlineVariant
-        }
-
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
-        color = containerColor,
-        contentColor = contentColor,
-        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
-        modifier =
-            modifier
-                .height(52.dp)
-                .handCursor()
-                .semantics {
-                    contentDescription = label
-                },
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            if (code == "https") {
-                Icon(
-                    Icons.Default.Key,
-                    contentDescription = stringResource(R.string.serverlist_add_gateway_https),
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-            }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-            )
-        }
-    }
 }
 
 private data class GatewayPairingStep(

@@ -1,81 +1,34 @@
 package com.tamimarafat.ferngeist.acp.bridge.connection
 
 import com.tamimarafat.ferngeist.acp.bridge.ConnectivityObserverStub
+import com.tamimarafat.ferngeist.core.model.GatewaySource
+import com.tamimarafat.ferngeist.gateway.GatewayRestartResponse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AcpTransportClientTest {
     @Test
-    fun `resilient config detects session mode`() {
-        val config =
-            AcpConnectionConfig(
-                host = "192.168.1.5:5788",
-                sessionId = "sess-42",
-                attachToken = "at-1",
-            )
-        assertTrue(config.isResilientSession)
+    fun `manual config derives its endpoint from scheme and host`() {
+        assertEquals("ws://192.168.1.5:5788", manualConfig().endpoint)
     }
 
     @Test
-    fun `non-resilient config returns false`() {
-        val config =
-            AcpConnectionConfig(
-                host = "192.168.1.5:5788",
-            )
-        assertFalse(config.isResilientSession)
-    }
+    fun `gateway handoff carries the session and its attach token`() {
+        val config = gatewayConfig(sessionId = "sess-42", attachToken = "at-1")
 
-    @Test
-    fun `resilient config isResilient is true even without attachToken`() {
-        val config =
-            AcpConnectionConfig(
-                host = "192.168.1.5:5788",
-                sessionId = "sess-42",
-            )
-        assertTrue(config.isResilientSession)
-    }
-
-    @Test
-    fun `gateway connection detected by credential`() {
-        val config =
-            AcpConnectionConfig(
-                host = "192.168.1.5:5788",
-                gatewayCredential = "cred-1",
-                sessionId = "sess-42",
-            )
-        assertTrue(config.isGatewayConnection)
-    }
-
-    @Test
-    fun `manual server is not a gateway connection`() {
-        val config =
-            AcpConnectionConfig(
-                host = "192.168.1.5:5788",
-            )
-        assertFalse(config.isGatewayConnection)
-    }
-
-    @Test
-    fun `gateway connection without sessionId is the doomed-handshake case`() {
-        // The gateway returned a session-less connect descriptor: a gateway connection
-        // (credential present) but no sessionId. The transport must recognise this and
-        // fail fast instead of connecting to the resilient endpoint without params.
-        val config =
-            AcpConnectionConfig(
-                host = "192.168.1.5:5788",
-                gatewayCredential = "cred-1",
-                sessionId = null,
-            )
-        assertTrue(config.isGatewayConnection)
-        assertFalse(config.isResilientSession)
+        assertEquals("sess-42", config.resume.sessionId)
+        assertEquals("at-1", config.resume.attachToken)
     }
 
     // ---- Reconnect backoff ----
@@ -130,7 +83,7 @@ class AcpTransportClientTest {
         // Offline: the loop parks in its connectivity wait, the state a backgrounded
         // drop sits in. The foreground service keys on this flag to stay up.
         val client = newClient(online = false)
-        setField(client, "currentConfig", AcpConnectionConfig(host = "127.0.0.1:1"))
+        setField(client, "currentConfig", manualConfig())
 
         scheduleReconnect(client)
         assertTrue(client.reconnectPending.value)
@@ -146,6 +99,70 @@ class AcpTransportClientTest {
         scheduleReconnect(client)
 
         assertFalse(client.reconnectPending.value)
+    }
+
+    @Test
+    fun `a rejected resume stops the loop and emits SessionResumeRejected`() =
+        runTest {
+            val events = mutableListOf<AcpManagerEvent>()
+            val client =
+                newClient(
+                    scope = CoroutineScope(coroutineContext),
+                    resume = { _, _ -> throw GatewaySessionResumeRejectedException("gateway restarted") },
+                    emitEvent = { events += it },
+                )
+            setField(client, "currentConfig", gatewayConfig())
+
+            scheduleReconnect(client)
+            advanceUntilIdle()
+
+            assertEquals(
+                "the facade needs exactly one rejection notice to start a fresh connect",
+                listOf(AcpManagerEvent.SessionResumeRejected),
+                events,
+            )
+            assertFalse(
+                "the loop must stop retrying a session the gateway no longer has",
+                client.reconnectPending.value,
+            )
+        }
+
+    @Test
+    fun `restart handoff rebuilds the attach URL and carries the new session`() {
+        val source =
+            GatewaySource(
+                name = "Home",
+                scheme = "http",
+                host = "192.168.1.5:5788",
+                gatewayCredential = "cred-1",
+            )
+        val restart = GatewayRestartResponse(sessionId = "sess-9", attachToken = "at-9")
+
+        val config =
+            AcpConnectionConfig.fromGatewayRestart(
+                gatewaySource = source,
+                runtimeId = "rt-9",
+                restart = restart,
+                authMethodId = "agent-auth",
+                displayName = "Codex",
+            )
+
+        assertEquals("ws://192.168.1.5:5788/v1/acp/rt-9", config.endpoint)
+        assertEquals("sess-9", config.resume.sessionId)
+        assertEquals("at-9", config.resume.attachToken)
+        assertEquals("rt-9", config.runtimeId)
+        assertEquals("agent-auth", config.preferredAuthMethodId)
+        assertEquals("Codex", config.displayName)
+
+        val secure =
+            AcpConnectionConfig.fromGatewayRestart(
+                gatewaySource = source.copy(scheme = "https"),
+                runtimeId = "rt-9",
+                restart = restart,
+                authMethodId = null,
+                displayName = null,
+            )
+        assertEquals("wss://192.168.1.5:5788/v1/acp/rt-9", secure.endpoint)
     }
 
     private fun scheduleReconnect(client: AcpTransportClient) {
@@ -164,14 +181,44 @@ class AcpTransportClientTest {
         field.set(client, value)
     }
 
-    private fun newClient(online: Boolean = true): AcpTransportClient =
+    private fun newClient(
+        online: Boolean = true,
+        scope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined),
+        resume: suspend (AcpConnectionConfig.Gateway, AcpConnectionConfig.ResumeInfo) -> String =
+            { _, _ -> error("no gateway resume in this test") },
+        emitEvent: suspend (AcpManagerEvent) -> Unit = {},
+    ): AcpTransportClient =
         AcpTransportClient(
             connectivityObserver = ConnectivityObserverStub(initialState = online),
-            gatewayRepository = null,
-            scope = CoroutineScope(Dispatchers.Unconfined),
+            resumeAttachToken = resume,
+            scope = scope,
             diagnosticsStore = AcpDiagnosticsStore(),
             updateConnectionState = {},
-            emitManagerEvent = {},
+            emitManagerEvent = emitEvent,
+        )
+
+    private fun manualConfig(): AcpConnectionConfig.Manual =
+        AcpConnectionConfig.Manual(
+            scheme = "ws",
+            host = "192.168.1.5:5788",
+            preferredAuthMethodId = null,
+            displayName = null,
+        )
+
+    private fun gatewayConfig(
+        sessionId: String = "sess-42",
+        attachToken: String = "at-1",
+    ): AcpConnectionConfig.Gateway =
+        AcpConnectionConfig.Gateway(
+            endpoint = "ws://192.168.1.5:5788",
+            runtimeId = "rt-1",
+            sourceId = "src-1",
+            gatewayCredential = "cred-1",
+            resume = AcpConnectionConfig.ResumeInfo(sessionId = sessionId, attachToken = attachToken),
+            scheme = "http",
+            host = "192.168.1.5:5788",
+            preferredAuthMethodId = null,
+            displayName = null,
         )
 
     private fun setReconnectJob(

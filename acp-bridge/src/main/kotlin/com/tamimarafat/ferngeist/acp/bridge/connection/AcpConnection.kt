@@ -6,9 +6,11 @@ import com.agentclientprotocol.model.AgentCapabilities
 import com.agentclientprotocol.model.SessionId
 import com.agentclientprotocol.protocol.JsonRpcException
 import com.agentclientprotocol.rpc.JsonRpcErrorCode
+import com.tamimarafat.ferngeist.acp.bridge.session.SessionBridge
 import com.tamimarafat.ferngeist.core.model.SessionSummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -18,10 +20,30 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.ConcurrentHashMap
 
-internal class ConnectionOrchestrator(
+/**
+ * Single entry point for ACP transport and session lifecycle.
+ *
+ * AcpConnection owns the raw transport ([AcpTransportClient]), the connect and
+ * initialize handshake, authentication, background reconnect (plus the session
+ * restore that follows it), diagnostics, and agent metadata. Session operations
+ * live in [SessionGateway], exposed as [sessions]; callers drive those through it
+ * directly instead of through one-line delegations here.
+ *
+ * ## Error handling
+ * Errors are recorded in [diagnostics] and surfaced as [ConnectionDiagnostics].
+ * Auth-required conditions are detected generically from error messages (not
+ * vendor-specific codes) to maximise ACP server compatibility.
+ */
+@Suppress("TooManyFunctions") // the module's single connection entry point
+class AcpConnection(
     private val connectivityObserver: ConnectivityObserver,
-    private val gatewayRepository: com.tamimarafat.ferngeist.gateway.GatewayRepository?,
+    // Mints a fresh attachToken for a gateway session; see [AcpTransportClient].
+    private val resumeAttachToken: suspend (
+        gateway: AcpConnectionConfig.Gateway,
+        session: AcpConnectionConfig.ResumeInfo,
+    ) -> String,
     private val scope: CoroutineScope,
 ) {
     companion object {
@@ -58,11 +80,19 @@ internal class ConnectionOrchestrator(
 
     internal val sdkClient: Client? get() = transportClient.sdkClient
 
-    /** Runs after a background reconnect's handshake, before Connected is announced. */
-    var onReconnected: suspend (AcpInitializeResult) -> Unit = {}
-
-    /** Runs when the gateway reports a turn started over an earlier connection has ended. */
-    var onRemoteTurnEnded: suspend (sessionId: String, stopReason: String) -> Unit = { _, _ -> }
+    /**
+     * Session lifecycle, RPC dispatch, and permission/elicitation resolution. Public to
+     * this module so callers use these operations directly; the chat layer sees only
+     * the [com.tamimarafat.ferngeist.acp.bridge.session.SessionPort] the gateway returns.
+     */
+    internal val sessions =
+        SessionGateway(
+            connection = this,
+            permissionFlow = PermissionFlow(),
+            elicitationFlow = ElicitationFlow(),
+            bridgeFactory = { sessionId -> SessionBridge(sessionId, this) },
+            scope = scope,
+        )
 
     /**
      * Lightweight wrapper around the SDK's raw transport (TCP or WebSocket).
@@ -71,18 +101,27 @@ internal class ConnectionOrchestrator(
     private val transportClient =
         AcpTransportClient(
             connectivityObserver = connectivityObserver,
-            gatewayRepository = gatewayRepository,
+            resumeAttachToken = resumeAttachToken,
             scope = scope,
             diagnosticsStore = diagnosticsStore,
             updateConnectionState = { state -> _connectionState.value = state },
             emitManagerEvent = { event -> _events.emit(event) },
-            onReconnected = { result -> onReconnected(result) },
-            onRemoteTurnEnded = { sessionId, stopReason -> onRemoteTurnEnded(sessionId, stopReason) },
+            // Runs after a background reconnect's handshake, before Connected is announced.
+            onReconnected = { result -> restoreSessions(result) },
+            onRemoteTurnEnded = { sessionId, stopReason -> sessions.endRemoteTurn(sessionId, stopReason) },
+            onRemoteResumed = { sessionId, replayedFrames -> sessions.onRemoteResumed(sessionId, replayedFrames) },
         )
 
+    /** True while a background reconnect loop is armed, including its backoff waits. */
     val reconnectPending: StateFlow<Boolean> = transportClient.reconnectPending
 
-    fun probe() = transportClient.probe()
+    // Sessions this connection held when its transport dropped, keyed to their cwd.
+    // A fresh socket starts with an empty SDK session table, so until each is
+    // attached again the SDK rejects the agent's traffic for it ("Session … not
+    // found") — streamed output is lost and permission requests fail the turn. A
+    // chat screen re-attaches its own session, but a pooled chat has no screen, so
+    // the connection restores them itself; see [restoreSessions].
+    private val sessionsToRestore = ConcurrentHashMap<String, String>()
 
     // Bridge between the one-shot event stream (emitted by AcpTransportClient)
     // and the StateFlow-based reactive state exposed to consumers. Without this
@@ -112,15 +151,84 @@ internal class ConnectionOrchestrator(
     val isConnected: Boolean
         get() = _connectionState.value is AcpConnectionState.Connected
 
-    suspend fun connect(
-        config: AcpConnectionConfig,
-        resetState: () -> Unit,
-    ): Boolean = transportClient.connect(config, resetState)
+    /** Records a timing summary in the diagnostics RPC log, readable on-device without adb. */
+    internal fun recordTiming(
+        label: String,
+        summary: String,
+    ) {
+        diagnosticsStore.appendRpcEntry(RpcDirection.InboundResult, label, summary = summary)
+    }
 
-    suspend fun connectWithoutReconnect(
-        config: AcpConnectionConfig,
-        resetState: () -> Unit,
-    ): Boolean = transportClient.connectWithoutReconnect(config, resetState)
+    // A transport reset detaches sessions but keeps their bridges: the transcript a
+    // bridge holds is the only copy for an agent that reattaches with `session/resume`
+    // (no replay), and the hub's streaming read is bound to the bridge object.
+    private fun resetConnectionState() {
+        sessionsToRestore.putAll(sessions.registeredSessionCwds())
+        resetAgentMetadata()
+        sessions.detachAllSessions()
+    }
+
+    private fun releaseConnectionState() {
+        resetAgentMetadata()
+        sessions.clearAllSessions()
+    }
+
+    /**
+     * Re-attaches the sessions held before a background reconnect. Runs before the
+     * reconnect announces Connected, so a chat screen's own recovery then finds its
+     * session registered instead of loading it a second time. A failure is left to
+     * that recovery (and recorded in diagnostics by the attach itself).
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun restoreSessions(result: AcpInitializeResult) {
+        val rpc = result.agentCapabilities.sessionAttachRpc()
+        val toRestore = sessionsToRestore.toMap()
+        sessionsToRestore.clear()
+        if (rpc == null) return
+        for ((sessionId, cwd) in toRestore) {
+            try {
+                withTimeout(SESSION_RESTORE_TIMEOUT_MS) { sessions.attachSession(rpc, sessionId, cwd) }
+            } catch (_: TimeoutCancellationException) {
+                diagnosticsStore.appendError(rpc.rpc, "Restoring session $sessionId timed out")
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Already recorded by the attach; the screen's recovery retries it.
+            }
+        }
+    }
+
+    suspend fun connect(config: AcpConnectionConfig): Boolean =
+        transportClient.connect(config, resetState = ::resetConnectionState).also { sessionsToRestore.clear() }
+
+    /**
+     * Connects the transport and runs the ACP initialize handshake.
+     * Callers dispatch to [kotlinx.coroutines.Dispatchers.IO] when needed (both calls are
+     * network-bound).
+     *
+     * @return the initialize result, or null when connect or initialize failed.
+     */
+    suspend fun connectAndInitialize(config: AcpConnectionConfig): AcpInitializeResult? {
+        if (!connect(config)) return null
+        return initialize()
+    }
+
+    /**
+     * Connects the transport and runs the ACP initialize handshake without
+     * scheduling a background reconnect on failure. For short-lived listing
+     * surfaces (e.g. the session-list browser transport) where perpetual
+     * "Connecting..." after a failed handshake is worse than a single clear
+     * error. Chat facades keep using [connect] so backgrounded sessions keep
+     * streaming through transient drops.
+     *
+     * @return the initialize result, or null when connect or initialize failed.
+     */
+    suspend fun connectAndInitializeWithoutReconnect(config: AcpConnectionConfig): AcpInitializeResult? {
+        val connected = transportClient.connectWithoutReconnect(config, resetState = ::resetConnectionState)
+        sessionsToRestore.clear()
+        if (!connected) return null
+        return initialize()
+    }
 
     suspend fun initialize(): AcpInitializeResult? {
         val result = transportClient.initialize()
@@ -134,11 +242,32 @@ internal class ConnectionOrchestrator(
 
     suspend fun authenticate(methodId: String): AcpAuthenticateResult = transportClient.authenticate(methodId)
 
-    fun disconnect(resetState: () -> Unit) {
-        transportClient.disconnect(resetState)
+    fun disconnect() {
+        transportClient.disconnect(resetState = ::releaseConnectionState)
+        sessionsToRestore.clear()
     }
 
-    /** Releases heavyweight resources (shared [HttpClient]); idempotent. */
+    /** Writes a ping so a socket whose peer vanished fails now; see [AcpTransportClient.probe]. */
+    fun probeConnection() = transportClient.probe()
+
+    /**
+     * Hard release: cancels any reconnect loop, wipes sessions and the SDK
+     * protocol via [disconnect], then frees the shared HttpClient via [close].
+     * The disconnect-then-close ordering is load-bearing (close alone would let
+     * an armed reconnect loop resurrect the transport), so it lives here rather
+     * than with callers. Idempotent.
+     */
+    fun release() {
+        disconnect()
+        close()
+    }
+
+    /**
+     * Tears down the transport and releases heavyweight resources (the shared
+     * CIO [io.ktor.client.HttpClient]). Called when the owning scope completes;
+     * [disconnect] alone only closes the SDK protocol and keeps the client for
+     * reconnect reuse. Idempotent.
+     */
     fun close() {
         transportClient.close()
     }
@@ -239,7 +368,7 @@ internal class ConnectionOrchestrator(
         transportClient.awaitConnectivityForReconnect()
     }
 
-    internal fun resetAgentMetadata() {
+    private fun resetAgentMetadata() {
         _agentCapabilities.value = null
         _agentInfo.value = null
         authMethodsFlow.value = emptyList()
@@ -249,7 +378,7 @@ internal class ConnectionOrchestrator(
         message: String,
         throwable: Throwable? = null,
     ) {
-        runCatching { android.util.Log.e("AcpConnectionManager", message, throwable) }
+        runCatching { android.util.Log.e("AcpConnection", message, throwable) }
     }
 
     internal fun toAuthRequiredException(error: Throwable): AcpAuthenticationRequiredException? {
@@ -291,6 +420,44 @@ internal class ConnectionOrchestrator(
             message.contains("authentication required", ignoreCase = true) ||
             message.contains("requires authentication", ignoreCase = true)
     }
+}
+
+// Same deadline a chat screen gives its own session/load.
+private const val SESSION_RESTORE_TIMEOUT_MS = 60_000L
+
+/** Agent metadata from the ACP initialize handshake. */
+data class AgentInfo(
+    val name: String,
+    val version: String,
+)
+
+/**
+ * Events emitted by [AcpConnection.events] for connection lifecycle
+ * observers.
+ */
+sealed interface AcpManagerEvent {
+    data object Connected : AcpManagerEvent
+
+    data object Disconnected : AcpManagerEvent
+
+    /**
+     * Gateway `resume` answered 400: the session no longer exists (the gateway
+     * restarted, or its agent failed). The reconnect loop has stopped; the consumer
+     * starts a fresh connect and attaches to the session that returns.
+     */
+    data object SessionResumeRejected : AcpManagerEvent
+
+    data class Initialized(
+        val result: AcpInitializeResult,
+    ) : AcpManagerEvent
+
+    data class Authenticated(
+        val methodId: String,
+    ) : AcpManagerEvent
+
+    data class Error(
+        val throwable: Throwable,
+    ) : AcpManagerEvent
 }
 
 /**

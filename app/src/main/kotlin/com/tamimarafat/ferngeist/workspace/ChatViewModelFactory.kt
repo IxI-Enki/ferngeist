@@ -1,8 +1,8 @@
 package com.tamimarafat.ferngeist.workspace
 
 import androidx.lifecycle.SavedStateHandle
-import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
+import com.tamimarafat.ferngeist.core.model.ChatSessionPresence
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
@@ -10,7 +10,6 @@ import com.tamimarafat.ferngeist.feature.chat.ChatScrollStateStore
 import com.tamimarafat.ferngeist.feature.chat.ChatViewModel
 import com.tamimarafat.ferngeist.feature.chat.PendingPromptStore
 import com.tamimarafat.ferngeist.feature.chat.SwitcherHintStore
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,8 +30,7 @@ class ChatViewModelFactory
         private val pendingPromptStore: PendingPromptStore,
         private val switcherHintStore: SwitcherHintStore,
         private val recentSelectionStore: RecentSelectionStore,
-        private val chatConnectionHub: ChatConnectionHub,
-        private val gatewayRepository: GatewayRepository,
+        private val presence: ChatSessionPresence,
         private val launchableTargetRepository: LaunchableTargetRepository,
     ) {
         /**
@@ -56,8 +54,7 @@ class ChatViewModelFactory
                 pendingPromptStore = pendingPromptStore,
                 switcherHintStore = switcherHintStore,
                 recentSelectionStore = recentSelectionStore,
-                chatConnectionHub = chatConnectionHub,
-                gatewayRepository = gatewayRepository,
+                presence = presence,
                 launchableTargetRepository = launchableTargetRepository,
                 // `SavedStateHandle` is public API; lint's VisibleForTests check calls the
                 // constructor test-only here, so this one function suppresses it.

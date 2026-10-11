@@ -2,32 +2,147 @@ package com.tamimarafat.ferngeist.acp.bridge.connection
 
 import com.agentclientprotocol.annotations.UnstableApi
 import com.agentclientprotocol.model.AgentCapabilities
+import com.tamimarafat.ferngeist.core.model.GatewaySource
+import com.tamimarafat.ferngeist.core.model.LaunchableTarget
+import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
+import com.tamimarafat.ferngeist.gateway.GatewayRestartResponse
+import com.tamimarafat.ferngeist.gateway.resolveGatewayWebSocketUrl
 
-data class AcpConnectionConfig(
-    val scheme: String = "ws",
-    val host: String,
-    val webSocketUrl: String? = null,
-    val webSocketBearerToken: String? = null,
-    val preferredAuthMethodId: String? = null,
-    val gatewayRuntimeId: String? = null,
-    val gatewaySourceId: String? = null,
-    val serverDisplayName: String? = null,
-    val sessionId: String? = null,
-    val attachToken: String? = null,
-    val gatewayScheme: String? = null,
-    val gatewayHost: String? = null,
-    val gatewayCredential: String? = null,
-) {
-    val isResilientSession: Boolean get() = sessionId != null
+/**
+ * The transport config for one ACP connection, in exactly one of two shapes: a
+ * directly-reachable [Manual] server, or a gateway-provisioned runtime [Gateway].
+ * Gateway-ness used to be inferred from a null field, so every reader re-derived
+ * it; the type states it once.
+ */
+sealed interface AcpConnectionConfig {
+    /** Scheme and host of the gateway REST base (and of the endpoint itself, for [Manual]). */
+    val scheme: String
+    val host: String
+
+    /** Name to show for the target, or null when the caller has none to publish. */
+    val displayName: String?
+
+    /** Auth method to re-run after a reconnect; null leaves the agent's own default. */
+    val preferredAuthMethodId: String?
+
+    /** The WebSocket endpoint to dial. */
+    val endpoint: String
 
     /**
-     * True when this connection targets a gateway-backed agent (as opposed to a
-     * directly-reachable Manual server). Gateway agents are always launched in
-     * resilient mode, so a gateway connection is expected to carry a [sessionId];
-     * its absence means the gateway could not provision a session.
+     * A directly-reachable ACP server. Never a resilient session: there is no
+     * gateway runtime behind it to resume.
      */
-    val isGatewayConnection: Boolean get() = gatewayCredential != null
+    data class Manual(
+        override val scheme: String,
+        override val host: String,
+        override val preferredAuthMethodId: String?,
+        override val displayName: String?,
+    ) : AcpConnectionConfig {
+        override val endpoint: String get() = "$scheme://$host"
+    }
+
+    /**
+     * A gateway runtime handoff: the runtime's WebSocket endpoint plus the session
+     * the gateway provisioned for it. Every v2 handoff carries a session, so [resume]
+     * is always present; the attach URL is built from it.
+     */
+    data class Gateway(
+        override val endpoint: String,
+        val runtimeId: String,
+        val sourceId: String,
+        val gatewayCredential: String,
+        val resume: ResumeInfo,
+        override val scheme: String,
+        override val host: String,
+        override val preferredAuthMethodId: String?,
+        override val displayName: String?,
+    ) : AcpConnectionConfig
+
+    /**
+     * The gateway session a connection attaches to: the id the gateway minted plus
+     * the token that authorises the attach.
+     */
+    data class ResumeInfo(
+        val sessionId: String,
+        val attachToken: String,
+    )
+
+    companion object {
+        /**
+         * The transport config for a gateway runtime handoff: the runtime's
+         * WebSocket endpoint plus the session the gateway provisioned for it.
+         * This is the only place a connect handoff becomes a gateway connection.
+         *
+         * [displayName] is the name to show for the target, or null when the
+         * caller has none to publish.
+         */
+        fun fromGatewayHandoff(
+            gatewaySource: GatewaySource,
+            handoff: GatewayConnectResponse,
+            authMethodId: String?,
+            displayName: String?,
+        ): Gateway =
+            Gateway(
+                endpoint = resolveGatewayWebSocketUrl(gatewaySource, handoff),
+                runtimeId = handoff.runtimeId,
+                sourceId = gatewaySource.id,
+                gatewayCredential = gatewaySource.gatewayCredential,
+                resume = ResumeInfo(sessionId = handoff.sessionId, attachToken = handoff.attachToken),
+                scheme = gatewaySource.scheme,
+                host = gatewaySource.host,
+                preferredAuthMethodId = authMethodId,
+                displayName = displayName,
+            )
+
+        /**
+         * The transport config for a restarted gateway runtime: the runtime keeps the
+         * id the caller passed, so the attach URL is rebuilt from the source's
+         * scheme/host ([gatewaySource]) rather than the (dropped) connect handoff —
+         * the same `/v1/acp/{runtimeId}` endpoint [resolveGatewayWebSocketUrl] yields
+         * for a connect. [restart] carries only the new session and its attach token.
+         */
+        fun fromGatewayRestart(
+            gatewaySource: GatewaySource,
+            runtimeId: String,
+            restart: GatewayRestartResponse,
+            authMethodId: String?,
+            displayName: String?,
+        ): Gateway =
+            Gateway(
+                endpoint = gatewayAttachEndpoint(gatewaySource, runtimeId),
+                runtimeId = runtimeId,
+                sourceId = gatewaySource.id,
+                gatewayCredential = gatewaySource.gatewayCredential,
+                resume = ResumeInfo(sessionId = restart.sessionId, attachToken = restart.attachToken),
+                scheme = gatewaySource.scheme,
+                host = gatewaySource.host,
+                preferredAuthMethodId = authMethodId,
+                displayName = displayName,
+            )
+    }
 }
+
+/** The `/v1/acp/{runtimeId}` WebSocket endpoint on the gateway source, scheme preserved. */
+private fun gatewayAttachEndpoint(
+    gatewaySource: GatewaySource,
+    runtimeId: String,
+): String {
+    val socketScheme =
+        when (gatewaySource.scheme.lowercase()) {
+            "https", "wss" -> "wss"
+            else -> "ws"
+        }
+    return "$socketScheme://${gatewaySource.host}/v1/acp/$runtimeId"
+}
+
+/** The transport config for a directly-reachable manual ACP server. */
+fun LaunchableTarget.Manual.toConnectionConfig(): AcpConnectionConfig =
+    AcpConnectionConfig.Manual(
+        scheme = server.scheme,
+        host = server.host,
+        preferredAuthMethodId = server.preferredAuthMethodId,
+        displayName = name,
+    )
 
 sealed interface AcpConnectionState {
     data object Disconnected : AcpConnectionState
@@ -82,16 +197,6 @@ class AcpDisconnectedException :
     IllegalStateException(
         "Not connected to the ACP server",
     )
-
-/**
- * Raised when the agent refuses to attach a session because it still holds it —
- * another client is attached, or an earlier attach was never released. Only
- * releasing the session frees it (the session list's Disconnect), so the message
- * carries that instruction instead of the raw agent error.
- */
-class SessionAlreadyActiveException(
-    message: String,
-) : IllegalStateException(message)
 
 /**
  * True when the agent advertises `sessionCapabilities.resume`, i.e. it can

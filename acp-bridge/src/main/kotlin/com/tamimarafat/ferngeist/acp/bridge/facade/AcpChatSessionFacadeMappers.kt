@@ -16,6 +16,7 @@ import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionLoadState
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionSnapshot
 import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatCommand
 import com.tamimarafat.ferngeist.core.model.ChatConfigCategory
 import com.tamimarafat.ferngeist.core.model.ChatConfigChoice
@@ -24,9 +25,12 @@ import com.tamimarafat.ferngeist.core.model.ChatConfigOption
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.UsageState
+import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
+import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 import kotlinx.coroutines.TimeoutCancellationException
 import java.net.SocketTimeoutException
 
@@ -224,17 +228,23 @@ private fun Throwable.isInvalidParams(): Boolean =
 internal fun isSessionCancelUnsupported(error: Throwable): Boolean =
     (error as? JsonRpcException)?.code == JsonRpcErrorCode.METHOD_NOT_FOUND.code
 
-/**
- * Returns true when the error indicates the stream was destroyed (stale bridge).
- *
- * Reads raw messages across the cause chain rather than the formatted text, so the
- * agent's JSON-RPC `data` cannot inject the phrase. A phrase is still not evidence that
- * the bridge died — callers must pair this with a measured transport state before
- * acting on it; see `AcpChatSessionFacade.handleLoadFailure`.
- */
-internal fun isDestroyedBridgeStreamError(error: Throwable): Boolean =
-    generateSequence(error as Throwable?) { it.cause }.any { cause ->
-        val message = cause.message.orEmpty().lowercase()
-        message.contains("write after a stream was destroyed") ||
-            message.contains("stream was destroyed")
-    }
+// ---- Gateway working tree ----
+
+/** Gateway working-tree status in the chat-domain shape the feature layer holds. */
+internal fun GatewayGitStatus.toChatGitStatus(): ChatGitStatus =
+    ChatGitStatus(
+        branch = branch,
+        ahead = ahead,
+        behind = behind,
+        changed = changed.map { it.toChatChangedFile() },
+    )
+
+internal fun GatewayChangedFile.toChatChangedFile(): ChatChangedFile =
+    ChatChangedFile(
+        path = path,
+        status = status,
+        added = added,
+        removed = removed,
+        binary = binary,
+        isDir = isDir,
+    )

@@ -1,19 +1,16 @@
 package com.tamimarafat.ferngeist.acp.bridge.facade
 
 import com.agentclientprotocol.model.AgentCapabilities
-import com.agentclientprotocol.protocol.JsonRpcException
+import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthenticationRequiredException
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpInitializeResult
-import com.tamimarafat.ferngeist.acp.bridge.connection.SessionAlreadyActiveException
-import com.tamimarafat.ferngeist.acp.bridge.connection.SessionAttachRpc
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpManagerEvent
 import com.tamimarafat.ferngeist.acp.bridge.connection.formatAcpErrorMessage
-import com.tamimarafat.ferngeist.acp.bridge.connection.sessionAttachRpc
+import com.tamimarafat.ferngeist.acp.bridge.connection.toConnectionConfig
 import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionSurface
-import com.tamimarafat.ferngeist.acp.bridge.hub.GatewayEndpoint
-import com.tamimarafat.ferngeist.acp.bridge.hub.IdleListingSession
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigCategory
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionPort
@@ -22,11 +19,11 @@ import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatFileData
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatOperationError
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
-import com.tamimarafat.ferngeist.core.model.GatewaySource
 import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
@@ -35,16 +32,10 @@ import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.gateway.GatewayCredentialExpiredException
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
-import com.tamimarafat.ferngeist.gateway.GatewaySessionSummary
 import com.tamimarafat.ferngeist.gateway.launchGatewayRuntime
-import com.tamimarafat.ferngeist.gateway.refreshGatewaySourceIfNeeded
-import com.tamimarafat.ferngeist.gateway.resolveGatewayWebSocketUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -53,15 +44,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
 /**
  * ACP implementation of [ChatSessionFacade].
  *
- * Owns the full session lifecycle: connection, initialization, bridge
- * attachment, recovery, and user action dispatch. Maps all ACP types
- * to chat-domain equivalents before exposing them to the feature layer.
+ * Owns the session lifecycle: connection, initialization, bridge attachment,
+ * and user action dispatch. Session recovery belongs to the gateway and the
+ * transport: the connection layer reconnects (`resume` -> attach ->
+ * `session/load`) and the gateway restores the agent; this facade only starts a
+ * fresh connect when the gateway says the session is gone.
  *
  * ponytail: hub integration helpers live here until the facade splits;
  * splitting now would scatter five one-call methods.
@@ -69,7 +60,7 @@ import kotlinx.coroutines.withTimeout
 @Suppress("TooManyFunctions")
 class AcpChatSessionFacade(
     private val scope: CoroutineScope,
-    private val connectionManager: AcpConnectionManager,
+    private val connectionManager: AcpConnection,
     private val launchableTargetRepository: LaunchableTargetRepository,
     private val gatewaySourceRepository: GatewaySourceRepository,
     private val gatewayRepository: GatewayRepository,
@@ -78,7 +69,6 @@ class AcpChatSessionFacade(
     private val cwd: String,
     private val hub: ChatConnectionSurface,
     private val sessionLoadTimeoutMs: Long = 60_000L,
-    private val bridgeRecoveryRetryDelayMs: Long = 3_000L,
     initialCachedSnapshot: ChatSessionSnapshot? = null,
 ) : ChatSessionFacade {
     // ---- Connection state mirroring ----
@@ -137,16 +127,9 @@ class AcpChatSessionFacade(
     private var activeSessionId: String = initialSessionId
     private var sessionBridge: SessionPort? = null
     private var bridgeObserverJobs: List<Job> = emptyList()
-    private var bridgeRecoveryJob: Job? = null
     private var pendingModelSelectionId: String? = null
     private var currentAcpCapabilities: AgentCapabilities? = null
-    private var shouldRecoverBridge: Boolean = false
     private val bridgeOperationMutex = Mutex()
-
-    // Serializes gateway session lookups. Each spawn/attach path may refresh the
-    // shared gateway credential first, and concurrent refreshes can invalidate
-    // each other's proof (a replayed-proof rejection) on a cold multi-chat start.
-    private val gatewayLookupMutex = Mutex()
 
     // Times the steps of the open in flight; null outside one. Only touched under
     // bridgeOperationMutex, so it needs no further synchronization.
@@ -160,10 +143,7 @@ class AcpChatSessionFacade(
             sessionLoadTimeoutMs = sessionLoadTimeoutMs,
             currentCapabilitiesProvider = { currentAcpCapabilities ?: connectionManager.agentCapabilities.value },
             onAttachBridge = ::attachSessionBridge,
-            onLoadFailed = { _loadFailed.emit(it) },
             onSessionReady = { _sessionReady.emit(Unit) },
-            onOperationError = { _operationError.emit(it) },
-            onRecoveryDisabled = { shouldRecoverBridge = false },
         )
     }
 
@@ -185,20 +165,27 @@ class AcpChatSessionFacade(
                 _diagnostics.value = mapDiagnostics(diag)
             }
         }
+        scope.launch {
+            connectionManager.events.collect { event ->
+                if (event is AcpManagerEvent.SessionResumeRejected) reconnectAfterRejectedResume()
+            }
+        }
     }
 
     // ---- Public API ----
 
     /**
-     * Loads an existing session or falls back to creating a new one.
+     * Loads an existing session, or mints a new one for the create-on-arrival route.
      *
      * The load flow:
      * 1. Ensures the transport is connected and initialised.
-     * 2. Tries [AcpConnectionManager.getSession] for an already-open bridge.
-     * 3. If the agent advertises `session/load`, calls [AcpConnectionManager.loadSession]
+     * 2. Tries [AcpConnection.sessions] for an already-open bridge.
+     * 3. If the agent advertises `session/load`, calls
+     *    [com.tamimarafat.ferngeist.acp.bridge.connection.SessionGateway.attachSession]
      *    with a [sessionLoadTimeoutMs] deadline.
-     * 4. On timeout or destroyed-bridge error during load, creates a fresh session
-     *    so the user can keep chatting without re-entering the screen.
+     *
+     * A failure is reported as-is: the gateway owns session recovery, so there is
+     * no fresh-session fallback here.
      */
     override suspend fun loadSession() = loadSessionInternal(quiet = false)
 
@@ -221,9 +208,6 @@ class AcpChatSessionFacade(
     }
 
     private suspend fun loadSessionLocked(quiet: Boolean) {
-        shouldRecoverBridge = true
-        cancelBridgeRecovery()
-
         if (!ensureConnectedAndInitialized()) {
             _loadFailed.emit(connectionFailure("Disconnected. Reconnect to refresh this session."))
             return
@@ -234,7 +218,7 @@ class AcpChatSessionFacade(
         if (initialSessionId == NEW_SESSION_ARG) {
             // Create-on-arrival: the session list no longer pre-creates on its
             // browser transport; this chat's own connection mints the session.
-            val bridge = connectionManager.createSession(cwd)
+            val bridge = connectionManager.sessions.createSession(cwd)
             if (bridge == null) {
                 _loadFailed.emit(connectionFailure("Failed to create a new session."))
                 return
@@ -260,49 +244,79 @@ class AcpChatSessionFacade(
         bridgeOperationMutex.withLock {
             if (!connectionManager.isConnected) return@withLock false
             val bridge =
-                connectionManager.getSession(activeSessionId)
-                    ?: connectionManager.getSession(initialSessionId)
+                connectionManager.sessions.getSession(activeSessionId)
+                    ?: connectionManager.sessions.getSession(initialSessionId)
                     ?: return@withLock false
             // Hot cache hit: reuse hydrated bridge without reconnect or transcript wipe.
             attachSessionBridge(bridge)
             // Restore workspace link so diff/status works after reattach.
-            connectionManager
-                .currentConnectionConfig()
-                ?.takeIf { it.gatewayCredential != null && it.gatewayRuntimeId != null }
-                ?.let { config ->
-                    _gatewayWorkspaceConnection.value =
-                        GatewayWorkspaceConnection(
-                            runtimeId = config.gatewayRuntimeId!!,
-                            scheme = config.gatewayScheme ?: "http",
-                            host = config.gatewayHost ?: config.host,
-                            gatewayCredential = config.gatewayCredential!!,
-                        )
-                }
+            restoreGatewayWorkspaceConnection()
             publishCapabilities()
             true
         }
 
     /**
-     * Reacts to connection-state changes from the transport.
-     * On reconnect the facade tries to reattach the session bridge automatically;
-     * on disconnect/error the bridge is invalidated so state is not stale.
+     * No-op: the connection layer owns reconnect (`resume` -> attach ->
+     * `session/load`) and the gateway owns session recovery, so a connection-state
+     * change needs no bridge action here. The mapped [connectionState] flow already
+     * drives the UI, and the bridge a chat holds stays valid across a transport
+     * reset. Kept because [ChatSessionFacade] declares it.
      */
     override fun onConnectionStateChanged(connectionState: ChatConnectionState) {
-        when (connectionState) {
-            ChatConnectionState.Connected -> scheduleBridgeRecovery()
-            else -> invalidateActiveBridge()
-        }
+        // No-op: see the KDoc.
     }
 
+    /**
+     * Ensures the transport is connected so queued prompts can drain. A fresh
+     * connect is the only path: the gateway spawns or reuses the runtime and
+     * mints the session, and the session attach follows from [ensureSessionReadyForSend].
+     */
     override suspend fun reconnect() {
         bridgeOperationMutex.withLock {
-            shouldRecoverBridge = true
-            // Kick a connection attempt. On success the Connected state drives
-            // scheduleBridgeRecovery -> sessionReady -> offline-queue flush; on
-            // failure connect() has already armed the transport reconnect loop.
             ensureConnectedAndInitialized()
         }
     }
+
+    /**
+     * Git status of this chat's gateway working tree, or null when it has none: a manual
+     * agent, a gateway chat whose runtime is not up yet, or a create-on-arrival chat that
+     * has not minted its real session id (asking then would scope the read to whichever
+     * session the gateway saw last).
+     */
+    override suspend fun fetchGitStatus(): ChatGitStatus? {
+        val connection = _gatewayWorkspaceConnection.value ?: return null
+        val acpSessionId = liveSessionIdOrNull() ?: return null
+        return gatewayRepository
+            .fetchGitStatus(
+                scheme = connection.scheme,
+                host = connection.host,
+                gatewayCredential = connection.gatewayCredential,
+                runtimeId = connection.runtimeId,
+                acpSessionId = acpSessionId,
+            ).toChatGitStatus()
+    }
+
+    /**
+     * Unified diff for one file of this chat's gateway working tree, or null when the chat
+     * has no gateway workspace. Transport failures propagate to the caller.
+     */
+    override suspend fun fetchGitDiff(path: String): List<ToolCallContent.Diff>? {
+        val connection = _gatewayWorkspaceConnection.value ?: return null
+        return gatewayRepository.fetchGitDiff(
+            scheme = connection.scheme,
+            host = connection.host,
+            gatewayCredential = connection.gatewayCredential,
+            runtimeId = connection.runtimeId,
+            path = path,
+            acpSessionId = liveSessionIdOrNull(),
+        )
+    }
+
+    /**
+     * The real ACP session this chat shows, or null while a create-on-arrival chat still
+     * holds the `__new__` sentinel (see [NEW_SESSION_ARG]).
+     */
+    private fun liveSessionIdOrNull(): String? = activeSessionId.takeIf { it != NEW_SESSION_ARG }
 
     /**
      * Sends a user message through the active bridge.
@@ -335,7 +349,7 @@ class AcpChatSessionFacade(
 
         try {
             bridge.sendPrompt(text, images, files)
-        } catch (error: kotlinx.coroutines.CancellationException) {
+        } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             // Broad catch: a send can fail on any transport/protocol error and must
@@ -485,12 +499,9 @@ class AcpChatSessionFacade(
             }
     }
 
-    /** Tears down bridge observers, cancels recovery, and invalidates the active bridge. */
+    /** Tears down bridge observers and invalidates the active bridge. */
     override fun clear() {
-        cancelBridgeRecovery()
         invalidateActiveBridge()
-        clearBridgeObservers()
-        _sessionSnapshot.value = null
         _gatewayWorkspaceConnection.value = null
         if (_liveChatId.value == null) {
             hub.abandon(connectionManager)
@@ -520,18 +531,7 @@ class AcpChatSessionFacade(
         if (connectionManager.isConnected) {
             // Already connected — restore the gateway workspace connection from the live
             // config so the diff indicator works when resuming into an open session.
-            connectionManager
-                .currentConnectionConfig()
-                ?.takeIf { it.gatewayCredential != null && it.gatewayRuntimeId != null }
-                ?.let { config ->
-                    _gatewayWorkspaceConnection.value =
-                        GatewayWorkspaceConnection(
-                            runtimeId = config.gatewayRuntimeId!!,
-                            scheme = config.gatewayScheme ?: "http",
-                            host = config.gatewayHost ?: config.host,
-                            gatewayCredential = config.gatewayCredential!!,
-                        )
-                }
+            restoreGatewayWorkspaceConnection()
             publishCapabilities()
             registerConnectingWithHub()
             openTimer?.mark("alreadyConnected")
@@ -547,22 +547,39 @@ class AcpChatSessionFacade(
     }
 
     /**
+     * Points the diff/status indicator at the live gateway runtime, when the transport
+     * is on one. A manual connection has no workspace to read.
+     */
+    private fun restoreGatewayWorkspaceConnection() {
+        val gateway = connectionManager.currentConnectionConfig() as? AcpConnectionConfig.Gateway ?: return
+        _gatewayWorkspaceConnection.value =
+            GatewayWorkspaceConnection(
+                runtimeId = gateway.runtimeId,
+                scheme = gateway.scheme,
+                host = gateway.host,
+                gatewayCredential = gateway.gatewayCredential,
+            )
+    }
+
+    /**
      * Tracks this chat's connection in the hub under [sessionId]; assigns the returned
      * chat id to [_liveChatId]. Streaming is read through the manager, not a captured
      * bridge: it must stay true for a chat whose screen closed mid-turn, and it must
      * not be pinned to `false` by a re-registration while a turn runs.
      */
     private suspend fun registerHubEntry(sessionId: String) {
+        val gatewayConfig = connectionManager.currentConnectionConfig() as? AcpConnectionConfig.Gateway
         _liveChatId.value =
             hub.register(
                 serverId = serverId,
                 sessionId = sessionId,
-                gatewaySessionId = connectionManager.currentConnectionConfig()?.sessionId,
-                gatewaySourceId = connectionManager.currentConnectionConfig()?.gatewaySourceId.orEmpty(),
+                gatewaySessionId = gatewayConfig?.resume?.sessionId,
+                gatewaySourceId = gatewayConfig?.sourceId.orEmpty(),
                 agentId = resolvedAgentId.orEmpty(),
                 isConnected = { connectionManager.isConnected },
                 isStreaming = {
                     connectionManager
+                        .sessions
                         .getSession(activeSessionId)
                         ?.snapshot
                         ?.value
@@ -599,7 +616,6 @@ class AcpChatSessionFacade(
                 result.agentCapabilities
             }
             is AcpInitializeResult.AuthenticationRequired -> {
-                shouldRecoverBridge = false
                 _loadFailed.emit(
                     "ACP authentication is required for this server. " +
                         "Reconnect from the server list and choose an auth method.",
@@ -616,20 +632,13 @@ class AcpChatSessionFacade(
                 val config = buildGatewayConnectionConfig(server) ?: return null
                 connectionManager.connect(config)
             }
-            is LaunchableTarget.Manual ->
-                connectionManager.connect(
-                    AcpConnectionConfig(
-                        scheme = server.server.scheme,
-                        host = server.server.host,
-                        preferredAuthMethodId = server.server.preferredAuthMethodId,
-                        serverDisplayName = server.name,
-                    ),
-                )
+            is LaunchableTarget.Manual -> connectionManager.connect(server.toConnectionConfig())
         }
 
     /**
-     * Builds a connection config for a gateway-backed agent by starting a fresh
-     * runtime on the gateway and obtaining the WebSocket handoff.
+     * Builds a connection config for a gateway-backed agent by connecting it on
+     * the gateway: one call spawns (or reuses) the runtime and mints the session,
+     * so the app neither picks a runtime nor retries a launch.
      */
     private suspend fun buildGatewayConnectionConfig(target: LaunchableTarget.GatewayAgent): AcpConnectionConfig? {
         val gatewaySource = target.gatewaySource
@@ -637,46 +646,29 @@ class AcpChatSessionFacade(
             _loadFailed.emit("Gateway is not paired for ${target.name}.")
             return null
         }
-        // A second concurrent chat on the same agent needs its own runtime
-        // process: the gateway leases one runtime per gateway session, so a
-        // plain connect would resume the other chat's session. Reattaching to
-        // this chat's own recorded runtime is the exception — that is the same
-        // session, so it must be resumed rather than duplicated.
-        val plan = resolveLaunchPlan(target)?.also { openTimer?.mark("plan") } ?: return null
         return launchGatewayRuntime(
             gatewayRepository = gatewayRepository,
             gatewaySourceRepository = gatewaySourceRepository,
             gatewaySource = gatewaySource,
             agentId = target.binding.agentId,
             requireSupportedProtocol = true,
-            new = plan.new,
-            reuseRuntimeId = plan.reuseRuntimeId,
-        ).also { openTimer?.mark(if (plan.new) "launchNew" else "launch") }.fold(
+        ).also { openTimer?.mark("launch") }.fold(
             onSuccess = { result ->
                 resolvedAgentId = target.binding.agentId
                 val source = result.gatewaySource
                 val handoff = result.handoff
                 _gatewayWorkspaceConnection.value =
                     GatewayWorkspaceConnection(
-                        runtimeId = result.runtime.id,
+                        runtimeId = handoff.runtimeId,
                         scheme = source.scheme,
                         host = source.host,
                         gatewayCredential = source.gatewayCredential,
                     )
-                AcpConnectionConfig(
-                    scheme = source.scheme,
-                    host = source.host,
-                    webSocketUrl = resolveGatewayWebSocketUrl(source, handoff),
-                    webSocketBearerToken = handoff.bearerToken,
-                    preferredAuthMethodId = target.binding.preferredAuthMethodId,
-                    gatewayRuntimeId = result.runtime.id,
-                    gatewaySourceId = source.id,
-                    serverDisplayName = target.name,
-                    sessionId = handoff.sessionId,
-                    attachToken = handoff.attachToken,
-                    gatewayScheme = source.scheme,
-                    gatewayHost = source.host,
-                    gatewayCredential = source.gatewayCredential,
+                AcpConnectionConfig.fromGatewayHandoff(
+                    gatewaySource = source,
+                    handoff = handoff,
+                    authMethodId = target.binding.preferredAuthMethodId,
+                    displayName = target.name,
                 )
             },
             onFailure = { error ->
@@ -692,9 +684,9 @@ class AcpChatSessionFacade(
                     }
 
                     else ->
-                        _loadFailed.emit(
-                            "Failed to reconnect to ${target.name}: ${error.message ?: "unknown error"}",
-                        )
+                        // The gateway's own words: a 502 carries the agent's exit error,
+                        // which is the only thing that explains why it did not come up.
+                        _loadFailed.emit(error.message ?: "Failed to connect to ${target.name}.")
                 }
                 null
             },
@@ -702,81 +694,61 @@ class AcpChatSessionFacade(
     }
 
     /**
-     * Frees a device gateway-session slot, so the following start mints a new
-     * isolated runtime. Returns false when capacity could not be secured (error
-     * already emitted).
+     * The connection layer's reconnect found the gateway session gone (the gateway
+     * restarted, or the runtime failed): the gateway is the only recoverer, so the
+     * app's only path is a fresh connect — the gateway spawns a runtime and mints a
+     * new session. The dead session's transcript is not recoverable; the user is
+     * told through the existing operation-error channel and the new session carries on.
      */
-    private suspend fun reserveIsolatedSlot(gatewaySource: GatewaySource): Boolean =
-        runCatching {
-            hub.ensureGatewayCapacity(
-                GatewayEndpoint(gatewaySource.scheme, gatewaySource.host, gatewaySource.gatewayCredential),
-            )
-            true
-        }.getOrElse { error ->
-            _loadFailed.emit(error.message ?: "All gateway sessions are in use.")
-            false
-        }
-
-    /**
-     * Lists how the gateway currently sees this agent's sessions, or null when
-     * the lookup failed. The caller must not read null as "nobody holds one": it
-     * asks for an isolated runtime instead, per [gatedGatewayLookup]'s contract.
-     */
-    private suspend fun gatewaySessions(
-        gatewaySource: GatewaySource,
-        agentId: String,
-    ): List<GatewaySessionSummary>? =
-        runCatching {
-            gatedGatewayLookup(gatewaySource) { credential ->
-                gatewayRepository.listGatewaySessions(
-                    scheme = gatewaySource.scheme,
-                    host = gatewaySource.host,
-                    gatewayCredential = credential,
+    private suspend fun reconnectAfterRejectedResume() {
+        bridgeOperationMutex.withLock {
+            val target =
+                launchableTargetRepository.getTarget(serverId) as? LaunchableTarget.GatewayAgent ?: return
+            val result =
+                launchGatewayRuntime(
+                    gatewayRepository = gatewayRepository,
+                    gatewaySourceRepository = gatewaySourceRepository,
+                    gatewaySource = target.gatewaySource,
+                    agentId = target.binding.agentId,
+                    requireSupportedProtocol = true,
+                ).getOrElse { error ->
+                    // The gateway's own words: a 502 carries the agent's exit error.
+                    _loadFailed.emit(error.message ?: "Failed to connect to ${target.name}.")
+                    return
+                }
+            val source = result.gatewaySource
+            val handoff = result.handoff
+            resolvedAgentId = target.binding.agentId
+            _gatewayWorkspaceConnection.value =
+                GatewayWorkspaceConnection(
+                    runtimeId = handoff.runtimeId,
+                    scheme = source.scheme,
+                    host = source.host,
+                    gatewayCredential = source.gatewayCredential,
                 )
+            val config =
+                AcpConnectionConfig.fromGatewayHandoff(
+                    gatewaySource = source,
+                    handoff = handoff,
+                    authMethodId = target.binding.preferredAuthMethodId,
+                    displayName = target.name,
+                )
+            if (!connectionManager.connect(config) || initializeSession() == null) {
+                _loadFailed.emit("Failed to connect to ${target.name}.")
+                return
             }
-        }.getOrNull()
-            ?.filter { it.agentId == agentId }
-
-    /**
-     * Picks the runtime this chat attaches to, or null when an isolated runtime
-     * was needed but its slot could not be secured (error already emitted).
-     * The decision itself is [planGatewayLaunch].
-     */
-    private suspend fun resolveLaunchPlan(target: LaunchableTarget.GatewayAgent): GatewayLaunchPlan? {
-        val gatewaySource = target.gatewaySource
-        val ownSessionId =
-            if (initialSessionId == NEW_SESSION_ARG) {
-                null
-            } else {
-                hub.persistedGatewaySessionId(serverId, initialSessionId)
-            }
-        val plan =
-            planGatewayLaunch(
-                sessions = gatewaySessions(gatewaySource, target.binding.agentId),
-                ownSessionId = ownSessionId,
-                idleListing = hub.claimIdleListingSession(serverId),
-                liveInHub = hub.hasLiveGatewaySession(gatewaySource.id, target.binding.agentId),
+            publishCapabilities()
+            _operationError.emit(
+                ChatOperationError(
+                    message = "The previous session could not be resumed. Opened a new session.",
+                    stopStreaming = false,
+                ),
             )
-        if (plan.new && !reserveIsolatedSlot(gatewaySource)) return null
-        return plan
-    }
-
-    /**
-     * Runs a gateway read under the shared lookup gate, folding an expired
-     * credential into a null result so the caller falls back to a fresh spawn
-     * instead of failing the whole connect.
-     */
-    private suspend fun <T> gatedGatewayLookup(
-        gatewaySource: GatewaySource,
-        block: suspend (String) -> T,
-    ): T? =
-        gatewayLookupMutex.withLock {
-            val credential =
-                withContext(Dispatchers.IO) {
-                    refreshGatewaySourceIfNeeded(gatewaySource, gatewayRepository, gatewaySourceRepository)
-                }.gatewayCredential
-            if (credential.isBlank()) null else block(credential)
+            // Attach to the session the gateway just minted, the same way a launch does.
+            val outcome = sessionLoadCoordinator.run(sessionId = handoff.sessionId)
+            if (outcome is SessionLoadOutcome.Failed) _loadFailed.emit(outcome.message)
         }
+    }
 
     private suspend fun attachSessionBridge(bridge: SessionPort) {
         activeSessionId = bridge.sessionId
@@ -786,8 +758,6 @@ class AcpChatSessionFacade(
         snapshotChatId = "$serverId/${bridge.sessionId}"
         sessionBridge = bridge
         pendingModelSelectionId = null
-        shouldRecoverBridge = true
-        cancelBridgeRecovery()
         observeSessionBridge(bridge)
         registerWithHub(bridge)
     }
@@ -839,7 +809,7 @@ class AcpChatSessionFacade(
         sessionBridge?.let { return it }
         if (!ensureConnectedAndInitialized()) return null
 
-        connectionManager.getSession(activeSessionId)?.let { existing ->
+        connectionManager.sessions.getSession(activeSessionId)?.let { existing ->
             attachSessionBridge(existing)
             _sessionReady.emit(Unit)
             return existing
@@ -847,7 +817,7 @@ class AcpChatSessionFacade(
 
         val created =
             try {
-                connectionManager.createSession(cwd)
+                connectionManager.sessions.createSession(cwd)
             } catch (_: AcpAuthenticationRequiredException) {
                 _loadFailed.emit(
                     "ACP authentication is required for this server. " +
@@ -861,62 +831,6 @@ class AcpChatSessionFacade(
         }
     }
 
-    /**
-     * Launches a background coroutine that retries bridge recovery until
-     * a session becomes available or the bridge is removed.
-     */
-    private fun scheduleBridgeRecovery() {
-        if (!shouldRecoverBridge || sessionBridge != null || bridgeRecoveryJob != null) return
-
-        bridgeRecoveryJob =
-            scope.launch {
-                try {
-                    while (shouldRecoverBridge && sessionBridge == null) {
-                        if (attemptBridgeRecovery()) break
-                    }
-                } finally {
-                    bridgeRecoveryJob = null
-                }
-            }
-    }
-
-    /**
-     * Attempts one bridge-recovery cycle.
-     * @return true if recovery succeeded (or should stop), false to retry.
-     */
-    private suspend fun attemptBridgeRecovery(): Boolean {
-        if (!connectionManager.isConnected) return true
-
-        val recovered =
-            bridgeOperationMutex.withLock {
-                // This job can pass scheduleBridgeRecovery's gate while the initial
-                // load is still running, then block here until that load's
-                // capability/auth gate flips shouldRecoverBridge false. Recovering
-                // anyway would createSession — farming one junk session per screen
-                // open on agents without session/load — so re-check after acquiring
-                // the lock, next to the action the flag guards.
-                if (!shouldRecoverBridge) {
-                    null
-                } else {
-                    sessionBridge ?: recoverSessionBridge()
-                }
-            }
-        if (recovered != null) {
-            _sessionReady.emit(Unit)
-            return true
-        }
-        if (!shouldRecoverBridge) return true // gave up while waiting on the lock
-
-        delay(bridgeRecoveryRetryDelayMs)
-        return false
-    }
-
-    /** Cancels any active bridge recovery coroutine. */
-    private fun cancelBridgeRecovery() {
-        bridgeRecoveryJob?.cancel()
-        bridgeRecoveryJob = null
-    }
-
     /** Clears the bridge reference, pending selection, and all observers. */
     private fun invalidateActiveBridge() {
         sessionBridge = null
@@ -925,75 +839,6 @@ class AcpChatSessionFacade(
         clearBridgeObservers()
     }
 
-    /**
-     * Tries to re-attach an existing session through whichever session RPC the
-     * agent advertises — `session/load` (history replay) or `session/resume`
-     * (reattach without replay) — and only creates a new one when it advertises
-     * neither. Returns null on failure.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun recoverSessionBridge(): SessionPort? {
-        connectionManager.getSession(activeSessionId)?.let { existing ->
-            attachSessionBridge(existing)
-            return existing
-        }
-
-        publishCapabilities()
-        val rpc = (currentAcpCapabilities ?: connectionManager.agentCapabilities.value).sessionAttachRpc()
-        if (rpc == null) {
-            // The agent can reopen no session at all. Deliberate: a screen whose
-            // bridge died must still end up with a usable session.
-            val created =
-                runCatching { connectionManager.createSession(cwd) }.getOrNull() ?: return null
-            attachSessionBridge(created)
-            return created
-        }
-
-        return attachExistingSession(rpc)?.also { attachSessionBridge(it) }
-    }
-
-    /**
-     * Runs the attach RPC the agent advertises and folds every failure into a null
-     * result (cancellation rethrows). A refusal the agent itself answered — auth
-     * challenge or JSON-RPC error — also stops background recovery: only the user
-     * can clear those, so retrying would just replay the failure every delay. The
-     * screen's Retry action re-arms recovery.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun attachExistingSession(rpc: SessionAttachRpc): SessionPort? =
-        try {
-            withTimeout(sessionLoadTimeoutMs) {
-                connectionManager.attachSession(rpc, activeSessionId, cwd)
-            }
-        } catch (_: AcpAuthenticationRequiredException) {
-            shouldRecoverBridge = false
-            _loadFailed.emit(
-                "ACP authentication is required for this server. " +
-                    "Return to the session list and authenticate first.",
-            )
-            null
-        } catch (_: TimeoutCancellationException) {
-            null
-        } catch (error: CancellationException) {
-            // The chat screen was closed mid-attach: cancellation must not be
-            // reported as a load failure (and must not fabricate a session).
-            throw error
-        } catch (_: SessionAlreadyActiveException) {
-            // The agent still holds the session. Recovery keeps retrying and the
-            // harness often frees it within a few seconds, so one toast per attempt
-            // is noise — and its advice (disconnect it) is wrong for a session that
-            // then attaches. The user-triggered open still reports it through the
-            // load outcome, and the attach failure is recorded in diagnostics.
-            null
-        } catch (error: JsonRpcException) {
-            shouldRecoverBridge = false
-            _loadFailed.emit(formatAcpErrorMessage(error, rpc.failureLabel))
-            null
-        } catch (error: Exception) {
-            _loadFailed.emit(formatAcpErrorMessage(error, rpc.failureLabel))
-            null
-        }
-
     /** Publishes the current agent capabilities from the connection manager. */
     private fun publishCapabilities() {
         connectionManager.agentCapabilities.value?.let { caps ->
@@ -1001,218 +846,4 @@ class AcpChatSessionFacade(
             _agentCapabilities.value = mapCapabilities(caps)
         }
     }
-}
-
-/**
- * Coordinates the session-load lifecycle: reattaches an existing session, or
- * loads (history replay) / resumes (reattach only) an existing one within a
- * timeout according to the agent's advertised capabilities, mapping
- * auth/timeout/bridge failures to [SessionLoadOutcome] results the facade can
- * surface.
- */
-internal sealed interface SessionLoadOutcome {
-    data object Attached : SessionLoadOutcome
-
-    data class Failed(
-        val message: String,
-    ) : SessionLoadOutcome
-}
-
-internal class SessionLoadCoordinator(
-    private val connectionManager: AcpConnectionManager,
-    private val initialSessionId: String,
-    private val cwd: String,
-    private val sessionLoadTimeoutMs: Long,
-    private val currentCapabilitiesProvider: () -> AgentCapabilities?,
-    private val onAttachBridge: suspend (SessionPort) -> Unit,
-    private val onLoadFailed: suspend (String) -> Unit,
-    private val onSessionReady: suspend () -> Unit,
-    private val onOperationError: suspend (ChatOperationError) -> Unit,
-    /** Stops the facade's background reattach attempts: capability gate, or an attach the agent rejected. */
-    private val onRecoveryDisabled: () -> Unit,
-) {
-    /**
-     * Quiet revalidation: same load, but [announceReady] controls whether
-     * [onSessionReady] fires on the fast-path so the UI keeps the already-painted
-     * cached snapshot instead of flashing loading states. Live bridge snapshots
-     * still flow through observers regardless.
-     */
-    suspend fun run(announceReady: Boolean = true): SessionLoadOutcome {
-        connectionManager.getSession(initialSessionId)?.let { existing ->
-            onAttachBridge(existing)
-            if (announceReady) onSessionReady()
-            return SessionLoadOutcome.Attached
-        }
-
-        // `session/load` replays history, `session/resume` only reattaches. Agents
-        // that advertise neither have no way back into an existing session.
-        val rpc = currentCapabilitiesProvider().sessionAttachRpc()
-        if (rpc == null) {
-            onRecoveryDisabled()
-            return SessionLoadOutcome.Failed("This agent does not advertise session/load support.")
-        }
-
-        return loadWithTimeout(announceReady, rpc)
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun loadWithTimeout(
-        announceReady: Boolean,
-        rpc: SessionAttachRpc,
-    ): SessionLoadOutcome {
-        val bridge =
-            try {
-                withTimeout(sessionLoadTimeoutMs) {
-                    connectionManager.attachSession(rpc, initialSessionId, cwd)
-                }
-            } catch (_: AcpAuthenticationRequiredException) {
-                return SessionLoadOutcome.Failed(
-                    "ACP authentication is required for this server. " +
-                        "Return to the session list and authenticate first.",
-                )
-            } catch (_: TimeoutCancellationException) {
-                return SessionLoadOutcome.Failed("Session load timed out. Check server connection and retry.")
-            } catch (error: CancellationException) {
-                // Screen closed mid-load: never degrade cancellation into a
-                // load failure (or into the fresh-session fallback).
-                throw error
-            } catch (error: Exception) {
-                // Broad catch: session/load can fail on transport, auth, or SDK
-                // protocol errors; each is surfaced as a load failure instead of
-                // crashing the loading coroutine. Destroyed-bridge errors fall
-                // back to a fresh session so the user can keep chatting.
-                return handleLoadFailure(error, announceReady, rpc)
-            }
-        return if (bridge != null) {
-            onAttachBridge(bridge)
-            SessionLoadOutcome.Attached
-        } else {
-            SessionLoadOutcome.Failed("Could not load this session. Check connection and retry.")
-        }
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun handleLoadFailure(
-        error: Exception,
-        announceReady: Boolean = true,
-        rpc: SessionAttachRpc,
-    ): SessionLoadOutcome {
-        // Cancellation means the caller went away, not that the load failed:
-        // rethrow before any failure mapping so the createSession fallback
-        // can never mint a session for a closed screen.
-        if (error is CancellationException) throw error
-        if (!transportIsConnected() && isDestroyedBridgeStreamError(error)) {
-            // Two conditions, because the wording alone was never evidence: it let any
-            // error carrying that phrase mint a session — spawning an agent process for
-            // a gateway agent — while reporting a cause ("the bridge restarted") that
-            // nothing had observed. The transport state is the measured half.
-            val fallbackBridge =
-                runCatching { connectionManager.createSession(cwd) }.getOrNull()
-            if (fallbackBridge != null) {
-                onAttachBridge(fallbackBridge)
-                if (announceReady) onSessionReady()
-                onOperationError(
-                    ChatOperationError(
-                        message =
-                            "The connection to the ACP bridge was lost while loading this session. " +
-                                "Opened a new live session.",
-                        stopStreaming = false,
-                    ),
-                )
-                return SessionLoadOutcome.Attached
-            }
-        }
-        if (error is JsonRpcException) {
-            // The agent answered the attach with an error (rejected session, agent
-            // misconfiguration). Retrying the same RPC every few seconds only
-            // replays the same failure onto the error screen, so background
-            // recovery stops here; the screen's Retry action re-arms it.
-            onRecoveryDisabled()
-        }
-        return SessionLoadOutcome.Failed(formatAcpErrorMessage(error, rpc.failureLabel))
-    }
-
-    /** True when the transport reports a live connection; the measured half of a recovery decision. */
-    private fun transportIsConnected(): Boolean =
-        connectionManager.connectionState.value is AcpConnectionState.Connected
-}
-
-/**
- * Wall-clock of each step of one chat open, logged as a single line under the
- * `FerngeistLoad` tag and to the diagnostics RPC log, next to the per-attach timing. `plan` is the gateway
- * session listing; `launch` is the protocol probe, agent start (`launchNew` when
- * it spawned a process) and runtime connect; `load` is session/load.
- */
-private class OpenStepTimer {
-    private val startNanos = System.nanoTime()
-    private var markNanos = startNanos
-    private val steps = StringBuilder()
-
-    fun mark(step: String) {
-        val now = System.nanoTime()
-        steps.append("$step=${(now - markNanos) / NANOS_PER_MS}ms ")
-        markNanos = now
-    }
-
-    /** Logs the open and returns its summary for the diagnostics log. */
-    fun report(sessionId: String): String {
-        val total = (System.nanoTime() - startNanos) / NANOS_PER_MS
-        val summary = "${steps}total=${total}ms"
-        runCatching { android.util.Log.i("FerngeistLoad", "open sid=$sessionId $summary") }
-        return summary
-    }
-
-    private companion object {
-        const val NANOS_PER_MS = 1_000_000L
-    }
-}
-
-/** The runtime plan for a gateway attach: an explicit reuse target, or a fresh spawn. */
-internal data class GatewayLaunchPlan(
-    val new: Boolean,
-    val reuseRuntimeId: String?,
-)
-
-/**
- * Decides which runtime a chat attaches to.
- *
- * A gateway runtime leases exactly one session, so two chats that share a runtime
- * both end up resuming one session and fight over it — the chat screen never
- * populates. In-memory hub state cannot settle this (it is empty after process
- * death), so the gateway's own session list ([sessions], this agent's only) is the
- * authority.
- *
- * - This chat's own session is still live: attach to its runtime rather than minting
- *   a second process for the same conversation (reconnect after an app kill).
- * - Someone else on this agent holds a live session ([liveInHub] also covers one the
- *   listing has not caught up with): a plain start hands back that runtime, so this
- *   chat needs its own process.
- * - A failed lookup ([sessions] == null) takes the same path as "someone else holds
- *   one". Read as "nobody holds it", it asked for a plain reuse start, and the
- *   gateway's reuse heuristic then handed back whichever session its chosen runtime
- *   held — possibly another chat's.
- * - The session list's own, now disconnected, listing session ([idleListing]) is not
- *   another holder: attaching to its runtime reuses an agent that is already running
- *   and initialized instead of spawning a second process and paying its cold start.
- */
-internal fun planGatewayLaunch(
-    sessions: List<GatewaySessionSummary>?,
-    ownSessionId: String?,
-    idleListing: IdleListingSession?,
-    liveInHub: Boolean,
-): GatewayLaunchPlan {
-    sessions
-        ?.firstOrNull { it.sessionId == ownSessionId && it.isResumable }
-        ?.let { return GatewayLaunchPlan(new = false, reuseRuntimeId = it.runtimeId) }
-    if (sessions == null || liveInHub) return GatewayLaunchPlan(new = true, reuseRuntimeId = null)
-    val spare =
-        idleListing?.takeIf { idle ->
-            sessions.any { it.sessionId == idle.gatewaySessionId && it.isResumable }
-        }
-    val heldByAnother =
-        sessions.any {
-            it.isResumable && it.sessionId != ownSessionId && it.sessionId != spare?.gatewaySessionId
-        }
-    if (heldByAnother) return GatewayLaunchPlan(new = true, reuseRuntimeId = null)
-    return GatewayLaunchPlan(new = false, reuseRuntimeId = spare?.runtimeId)
 }

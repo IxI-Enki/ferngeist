@@ -26,9 +26,9 @@ import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.feature.chat.R
-import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -91,7 +91,7 @@ private fun ToolCallDisplay.editedPaths(): List<String> =
  * Git's counts for [path], from the working tree as it is now. [path] is usually absolute and git's
  * relative to the repo root, so a suffix on a path boundary is a match.
  */
-internal fun List<GatewayChangedFile>.statsFor(path: String): DiffStats? {
+internal fun List<ChatChangedFile>.statsFor(path: String): DiffStats? {
     val normalized = path.replace('\\', '/')
     return firstOrNull { !it.binary && (normalized == it.path || normalized.endsWith("/" + it.path)) }
         ?.let { DiffStats(additions = it.added, deletions = it.removed) }
@@ -101,7 +101,7 @@ internal fun List<GatewayChangedFile>.statsFor(path: String): DiffStats? {
  * The working tree's changed files, provided to the newest turn only: git reports the tree as it is
  * now, so counts it gave an older turn would include everything since.
  */
-internal val LocalWorkingTreeChanges = compositionLocalOf { emptyList<GatewayChangedFile>() }
+internal val LocalWorkingTreeChanges = compositionLocalOf { emptyList<ChatChangedFile>() }
 
 private fun JsonObject.firstString(keys: List<String>): String? =
     keys.firstNotNullOfOrNull { key -> (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content }

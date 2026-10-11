@@ -3,6 +3,11 @@ package com.tamimarafat.ferngeist.gateway
 import com.tamimarafat.ferngeist.core.model.GatewaySource
 import java.net.URI
 
+/**
+ * The WebSocket URL to attach to: the gateway's advertised URL, or — when it advertises
+ * a host the device cannot route to (0.0.0.0, loopback) — the same URL with the gateway
+ * source's host substituted in.
+ */
 fun resolveGatewayWebSocketUrl(
     gatewaySource: GatewaySource,
     handoff: GatewayConnectResponse,
@@ -18,7 +23,10 @@ fun resolveGatewayWebSocketUrl(
             "https", "wss" -> "wss"
             else -> "ws"
         }
-    return "$socketScheme://${gatewaySource.host}${handoff.webSocketPath}"
+    val advertised = runCatching { URI(advertisedUrl) }.getOrNull()
+    val path = advertised?.rawPath.orEmpty()
+    val query = advertised?.rawQuery?.let { "?$it" }.orEmpty()
+    return "$socketScheme://${gatewaySource.host}$path$query"
 }
 
 fun isUnroutableGatewayHost(host: String): Boolean =

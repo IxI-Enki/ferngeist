@@ -34,7 +34,7 @@ import javax.inject.Inject
  * than anyConnected keeps the service alive through Connecting windows, so a
  * transient reconnect never tears the notification down between attempts. The
  * service no longer owns a private
- * [com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager]
+ * [com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection]
  * (per-instance managers are owned by their screens); it observes the hub, whose
  * [ChatConnectionHub.tapTarget] also supplies the notification's deep-link target.
  *

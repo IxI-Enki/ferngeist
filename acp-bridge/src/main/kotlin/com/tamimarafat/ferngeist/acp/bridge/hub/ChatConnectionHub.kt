@@ -1,35 +1,21 @@
 package com.tamimarafat.ferngeist.acp.bridge.hub
 
 import com.agentclientprotocol.annotations.UnstableApi
-import com.agentclientprotocol.model.AgentCapabilities
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthMethodInfo
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthenticateResult
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthenticationRequiredException
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
 import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpInitializeResult
-import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectionDiagnostics
 import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectivityObserver
-import com.tamimarafat.ferngeist.acp.bridge.connection.buildGatewayLaunchContext
-import com.tamimarafat.ferngeist.acp.bridge.connection.formatAcpErrorMessage
+import com.tamimarafat.ferngeist.acp.bridge.connection.GatewaySessionResumeRejectedException
 import com.tamimarafat.ferngeist.core.model.ChatPresence
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
-import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
-import com.tamimarafat.ferngeist.core.model.SessionSummary
-import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
-import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.GatewayRequestException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -39,11 +25,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CopyOnWriteArrayList
 
-/** Gateway endpoint triple needed for session-scoped REST calls (list/close). */
+/** Gateway endpoint triple needed for session-scoped REST calls (close, capacity). */
 data class GatewayEndpoint(
     val scheme: String,
     val host: String,
@@ -51,20 +35,35 @@ data class GatewayEndpoint(
 )
 
 /**
+ * The gateway no longer knows the session it is asked to resume: its own restart
+ * dropped it, or the runtime failed. A fresh connect is the only way forward.
+ */
+private const val GATEWAY_SESSION_GONE_STATUS = 400
+
+/**
  * The gateway no longer knows the session id it is asked to delete — the
  * recorded lease pointer is stale (restart/reap) and safe to drop.
  */
 private const val GATEWAY_NOT_FOUND_STATUS = 404
 
-/** Bounds the lease-reconciliation list call so a slow gateway cannot stall a refresh. */
-private const val RECONCILE_TIMEOUT_MS = 10_000L
+/**
+ * [ChatConnectionHub] tuning: how many chats stay hot, how many gateway sessions
+ * this device may lease, the snapshot cache bound, and the clock the entry table
+ * ranks focus with.
+ */
+data class HubLimits(
+    val maxHotConnections: Int = 3,
+    val maxGatewaySessionsPerDevice: Int = 5,
+    val clock: () -> Long = System::currentTimeMillis,
+    val maxSnapshotCacheSize: Int = 20,
+)
 
 /**
  * Single owner of every ACP manager lifetime *and* chat presence in the process.
  *
  * Chat managers are created via [acquireChatManager] (tracked as pending until
  * [register] promotes them into a hot entry) and torn down only here — evict,
- * explicit close, and abandon all call the manager's single [AcpConnectionManager.release]
+ * explicit close, and abandon all call the manager's single [AcpConnection.release]
  * (disconnect-then-close, paired inside the manager), so callers can never
  * half-release a transport. Browser (listing) managers are created via
  * [createBrowserManager] and auto-released with their owner scope.
@@ -84,6 +83,11 @@ private const val RECONCILE_TIMEOUT_MS = 10_000L
  * connection. Registrations are rare, so the aggregate recombines on a revision
  * bump via [flatMapLatest], discarding the previous combination each time.
  *
+ * Session listing, listing auth, close/delete and gateway-lease reconcile live in
+ * [com.tamimarafat.ferngeist.acp.bridge.catalog.SessionCatalog], which reaches in
+ * here only for transports ([createBrowserManager]), presence and tracked-chat
+ * teardown ([close]) — the hub owns pooling and presence, nothing else.
+ *
  * Carries more functions than detekt's TooManyFunctions budget: the presence
  * surface is deliberately many small single-purpose operations so callers get
  * role-shaped entry points (screen-open, pooled tap target, aggregates), and
@@ -92,16 +96,11 @@ private const val RECONCILE_TIMEOUT_MS = 10_000L
 @OptIn(ExperimentalCoroutinesApi::class)
 @Suppress("TooManyFunctions")
 class ChatConnectionHub(
-    private val gatewayRepository: GatewayRepository?,
+    private val gatewayRepository: GatewayRepository,
     private val scope: CoroutineScope,
-    private val connectivityObserver: ConnectivityObserver? = null,
-    private val maxHotConnections: Int = 3,
-    private val maxGatewaySessionsPerDevice: Int = 5,
-    private val clock: () -> Long = System::currentTimeMillis,
-    private val maxSnapshotCacheSize: Int = 20,
-    private val sessionRepository: SessionRepository? = null,
-    private val launchableTargetRepository: LaunchableTargetRepository? = null,
-    private val gatewaySourceRepository: GatewaySourceRepository? = null,
+    private val connectivityObserver: ConnectivityObserver,
+    private val sessionRepository: SessionRepository,
+    private val limits: HubLimits = HubLimits(),
 ) : ChatConnectionSurface {
     private data class Entry(
         val chatId: String,
@@ -112,7 +111,7 @@ class ChatConnectionHub(
         val agentId: String,
         val isConnected: () -> Boolean,
         val isStreaming: () -> Boolean,
-        val manager: AcpConnectionManager?,
+        val manager: AcpConnection?,
         var lastFocusedMs: Long,
         // Open screens, counted rather than flagged: a fast A→B→A switch builds the new
         // A screen before the old one's teardown closes it, and a flag would end up closed.
@@ -124,35 +123,39 @@ class ChatConnectionHub(
 
     private val entries = LinkedHashMap<String, Entry>()
     private val snapshots = LinkedHashMap<String, ChatSessionSnapshot>()
-    private val pendingManagers = CopyOnWriteArrayList<AcpConnectionManager>()
-    private val browserManagers = CopyOnWriteArrayList<AcpConnectionManager>()
+    private val pendingManagers = CopyOnWriteArrayList<AcpConnection>()
+    private val browserManagers = CopyOnWriteArrayList<AcpConnection>()
     private val revision = MutableStateFlow(0L)
 
     /**
-     * Reusable browser (listing) transport per server, plus the transport that
-     * surfaced an outstanding listing auth challenge. Kept disconnected after
-     * each list; torn down by [releaseListing].
+     * Mints a fresh attachToken for a gateway session on the transport's behalf — the
+     * one gateway call a transport makes, so the managers take this instead of the
+     * repository. A resurrected session on reconnect needs a token minted now, not the
+     * one the handoff carried.
+     *
+     * Internal, not private: the 400 mapping is the one behaviour here worth a test.
      */
-    private data class ListingSession(
-        val serverId: String,
-        val browserTransport: AcpConnectionManager,
-        var authTransport: AcpConnectionManager? = null,
-        // The gateway session the browser transport last connected; see claimIdleListingSession.
-        var gatewaySession: IdleListingSession? = null,
-    ) {
-        fun rememberGatewaySession(config: AcpConnectionConfig) {
-            val gatewaySessionId = config.sessionId
-            val runtimeId = config.gatewayRuntimeId
-            gatewaySession =
-                if (gatewaySessionId != null && runtimeId != null) {
-                    IdleListingSession(gatewaySessionId, runtimeId)
-                } else {
-                    null
-                }
+    internal val resumeAttachToken: suspend (
+        gateway: AcpConnectionConfig.Gateway,
+        session: AcpConnectionConfig.ResumeInfo,
+    ) -> String = { gateway, session ->
+        try {
+            gatewayRepository
+                .resumeSession(
+                    scheme = gateway.scheme,
+                    host = gateway.host,
+                    gatewayCredential = gateway.gatewayCredential,
+                    sessionId = session.sessionId,
+                ).attachToken
+        } catch (error: GatewayRequestException) {
+            // 400 means the gateway no longer knows the session (its own restart, or a
+            // runtime that failed): no amount of retrying brings it back, so the
+            // transport must stop reconnecting and the chat must start a fresh connect.
+            // Every other status stays the transport's own failure.
+            if (error.statusCode != GATEWAY_SESSION_GONE_STATUS) throw error
+            throw GatewaySessionResumeRejectedException(error.message, error)
         }
     }
-
-    private val listingSessions = LinkedHashMap<String, ListingSession>()
 
     // Presence is deliberately in-memory, like the focus-ordered store this hub supersedes.
     // ponytail: a Room-backed or event-sourced presence table would replay
@@ -234,8 +237,8 @@ class ChatConnectionHub(
      * promotes it into a hot entry. A spawn that fails before attach stays
      * tracked (visible in the aggregates) until [abandon] releases it.
      */
-    override fun acquireChatManager(): AcpConnectionManager =
-        AcpConnectionManager(requireObserver(), gatewayRepository, scope).also { manager ->
+    override fun acquireChatManager(): AcpConnection =
+        AcpConnection(connectivityObserver, resumeAttachToken, scope).also { manager ->
             pendingManagers.addIfAbsent(manager)
             revision.value += 1
         }
@@ -244,7 +247,7 @@ class ChatConnectionHub(
      * Releases an [acquireChatManager] manager that never registered (failed
      * spawn, cleared screen). No-op for managers already promoted into entries.
      */
-    override fun abandon(manager: AcpConnectionManager) {
+    override fun abandon(manager: AcpConnection) {
         if (pendingManagers.remove(manager)) {
             revision.value += 1
             manager.release()
@@ -255,8 +258,8 @@ class ChatConnectionHub(
      * Creates a browser (listing) manager owned by [ownerScope]: untracked and
      * torn down when the scope completes.
      */
-    fun createBrowserManager(ownerScope: CoroutineScope): AcpConnectionManager =
-        AcpConnectionManager(requireObserver(), gatewayRepository, ownerScope).also { manager ->
+    fun createBrowserManager(ownerScope: CoroutineScope): AcpConnection =
+        AcpConnection(connectivityObserver, resumeAttachToken, ownerScope).also { manager ->
             browserManagers.addIfAbsent(manager)
             revision.value += 1
             ownerScope.coroutineContext[Job]?.invokeOnCompletion {
@@ -299,7 +302,7 @@ class ChatConnectionHub(
         agentId: String,
         isConnected: () -> Boolean,
         isStreaming: () -> Boolean,
-        manager: AcpConnectionManager?,
+        manager: AcpConnection?,
     ): String {
         val chatId = chatIdFor(serverId, sessionId)
         if (manager != null) {
@@ -318,7 +321,7 @@ class ChatConnectionHub(
             republish()
             return chatId
         }
-        while (entries.size >= maxHotConnections) {
+        while (entries.size >= limits.maxHotConnections) {
             val victim =
                 entries.values
                     .filter { !it.isStreaming() && !it.screenOpen }
@@ -328,7 +331,7 @@ class ChatConnectionHub(
                     // fail and each extra entry leaks a transport, so evict the least-recently-focused
                     // one (its turn is abandoned with it).
                     ?: entries.values
-                        .takeIf { entries.size >= maxGatewaySessionsPerDevice }
+                        .takeIf { entries.size >= limits.maxGatewaySessionsPerDevice }
                         ?.minByOrNull { it.lastFocusedMs }
                     ?: break
             removeAndEvict(victim.chatId)
@@ -344,7 +347,7 @@ class ChatConnectionHub(
                 isConnected = isConnected,
                 isStreaming = isStreaming,
                 manager = manager,
-                lastFocusedMs = clock(),
+                lastFocusedMs = limits.clock(),
                 openScreens = 0,
                 cwd = "",
             )
@@ -353,7 +356,7 @@ class ChatConnectionHub(
     }
 
     /** The live transport for a tracked chat, or null when untracked/cold. */
-    override fun managerFor(chatId: String): AcpConnectionManager? = entries[chatId]?.manager
+    override fun managerFor(chatId: String): AcpConnection? = entries[chatId]?.manager
 
     /** Gateway session id of the tracked chat entry, or null when untracked. */
     fun gatewaySessionIdFor(chatId: String): String? = entries[chatId]?.gatewaySessionId
@@ -367,7 +370,7 @@ class ChatConnectionHub(
         snapshot: ChatSessionSnapshot,
     ) {
         snapshots.remove(chatId)
-        while (snapshots.size >= maxSnapshotCacheSize) {
+        while (snapshots.size >= limits.maxSnapshotCacheSize) {
             snapshots.remove(snapshots.keys.first())
         }
         snapshots[chatId] = snapshot
@@ -395,7 +398,7 @@ class ChatConnectionHub(
                 existing.copy(
                     openScreens = existing.openScreens + 1,
                     cwd = cwd,
-                    lastFocusedMs = clock(),
+                    lastFocusedMs = limits.clock(),
                 )
         } else {
             entries[chatId] =
@@ -409,7 +412,7 @@ class ChatConnectionHub(
                     isConnected = { false },
                     isStreaming = { false },
                     manager = null,
-                    lastFocusedMs = clock(),
+                    lastFocusedMs = limits.clock(),
                     openScreens = 1,
                     cwd = cwd,
                 )
@@ -452,28 +455,20 @@ class ChatConnectionHub(
         sessionId: String,
     ): Boolean = entries[chatIdFor(serverId, sessionId)]?.isStreaming() == true
 
-    /** True when this agent on this source already holds a live (connected) gateway session. */
-    override fun claimIdleListingSession(serverId: String): IdleListingSession? {
-        val listing = listingSessions[serverId] ?: return null
-        if (listing.browserTransport.isConnected) return null
-        return listing.gatewaySession.also { listing.gatewaySession = null }
+    /**
+     * Drops a browser (listing) transport the catalog owns: untracked from the
+     * aggregates and released exactly once.
+     */
+    internal fun releaseBrowserTransport(transport: AcpConnection) {
+        if (browserManagers.remove(transport)) {
+            revision.value += 1
+        }
+        transport.release()
     }
 
-    override fun hasLiveGatewaySession(
-        gatewaySourceId: String,
-        agentId: String,
-    ): Boolean =
-        entries.values.any {
-            it.gatewaySourceId == gatewaySourceId && it.agentId == agentId && it.isConnected()
-        }
-
-    override suspend fun persistedGatewaySessionId(
-        serverId: String,
-        sessionId: String,
-    ): String? = sessionRepository?.getSession(serverId, sessionId)?.gatewaySessionId
-
-    /** All tracked gateway session ids — protected from capacity eviction. */
-    fun gatewaySessionIds(): Set<String> = entries.values.mapNotNullTo(mutableSetOf()) { it.gatewaySessionId }
+    /** Any tracked chat manager for [serverId], connected or not; null when none is tracked. */
+    internal fun trackedManagerFor(serverId: String): AcpConnection? =
+        entries.values.firstOrNull { it.serverId == serverId }?.manager
 
     /**
      * Cold flow of connected session ids tracked on [serverId]. Combines each
@@ -485,7 +480,7 @@ class ChatConnectionHub(
         connectedManagerValues(filter = { it.serverId == serverId }, select = { it.sessionId })
 
     /** First same-server tracked entry whose manager is connected, or null. */
-    fun warmManagerFor(serverId: String): AcpConnectionManager? =
+    fun warmManagerFor(serverId: String): AcpConnection? =
         entries.values.firstOrNull { it.serverId == serverId && it.isConnectedNow() }?.manager
 
     /**
@@ -511,7 +506,7 @@ class ChatConnectionHub(
         val entry = entries.remove(chatId) ?: return
         try {
             val gatewaySessionId = entry.gatewaySessionId
-            if (endpoint != null && gatewaySessionId != null && gatewayRepository != null) {
+            if (endpoint != null && gatewaySessionId != null) {
                 gatewayRepository.closeSession(endpoint.scheme, endpoint.host, endpoint.credential, gatewaySessionId)
             }
         } finally {
@@ -520,50 +515,8 @@ class ChatConnectionHub(
         }
     }
 
-    /**
-     * Frees a device gateway-session slot before a spawn when the device cap
-     * is reached: closes the oldest live session not owned by a tracked chat.
-     * Throws when every session is spoken for.
-     *
-     * "Live" means the gateway would still have to count it:
-     * [GatewaySessionSummary.isResumable], i.e. `active` or `disconnected`.
-     * A `disconnected` session still holds its runtime lease, so it occupies a
-     * slot exactly like an `active` one — counting only `active` would let the
-     * helper report a free slot that the gateway does not have, and the spawn
-     * would come back session-less.
-     */
-    override suspend fun ensureGatewayCapacity(endpoint: GatewayEndpoint) {
-        val repository = gatewayRepository ?: throw IllegalStateException("No gateway repository available")
-        val live =
-            repository
-                .listGatewaySessions(endpoint.scheme, endpoint.host, endpoint.credential)
-                .filter { it.isResumable }
-        if (live.size < maxGatewaySessionsPerDevice) return
-        val protected = gatewaySessionIds()
-        // ponytail: createdAt is an ISO-8601 string, so lexicographic min = oldest; switch to parsed instants if the format ever varies
-        val victim =
-            live
-                .filter { it.sessionId !in protected }
-                .minByOrNull { it.createdAt.orEmpty() }
-                ?: throw IllegalStateException("All $maxGatewaySessionsPerDevice gateway sessions are busy")
-        repository.closeSession(endpoint.scheme, endpoint.host, endpoint.credential, victim.sessionId)
-    }
-
-    private fun requireObserver(): ConnectivityObserver =
-        connectivityObserver
-            ?: throw IllegalStateException("ChatConnectionHub needs a ConnectivityObserver to create managers")
-
-    private fun allManagers(): List<AcpConnectionManager> =
+    private fun allManagers(): List<AcpConnection> =
         entries.values.mapNotNullTo(mutableListOf()) { it.manager } + pendingManagers + browserManagers
-
-    /** Disconnects a listing browser transport (kept for reuse, not closed). */
-    private suspend fun hangUpListing(transport: AcpConnectionManager) {
-        if (transport.isConnected) {
-            // NonCancellable: called from CancellationException catches, where a
-            // plain IO hop would re-cancel before disconnect() runs.
-            withContext(NonCancellable + Dispatchers.IO) { transport.disconnect() }
-        }
-    }
 
     private suspend fun removeAndEvict(chatId: String) {
         val entry = entries.remove(chatId)
@@ -619,77 +572,6 @@ class ChatConnectionHub(
             gatewaySourceId = gatewaySourceId.ifEmpty { null },
         )
 
-    // ===== Session-list listing seam (architecture review candidate 3) =====
-    //
-    // Listing surfaces (session list, and any future sibling) call these and
-    // never hold an AcpConnectionManager: warm-chat borrow-else-own dispatch,
-    // capability gating, gateway REST close, and the Room session-table write
-    // all live here so socket-steal and warm-reuse bugs concentrate in the hub.
-
-    /** Outcome of a session-list listing attempt. */
-    sealed interface ListSessionsResult {
-        /**
-         * Listing succeeded through a warm chat transport ([viaWarmChat]) or
-         * the hub's own browser transport; Room has been replaced.
-         */
-        data class Listed(
-            val sessions: List<SessionSummary>,
-            val agentCapabilities: AgentCapabilities?,
-            val viaWarmChat: Boolean,
-        ) : ListSessionsResult
-
-        /**
-         * The transport advertised no session-list capability; nothing was
-         * listed or written. Screens keep the old list and show the
-         * "not supported" empty state.
-         */
-        data class Unsupported(
-            val agentCapabilities: AgentCapabilities?,
-        ) : ListSessionsResult
-
-        /** The transport raised an auth challenge; screens keep the auth UX. */
-        data class AuthRequired(
-            val agentName: String,
-            val authMethods: List<AcpAuthMethodInfo>,
-            val challengeMessage: String?,
-            val gatewayRuntimeId: String?,
-            val viaWarmChat: Boolean,
-        ) : ListSessionsResult
-
-        /** Listing failed for a non-auth reason (connect, launch). */
-        data class Failed(
-            val message: String,
-        ) : ListSessionsResult
-    }
-
-    /**
-     * Lists sessions for [serverId], replacing the Room session table on
-     * success. Borrows a warm chat transport when one holds the gateway slot;
-     * otherwise runs a transient browser transport (connect → list → hang up).
-     * Auth challenges surface as [ListSessionsResult.AuthRequired] with the
-     * raising transport retained for [authenticateListing] routing.
-     */
-    @OptIn(UnstableApi::class)
-    suspend fun listSessions(
-        serverId: String,
-        cwd: String?,
-    ): ListSessionsResult {
-        val target =
-            launchableTargetRepository?.getTarget(serverId)
-                ?: return ListSessionsResult.Failed(
-                    // Not necessarily "removed": a stored credential this device can no longer
-                    // decrypt surfaces here as a missing target too, so name only what is known.
-                    "This server is no longer available to the app. Add it again from the server list.",
-                )
-        val listing = listingSession(serverId)
-        val warm = warmManagerFor(serverId)
-        return if (warm != null) {
-            listViaWarmListing(listing, warm, serverId, cwd)
-        } else {
-            listViaBrowserListing(listing, target, serverId, cwd)
-        }
-    }
-
     /**
      * Reads one session's current title without writing the session table.
      *
@@ -719,199 +601,6 @@ class ChatConnectionHub(
     }
 
     /**
-     * Lists through [warm], a hub-tracked chat transport owning the gateway
-     * slot. Never disconnects it — the chat owns it.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    @OptIn(UnstableApi::class)
-    private suspend fun listViaWarmListing(
-        listing: ListingSession,
-        warm: AcpConnectionManager,
-        serverId: String,
-        cwd: String?,
-    ): ListSessionsResult {
-        val caps = warm.agentCapabilities.value
-        if (caps != null && caps.sessionCapabilities.list == null) {
-            return ListSessionsResult.Unsupported(caps)
-        }
-        return try {
-            val sessions = warm.listSessions(cwd = cwd)
-            writeListedSessions(serverId, sessions)
-            ListSessionsResult.Listed(sessions = sessions, agentCapabilities = caps, viaWarmChat = true)
-        } catch (error: AcpAuthenticationRequiredException) {
-            listing.authTransport = warm
-            authRequiredResult(warm, viaWarmChat = true, error = error)
-        } catch (error: Throwable) {
-            if (error is CancellationException) throw error
-            ListSessionsResult.Failed(formatAcpErrorMessage(error, "Failed to load sessions"))
-        }
-    }
-
-    /**
-     * Lists over the hub-owned browser transport, connecting on demand and
-     * hanging up afterwards. On auth the socket stays up for the follow-up
-     * authenticateListing call.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    @OptIn(UnstableApi::class)
-    private suspend fun listViaBrowserListing(
-        listing: ListingSession,
-        target: LaunchableTarget,
-        serverId: String,
-        cwd: String?,
-    ): ListSessionsResult {
-        val transport = listing.browserTransport
-        val capabilities = transport.agentCapabilities.value
-        if (capabilities != null && capabilities.sessionCapabilities.list == null) {
-            return ListSessionsResult.Unsupported(capabilities)
-        }
-        val connected =
-            if (transport.isConnected) {
-                true
-            } else {
-                val config =
-                    buildListingConfig(target).getOrElse { error ->
-                        return ListSessionsResult.Failed(
-                            formatAcpErrorMessage(error, "Failed to launch ${target.name}"),
-                        )
-                    }
-                listing.rememberGatewaySession(config)
-                try {
-                    withContext(Dispatchers.IO) {
-                        transport.connectAndInitializeWithoutReconnect(config)
-                    } != null
-                } catch (error: CancellationException) {
-                    // Cancellation can land after the socket opened but before the
-                    // connect+initialize returned, stranding a connected transport;
-                    // release it before rethrowing.
-                    hangUpListing(transport)
-                    throw error
-                }
-            }
-        if (!connected) {
-            return ListSessionsResult.Failed(
-                transport.diagnostics.value.recentErrors
-                    .lastOrNull { it.source == "connect" || it.source == "connection" }
-                    ?.message
-                    ?: "Failed to connect to ${target.name}. Check your connection and try again.",
-            )
-        }
-        val result =
-            try {
-                val sessions = transport.listSessions(cwd = cwd)
-                writeListedSessions(serverId, sessions)
-                ListSessionsResult.Listed(
-                    sessions = sessions,
-                    agentCapabilities = transport.agentCapabilities.value ?: capabilities,
-                    viaWarmChat = false,
-                )
-            } catch (error: AcpAuthenticationRequiredException) {
-                // Keep the browser transport connected: the follow-up
-                // authenticateListing runs on this same socket.
-                listing.authTransport = transport
-                authRequiredResult(transport, viaWarmChat = false, error = error)
-            } catch (error: Throwable) {
-                if (error is CancellationException) {
-                    // A cancelled listing still releases the browser transport: an
-                    // idle connected socket holds the gateway's single-attach slot.
-                    hangUpListing(transport)
-                    throw error
-                }
-                ListSessionsResult.Failed(formatAcpErrorMessage(error, "Failed to load sessions"))
-            }
-        if (result !is ListSessionsResult.AuthRequired) {
-            // Idle browser socket's reconnect would steal the gateway's
-            // single-attach slot from a chat opened next.
-            hangUpListing(transport)
-        }
-        return result
-    }
-
-    /**
-     * Routes an auth-method selection to the transport that raised the
-     * outstanding challenge for [serverId] (a warm chat transport when the
-     * listing borrowed one, else the hub's browser transport).
-     */
-    suspend fun authenticateListing(
-        serverId: String,
-        methodId: String,
-    ): AcpAuthenticateResult {
-        val transport =
-            listingSessions[serverId]?.authTransport
-                ?: warmManagerFor(serverId)
-                ?: return AcpAuthenticateResult.Failure(
-                    "Authentication transport is no longer available. Please try again.",
-                )
-        val result = transport.authenticate(methodId)
-        if (result is AcpAuthenticateResult.Success) {
-            listingSessions[serverId]?.let {
-                it.authTransport = null
-            }
-        }
-        return result
-    }
-
-    /**
-     * Disconnects the retained listing/auth transport for [serverId]. Part of
-     * the auth recovery flows (manual env-var reconnect, gateway env-var
-     * restart) that reconnect the raising transport with a new config.
-     */
-    suspend fun disconnectListingTransport(serverId: String) {
-        val transport =
-            listingSessions[serverId]?.authTransport
-                ?: listingSessions[serverId]?.browserTransport
-                ?: return
-        withContext(Dispatchers.IO) {
-            transport.disconnect()
-        }
-    }
-
-    /**
-     * Connects the retained listing/auth transport for [serverId] to [config]
-     * (a manual server reconnect or a freshly handed-off gateway runtime).
-     * Returns false when the connection attempt failed.
-     */
-    suspend fun connectListingTransport(
-        serverId: String,
-        config: AcpConnectionConfig,
-    ): Boolean {
-        val transport =
-            listingSessions[serverId]?.authTransport
-                ?: listingSessions[serverId]?.browserTransport
-                ?: return false
-        return withContext(Dispatchers.IO) {
-            transport.connect(config)
-        }
-    }
-
-    /** Runs the ACP initialize handshake on the retained listing transport. */
-    suspend fun initializeListingTransport(serverId: String): AcpInitializeResult? {
-        val transport =
-            listingSessions[serverId]?.authTransport
-                ?: listingSessions[serverId]?.browserTransport
-                ?: return null
-        return withContext(Dispatchers.IO) {
-            transport.initialize()
-        }
-    }
-
-    /**
-     * Drops the retained browser transport for [serverId] and clears any
-     * outstanding auth routing. Call from the listing screen's onCleared.
-     * Never tears down a warm chat transport (the chat owns it).
-     */
-    fun releaseListing(serverId: String) {
-        val listing = listingSessions.remove(serverId) ?: return
-        // Only the browser transport is hub-owned here — a warm chat transport
-        // recorded as authTransport belongs to its chat entry.
-        val transport = listing.browserTransport
-        if (browserManagers.remove(transport)) {
-            revision.value += 1
-        }
-        transport.release()
-    }
-
-    /**
      * Closes [sessionId] on [serverId]: hub-tracked chats go through the
      * tracked close (REST DELETE + transport teardown); cold Room-known
      * sessions close the gateway session directly. Clears the recorded
@@ -928,7 +617,6 @@ class ChatConnectionHub(
         endpoint: GatewayEndpoint,
     ): Boolean {
         val chatId = chatIdFor(serverId, sessionId)
-        val sessionRepository = sessionRepository
         if (isTracked(serverId, sessionId)) {
             try {
                 close(chatId, endpoint)
@@ -938,17 +626,16 @@ class ChatConnectionHub(
                 // local transport is released, so drop the stale pointer below
                 // instead of failing the disconnect the user just asked for.
             }
-            sessionRepository?.setGatewaySessionId(serverId, sessionId, null)
+            sessionRepository.setGatewaySessionId(serverId, sessionId, null)
             return true
         }
         val gatewaySessionId =
-            sessionRepository?.getSession(serverId, sessionId)?.gatewaySessionId
-        val repository = gatewayRepository
-        if (sessionRepository == null || repository == null || gatewaySessionId == null) {
+            sessionRepository.getSession(serverId, sessionId)?.gatewaySessionId
+        if (gatewaySessionId == null) {
             return false
         }
         try {
-            repository.closeSession(
+            gatewayRepository.closeSession(
                 scheme = endpoint.scheme,
                 host = endpoint.host,
                 gatewayCredential = endpoint.credential,
@@ -962,205 +649,6 @@ class ChatConnectionHub(
         sessionRepository.setGatewaySessionId(serverId, sessionId, null)
         return true
     }
-
-    /**
-     * Best-effort delete: ask the agent to forget the session via ACP
-     * `session/delete` (only when it advertises `sessionCapabilities.delete`),
-     * then run the [closeSession] path so a live gateway process stops, then
-     * drop the local row. The ACP leg swallows its own failures — an agent
-     * that rejects the call must not keep the row the user just deleted — but
-     * the gateway DELETE still propagates, exactly as [closeSession] does, so
-     * a leaked process slot stays visible. Returns false only when nothing in
-     * the app knew the session.
-     */
-    suspend fun deleteSession(
-        serverId: String,
-        sessionId: String,
-        endpoint: GatewayEndpoint?,
-    ): Boolean {
-        val known =
-            isTracked(serverId, sessionId) ||
-                sessionRepository?.getSession(serverId, sessionId) != null
-        deleteOnAgentBestEffort(serverId, sessionId)
-        when {
-            endpoint != null -> closeSession(serverId, sessionId, endpoint)
-            isTracked(serverId, sessionId) -> close(chatIdFor(serverId, sessionId), endpoint = null)
-        }
-        sessionRepository?.deleteSession(serverId, sessionId)
-        return known
-    }
-
-    /**
-     * Reconciles recorded gateway leases against the gateway's live session
-     * list, dropping pointers the gateway forgot while the app was away
-     * (restart/reap) so the session list stops offering disconnects that can
-     * only fail. Best-effort: any failure keeps the pointers — fail-safe
-     * toward preserving the disconnect kill-switch over hiding a phantom
-     * option. Cancellation propagates.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    suspend fun reconcileGatewaySessions(
-        serverId: String,
-        endpoint: GatewayEndpoint,
-    ) {
-        val repository = gatewayRepository ?: return
-        try {
-            val live =
-                withTimeout(RECONCILE_TIMEOUT_MS) {
-                    repository
-                        .listGatewaySessions(endpoint.scheme, endpoint.host, endpoint.credential)
-                        .map { it.sessionId }
-                        .toSet()
-                }
-            sessionRepository?.clearStaleGatewaySessions(serverId, live)
-        } catch (error: CancellationException) {
-            // A timeout degrades to "keep the pointers" so a slow gateway
-            // cannot cancel the refresh this runs inside; anything else
-            // cancels normally.
-            if (error !is TimeoutCancellationException) throw error
-        } catch (_: Throwable) {
-            // Best-effort by contract: stale pointers are harmless (a tap
-            // self-heals through the 404 path in closeSession).
-        }
-    }
-
-    /**
-     * Sends `session/delete` over any usable transport for [serverId]: the
-     * warm chat transport when one is connected, else the hub's listing
-     * transport, connected on demand and hung up afterwards. Quietly skips
-     * when capabilities are unknown or `sessionCapabilities.delete` is not
-     * advertised, and swallows rejections — this leg is best-effort by
-     * contract. Cancellation always propagates.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    @OptIn(UnstableApi::class)
-    private suspend fun deleteOnAgentBestEffort(
-        serverId: String,
-        sessionId: String,
-    ) {
-        try {
-            val warm = warmManagerFor(serverId)
-            if (warm != null) {
-                if (warm.agentCapabilities.value
-                        ?.sessionCapabilities
-                        ?.delete != null
-                ) {
-                    warm.deleteSession(sessionId)
-                }
-                return
-            }
-            val target = launchableTargetRepository?.getTarget(serverId) ?: return
-            val transport = listingSession(serverId).browserTransport
-            try {
-                val connected =
-                    transport.isConnected ||
-                        run {
-                            val config = buildListingConfig(target).getOrNull()
-                            config != null &&
-                                withContext(Dispatchers.IO) {
-                                    transport.connectAndInitializeWithoutReconnect(config)
-                                } != null
-                        }
-                if (
-                    connected &&
-                    transport.agentCapabilities.value
-                        ?.sessionCapabilities
-                        ?.delete != null
-                ) {
-                    transport.deleteSession(sessionId)
-                }
-            } finally {
-                hangUpListing(transport)
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Throwable) {
-            // Best-effort by contract: the caller still removes the local row.
-        }
-    }
-
-    /** Agent capabilities observed by the last listing for [serverId]. */
-    fun listingAgentCapabilities(serverId: String): AgentCapabilities? =
-        listingSessions[serverId]
-            ?.browserTransport
-            ?.agentCapabilities
-            ?.value
-            ?: entries.values
-                .firstOrNull { it.serverId == serverId }
-                ?.manager
-                ?.agentCapabilities
-                ?.value
-
-    /** Live diagnostics of the listing transport for [serverId]. */
-    fun listingDiagnostics(serverId: String): ConnectionDiagnostics? =
-        listingSessions[serverId]?.browserTransport?.diagnostics?.value
-
-    private suspend fun writeListedSessions(
-        serverId: String,
-        sessions: List<SessionSummary>,
-    ) {
-        sessionRepository?.replaceSessions(serverId, sessions)
-    }
-
-    private fun authRequiredResult(
-        transport: AcpConnectionManager,
-        viaWarmChat: Boolean,
-        error: AcpAuthenticationRequiredException,
-    ): ListSessionsResult.AuthRequired =
-        ListSessionsResult.AuthRequired(
-            agentName = error.challenge.agentInfo.name,
-            authMethods = error.challenge.authMethods,
-            challengeMessage = error.challenge.message,
-            gatewayRuntimeId = transport.currentConnectionConfig()?.gatewayRuntimeId,
-            viaWarmChat = viaWarmChat,
-        )
-
-    private fun listingSession(serverId: String): ListingSession =
-        listingSessions.getOrPut(serverId) {
-            ListingSession(
-                serverId = serverId,
-                browserTransport = createBrowserManager(scope),
-            )
-        }
-
-    /**
-     * Builds the config for a listing or delete leg on [target].
-     *
-     * A failure keeps its cause. The launch context already carries the actionable
-     * reason ("Gateway credential expired. Please pair this gateway again."), and
-     * folding it into `null` replaced that with a locally authored
-     * "Failed to launch X" — the user was never told to re-pair.
-     */
-    private suspend fun buildListingConfig(target: LaunchableTarget): Result<AcpConnectionConfig> =
-        when (target) {
-            is LaunchableTarget.GatewayAgent -> {
-                val gatewaySourceRepository = gatewaySourceRepository
-                val gatewayRepository = gatewayRepository
-                if (gatewaySourceRepository == null || gatewayRepository == null) {
-                    Result.failure(
-                        IllegalStateException(
-                            "No gateway is configured for ${target.name}. Re-add it from the server list.",
-                        ),
-                    )
-                } else {
-                    buildGatewayLaunchContext(
-                        gatewayRepository = gatewayRepository,
-                        gatewaySourceRepository = gatewaySourceRepository,
-                        server = target,
-                    ).map { it.config }
-                }
-            }
-
-            is LaunchableTarget.Manual ->
-                Result.success(
-                    AcpConnectionConfig(
-                        scheme = target.server.scheme,
-                        host = target.server.host,
-                        preferredAuthMethodId = target.server.preferredAuthMethodId,
-                        serverDisplayName = target.name,
-                    ),
-                )
-        }
 
     /**
      * Recomputes screen presence ([tapTarget], [onScreenChat]) from the entry

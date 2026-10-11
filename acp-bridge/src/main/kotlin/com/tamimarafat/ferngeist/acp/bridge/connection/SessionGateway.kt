@@ -28,6 +28,7 @@ import com.tamimarafat.ferngeist.acp.bridge.session.AppSessionEvent
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionBridge
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigChoice
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
+import com.tamimarafat.ferngeist.acp.bridge.session.SessionLoadState
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionMode
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionPermissionOption
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionPort
@@ -52,7 +53,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Owns session-level ACP protocol operations for all active sessions.
  *
- * SessionGateway is the bridge between the thin [AcpConnectionManager] shell and
+ * SessionGateway is the bridge between the thin [AcpConnection] shell and
  * the ACP SDK's [ClientSession] lifecycle. It handles creation, loading, prompt
  * streaming, cancellation, mode/model/config changes, and permission resolution.
  *
@@ -60,14 +61,14 @@ import java.util.concurrent.ConcurrentHashMap
  * [AcpSessionRegistry], emit RPC diagnostics, run the SDK call, and forward any
  * resulting events to the correct [SessionBridge] via [emitToBridge].
  *
- * @property orchestra provides the SDK client, diagnostics store, and auth helpers
+ * @property connection provides the SDK client, diagnostics store, and auth helpers
  * @property permissionFlow tracks pending permission completable-futures
  * @property elicitationFlow tracks pending elicitation completable-futures
  * @property bridgeFactory creates a [SessionBridge] wired to the thin shell
  */
 @Suppress("TooManyFunctions")
 internal class SessionGateway(
-    private val orchestra: ConnectionOrchestrator,
+    private val connection: AcpConnection,
     private val permissionFlow: PermissionFlow,
     private val elicitationFlow: ElicitationFlow,
     private val bridgeFactory: (String) -> SessionBridge,
@@ -103,14 +104,14 @@ internal class SessionGateway(
      */
     suspend fun createSession(cwd: String = ""): SessionPort? {
         if (cwd.isBlank()) {
-            orchestra.diagnosticsStore.appendError("session/new", "Refusing to create session: blank cwd")
+            connection.diagnosticsStore.appendError("session/new", "Refusing to create session: blank cwd")
             return null
         }
         val client =
-            orchestra.sdkClient
+            connection.sdkClient
                 ?: throw AcpDisconnectedException()
         return runCatching {
-            orchestra.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/new")
+            connection.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/new")
             val session =
                 client.newSession(
                     sessionParameters = SessionCreationParameters(cwd = cwd, mcpServers = emptyList()),
@@ -118,8 +119,8 @@ internal class SessionGateway(
                 )
             registerSession(session).also { sessionCwds[session.sessionId.value] = cwd }
         }.getOrElse {
-            orchestra.toAuthRequiredException(it)?.let { error -> throw error }
-            orchestra.diagnosticsStore.appendError(
+            connection.toAuthRequiredException(it)?.let { error -> throw error }
+            connection.diagnosticsStore.appendError(
                 "session/new",
                 formatAcpErrorMessage(it, "Failed to create session"),
             )
@@ -138,10 +139,6 @@ internal class SessionGateway(
      * and the buffered history is committed afterwards
      * ([SessionBridge.completeHydration]). A resume replays nothing, so its bridge
      * simply publishes its empty snapshot.
-     *
-     * A JSON-RPC -32602 / "already loaded" error is handled separately: if the
-     * bridge exists locally it is reused; otherwise the session is assumed active
-     * on another client and null is returned.
      */
     @OptIn(UnstableApi::class)
     suspend fun attachSession(
@@ -152,9 +149,9 @@ internal class SessionGateway(
         getLoadedSession(sessionId)?.let { existing -> return existing }
 
         val client =
-            orchestra.sdkClient
+            connection.sdkClient
                 ?: throw AcpDisconnectedException()
-        orchestra.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, rpc.rpc)
+        connection.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, rpc.rpc)
         val timing = AttachTiming().also { attachTimings[sessionId] = it }
         var succeeded = false
         try {
@@ -225,9 +222,8 @@ internal class SessionGateway(
 
     /**
      * Routes a failed `session/load` or `session/resume` to the appropriate
-     * recovery: an auth-required error rethrows, an "already loaded" error reuses
-     * the local session or raises [SessionAlreadyActiveException] for the
-     * remote-active case, and any other failure is logged and rethrown.
+     * recovery: an auth-required error rethrows, any other failure is logged and
+     * rethrown with the agent's own message.
      *
      * The `failHydration` + [clearSessionState] teardown runs in [NonCancellable]:
      * `failHydration` takes the runtime mutex, so on an already-cancelled context the
@@ -235,49 +231,13 @@ internal class SessionGateway(
      * bridge in HYDRATING.
      *
      * @param rpc the attach RPC that failed, for diagnostics and the failure label.
-     *
-     * Suppresses `ThrowsCount`: this is the single funnel for every attach failure —
-     * auth rethrow, remote-active, and the original error.
      */
-    @Suppress("ThrowsCount")
     private suspend fun handleSessionAttachFailure(
         error: Throwable,
         sessionId: String,
         rpc: SessionAttachRpc,
     ): SessionPort? {
-        orchestra.toAuthRequiredException(error)?.let { authError -> throw authError }
-        if (isSessionAlreadyLoadedError(error)) {
-            getLoadedSession(sessionId)?.let { existing ->
-                orchestra.diagnosticsStore.appendError(
-                    rpc.rpc,
-                    "Session is already loaded locally. Reusing the active session.",
-                )
-                return existing
-            }
-
-            val message =
-                "This session is already active elsewhere. " +
-                    "Disconnect it from the session list, then reopen."
-            // failHydration takes the runtime mutex; on an already-cancelled context the
-            // lock acquisition throws and clearSessionState never runs, leaving the
-            // bridge stuck in HYDRATING (which buffers every event and publishes nothing).
-            withContext(NonCancellable) {
-                sessionRegistry.getBridge(sessionId)?.failHydration(message)
-                clearSessionState(sessionId, closeBridge = true)
-            }
-            orchestra.diagnosticsStore.appendError(rpc.rpc, message)
-            // The user-facing text is an instruction, not a diagnosis. Keep the agent's own
-            // words beside it, so a refusal classified from wording stays diagnosable when
-            // that wording turns out to have meant something else.
-            orchestra.diagnosticsStore.appendError(
-                rpc.rpc,
-                formatAcpErrorMessage(error, "Attach refused"),
-            )
-            // Thrown rather than returned: the callers' null path collapses every
-            // cause into "Could not load this session. Check connection and retry.",
-            // which hides the one instruction that helps — release it elsewhere.
-            throw SessionAlreadyActiveException(message)
-        }
+        connection.toAuthRequiredException(error)?.let { authError -> throw authError }
 
         val message =
             formatAcpErrorMessage(
@@ -288,7 +248,7 @@ internal class SessionGateway(
             sessionRegistry.getBridge(sessionId)?.failHydration(message)
             clearSessionState(sessionId, closeBridge = true)
         }
-        orchestra.diagnosticsStore.appendError(rpc.rpc, message)
+        connection.diagnosticsStore.appendError(rpc.rpc, message)
         throw error
     }
 
@@ -303,11 +263,9 @@ internal class SessionGateway(
      *    terminal [Event.PromptResponseEvent] to [AppSessionEvent] values. The
      *    stream is collected on the bridge's own scope ([SessionBridge.startTurn])
      *    so a cancelled caller cannot abort the turn, then merely awaited here.
-     * 4. Includes a defensive [AppSessionEvent.TurnComplete] if the prompt stream
-     *    finishes without a PromptResponseEvent — some ACP server/transport combos
-     *    can drop the terminal event on cancellation or teardown. That fallback
-     *    reports `"cancelled"` when [cancelSession] was requested for the session
-     *    and `"end_turn"` otherwise.
+     * 4. The turn's terminal event comes from the prompt stream's
+     *    [Event.PromptResponseEvent]. A prompt sent on an earlier connection gets its
+     *    terminal notice from the gateway instead ([SessionGateway.endRemoteTurn]).
      */
     suspend fun sendSessionMessage(
         sessionId: String,
@@ -324,7 +282,7 @@ internal class SessionGateway(
                 "SDK session missing for sessionId=$sessionId",
             )
 
-        orchestra.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/prompt")
+        connection.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/prompt")
 
         // User message already added optimistically by onLocalPromptStarted; omitted here to
         // avoid duplication.
@@ -356,15 +314,15 @@ internal class SessionGateway(
         images: List<ChatImageData>,
         files: List<ChatFileData>,
     ): SteerOutcome {
-        val client = orchestra.sdkClient ?: return SteerOutcome.NotConsumed
-        orchestra.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, STEERING_METHOD)
+        val client = connection.sdkClient ?: return SteerOutcome.NotConsumed
+        connection.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, STEERING_METHOD)
         return try {
             val params = steeringParams(sessionId, promptBlocks(content, images, files))
             parseSteerOutcome(client.protocol.sendRequestRaw(MethodName(STEERING_METHOD), params))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            orchestra.diagnosticsStore.appendError(STEERING_METHOD, e.message ?: e.toString())
+            connection.diagnosticsStore.appendError(STEERING_METHOD, e.message ?: e.toString())
             SteerOutcome.NotConsumed
         }
     }
@@ -409,16 +367,14 @@ internal class SessionGateway(
      * Collects one prompt turn and maps it onto the bridge's event stream.
      *
      * Runs on the bridge's own scope (see [sendSessionMessage]) so it survives a
-     * cancelled caller. A turn therefore always reaches a terminal event:
-     * - the stream ends without a [Event.PromptResponseEvent] — some ACP
-     *   server/transport combos drop the terminal event on cancellation or
-     *   teardown — a defensive [AppSessionEvent.TurnComplete] is emitted;
-     * - the stream throws, in which case the turn ends before the error is
-     *   rethrown, because no awaiter may remain to run the rollback.
+     * cancelled caller. The turn ends on the prompt stream's terminal
+     * [Event.PromptResponseEvent]; an interrupted or failed stream ends it with a
+     * [AppSessionEvent.TurnComplete] of its own, because no awaiter may be left to run
+     * the rollback.
      *
-     * Either way the stop reason is `"cancelled"` when a cancel was requested for
-     * this session and `"end_turn"` otherwise. The cancel mark is consumed here so
-     * the next turn starts clean.
+     * The stop reason is `"cancelled"` when a cancel was requested for this session and
+     * `"end_turn"` otherwise. The cancel mark is consumed here so the next turn starts
+     * clean.
      */
     @Suppress("TooGenericExceptionCaught")
     private suspend fun collectPromptTurn(
@@ -430,7 +386,6 @@ internal class SessionGateway(
         // Start clean: a cancel that arrived after the previous turn had already
         // finished must not mislabel this one.
         cancelsRequested.remove(sessionId)
-        var receivedPromptResponse = false
         try {
             session.prompt(blocks).collect { event ->
                 when (event) {
@@ -442,7 +397,6 @@ internal class SessionGateway(
                     }
 
                     is Event.PromptResponseEvent -> {
-                        receivedPromptResponse = true
                         bridge.emitEvent(
                             AppSessionEvent.TurnComplete(
                                 AcpSessionUpdateMapper.mapStopReason(
@@ -467,13 +421,9 @@ internal class SessionGateway(
             // in that case, so end the turn here — otherwise a transport or SDK
             // failure after navigation leaves the optimistic bubble streaming
             // forever. Still rethrown so a live awaiter can surface the error.
-            orchestra.diagnosticsStore.appendError("session/prompt", formatAcpErrorMessage(error, "Prompt failed"))
+            connection.diagnosticsStore.appendError("session/prompt", formatAcpErrorMessage(error, "Prompt failed"))
             bridge.emitEvent(AppSessionEvent.TurnComplete(consumeTurnEndReason(sessionId)))
             throw error
-        }
-
-        if (!receivedPromptResponse) {
-            bridge.emitEvent(AppSessionEvent.TurnComplete(consumeTurnEndReason(sessionId)))
         }
     }
 
@@ -507,7 +457,7 @@ internal class SessionGateway(
         cancelsRequested += sessionId
         val outcome =
             runCatching {
-                orchestra.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/cancel")
+                connection.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/cancel")
                 session.cancel()
             }
         outcome.onFailure { error ->
@@ -517,7 +467,7 @@ internal class SessionGateway(
             cancelsRequested -= sessionId
         }
         outcome.getOrThrow()
-        orchestra.diagnosticsStore.setSessionCancelSupport(isSupported = true)
+        connection.diagnosticsStore.setSessionCancelSupport(isSupported = true)
 
         permissionFlow.cancelPendingForSession(sessionId).forEach { toolCallId ->
             emitToBridge(sessionId, AppSessionEvent.ToolPermissionResolved(toolCallId))
@@ -540,10 +490,10 @@ internal class SessionGateway(
     ) {
         val session = sessionRegistry.getSdkSession(sessionId) ?: return
         runCatching {
-            orchestra.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/set_mode")
+            connection.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/set_mode")
             session.setMode(SessionModeId(modeId))
         }.onFailure {
-            orchestra.diagnosticsStore.appendError(
+            connection.diagnosticsStore.appendError(
                 "session/set_mode",
                 formatAcpErrorMessage(it, "Set mode failed"),
             )
@@ -558,10 +508,10 @@ internal class SessionGateway(
     ) {
         val session = sessionRegistry.getSdkSession(sessionId) ?: return
         runCatching {
-            orchestra.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/set_model")
+            connection.diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "session/set_model")
             session.setModel(com.agentclientprotocol.model.ModelId(modelId))
         }.onFailure {
-            orchestra.diagnosticsStore.appendError(
+            connection.diagnosticsStore.appendError(
                 "session/set_model",
                 formatAcpErrorMessage(it, "Set model failed"),
             )
@@ -585,7 +535,7 @@ internal class SessionGateway(
     ) {
         val session = sessionRegistry.getSdkSession(sessionId) ?: return
         runCatching {
-            orchestra.diagnosticsStore.appendRpcEntry(
+            connection.diagnosticsStore.appendRpcEntry(
                 RpcDirection.OutboundRequest,
                 "session/set_config_option",
             )
@@ -604,7 +554,7 @@ internal class SessionGateway(
                 ),
             )
         }.onFailure {
-            orchestra.diagnosticsStore.appendError(
+            connection.diagnosticsStore.appendError(
                 "session/set_config_option",
                 formatAcpErrorMessage(it, "Set config option failed"),
             )
@@ -700,6 +650,40 @@ internal class SessionGateway(
         stopReason: String,
     ) {
         sessionRegistry.getBridge(sessionId)?.emitEvent(AppSessionEvent.TurnComplete(stopReason))
+    }
+
+    /**
+     * Handles the gateway's `_ferngeist/resumed` notice: the agent refused the
+     * `session/load` as already loaded, so the gateway restored the session itself and
+     * is replaying its buffered updates before answering the load. Those updates arrive
+     * as ordinary `session/update` notifications and hydrate through the normal path —
+     * nothing here drops, filters or de-duplicates them.
+     *
+     * The only state it touches is the bridge's load state: if the attach that sent the
+     * load has not begun hydration yet, start it now so the replayed frames buffer
+     * instead of landing in (and overwriting) the live transcript.
+     */
+    suspend fun onRemoteResumed(
+        sessionId: String,
+        replayedFrames: Int,
+    ) {
+        val bridge = sessionRegistry.getBridge(sessionId)
+        if (bridge == null) {
+            connection.logError("onRemoteResumed: NO BRIDGE for sessionId=$sessionId")
+            connection.diagnosticsStore.appendError(
+                "session",
+                "Gateway resumed a session this client does not hold: $sessionId",
+            )
+            return
+        }
+        if (bridge.snapshot.value.loadState != SessionLoadState.HYDRATING) {
+            bridge.beginHydration()
+        }
+        connection.diagnosticsStore.appendRpcEntry(
+            RpcDirection.InboundNotification,
+            "_ferngeist/resumed",
+            summary = "sessionId=$sessionId replayedFrames=$replayedFrames",
+        )
     }
 
     /** Clears all sessions (bridges, SDK sessions, pending permissions). */
@@ -799,7 +783,7 @@ internal class SessionGateway(
         private suspend fun runElicitation(request: CreateElicitationRequest): CreateElicitationResponse {
             val domain = ElicitationMappers.toDomain(sessionId, request)
             if (domain == null) {
-                orchestra.diagnosticsStore.appendError(
+                connection.diagnosticsStore.appendError(
                     "elicitation/create",
                     "Unsupported elicitation (request-scoped); answered cancel.",
                 )
@@ -1024,11 +1008,11 @@ internal class SessionGateway(
             bridge.emitEvent(event)
             return
         }
-        orchestra.logError(
+        connection.logError(
             "emitToBridge: NO BRIDGE for sessionId=$sessionId, " +
                 "available keys=${sessionRegistry.bridgeIds()}",
         )
-        orchestra.diagnosticsStore.appendError(
+        connection.diagnosticsStore.appendError(
             "session",
             "Session bridge not found for id: $sessionId",
         )
@@ -1048,7 +1032,7 @@ internal class SessionGateway(
     ) {
         val summary = timing.summary(endNanos = System.nanoTime(), succeeded = succeeded)
         runCatching { android.util.Log.i("FerngeistLoad", "${rpc.rpc} sid=$sessionId $summary") }
-        orchestra.diagnosticsStore.appendRpcEntry(
+        connection.diagnosticsStore.appendRpcEntry(
             if (succeeded) RpcDirection.InboundResult else RpcDirection.InboundError,
             rpc.rpc,
             summary = summary,
@@ -1088,7 +1072,7 @@ internal class SessionGateway(
      */
     @OptIn(UnstableApi::class)
     private fun shouldCloseSdkSession(): Boolean =
-        orchestra.agentCapabilities.value
+        connection.agentCapabilities.value
             ?.sessionCapabilities
             ?.close != null
 
@@ -1097,36 +1081,6 @@ internal class SessionGateway(
         if (!sessionRegistry.hasSdkSession(sessionId)) return null
         return sessionRegistry.getPort(sessionId)
     }
-
-    /**
-     * Checks whether an error means the session is already loaded on the agent.
-     *
-     * Agents surface this differently — a [JsonRpcException] with a provider-specific
-     * code, a standard INVALID_PARAMS code, or a message-only exception — so the
-     * wordings the bridged agents use when they still hold the session are matched
-     * anywhere in the cause chain: "already loaded", "already active" (the harness has
-     * it in memory) and "active write handle" (another handle owns its store).
-     *
-     * The JSON-RPC code alone is deliberately *not* evidence. INVALID_PARAMS is the
-     * protocol's generic "invalid params", returned just as readily for a bad cwd, an
-     * unknown session id or a malformed request; reading it as "held" replaced those
-     * users' real cause with the disconnect instruction. An unrecognised refusal is
-     * relayed as the agent worded it, which keeps the cause visible. The cost is a
-     * missed classification for an agent that signals a held session with a bare code
-     * and unrecognised wording: that degrades to the generic load failure instead of
-     * inventing a cause the evidence does not support. For gateway sessions the gateway
-     * recovers from this transparently; this remains the fallback for direct (Manual)
-     * connections to an agent that keeps the session loaded.
-     */
-    internal fun isSessionAlreadyLoadedError(error: Throwable): Boolean =
-        generateSequence(error as Throwable?) { it.cause }.any { cause ->
-            SESSION_ACTIVE_MARKERS.any { marker ->
-                // Details ride in the JSON-RPC `data` field, so match the
-                // formatted text ("Internal error: {"details":"…"}") rather than
-                // `message` alone.
-                formatAcpErrorMessage(cause, "").contains(marker, ignoreCase = true)
-            }
-        }
 
     /**
      * Inspects a session/cancel failure to determine whether the server
@@ -1141,9 +1095,9 @@ internal class SessionGateway(
         // left the flag unset and the user with a Cancel button that cannot work.
         val unsupported = rpcError?.code == JsonRpcErrorCode.METHOD_NOT_FOUND.code
         if (unsupported) {
-            orchestra.diagnosticsStore.setSessionCancelSupport(isSupported = false)
+            connection.diagnosticsStore.setSessionCancelSupport(isSupported = false)
         }
-        orchestra.diagnosticsStore.appendError(
+        connection.diagnosticsStore.appendError(
             "session/cancel",
             formatAcpErrorMessage(error, "Cancel failed"),
         )
@@ -1158,13 +1112,6 @@ internal class SessionGateway(
             is SessionConfigValue.UnknownValue -> error("Unsupported config option value: $this")
         }
 }
-
-/**
- * Wordings agents use when they refuse an attach because they still hold the
- * session — the ACP harness says "session is already active", its session store
- * says "already owned by an active write handle".
- */
-private val SESSION_ACTIVE_MARKERS = listOf("already loaded", "already active", "active write handle")
 
 /**
  * Splits one `session/load` (or `session/resume`) into time spent waiting on the agent and

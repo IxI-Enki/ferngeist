@@ -44,7 +44,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthMethodInfo
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentAuthMethod
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.common.ui.isWindowShort
 import com.tamimarafat.ferngeist.feature.serverlist.PendingAuthentication
@@ -209,8 +209,8 @@ internal fun PendingAuthenticationDialog(
     val selectedMethod =
         pendingAuthentication.authMethods.firstOrNull { it.id == selectedAuthMethodId }
             ?: pendingAuthentication.authMethods.firstOrNull()
-    val isGatewayEnvAuth = selectedMethod?.type == "env" && pendingAuthentication.gatewayRuntime != null
-    val isManualEnvAuth = selectedMethod?.type == "env" && pendingAuthentication.gatewayRuntime == null
+    val isGatewayEnvAuth = selectedMethod?.type == "env" && pendingAuthentication.gatewayBacked
+    val isManualEnvAuth = selectedMethod?.type == "env" && !pendingAuthentication.gatewayBacked
 
     val requiredEnvVarsFilled =
         selectedMethod?.envVars?.all { envVar ->
@@ -251,7 +251,7 @@ internal fun PendingAuthenticationDialog(
 @Composable
 private fun AuthDialogBody(
     pendingAuthentication: PendingAuthentication,
-    selectedMethod: AcpAuthMethodInfo?,
+    selectedMethod: AgentAuthMethod?,
     envValues: MutableMap<String, String>,
     onSelectedAuthMethodChange: (String) -> Unit,
     onOpenLink: (String) -> Unit,
@@ -282,7 +282,7 @@ private fun AuthDialogBody(
                 selectedMethod = selectedMethod,
                 onSelectedAuthMethodChange = onSelectedAuthMethodChange,
                 envValues = envValues,
-                isGatewayBacked = pendingAuthentication.gatewayRuntime != null,
+                isGatewayBacked = pendingAuthentication.gatewayBacked,
                 onOpenLink = onOpenLink,
             )
         }
@@ -291,7 +291,7 @@ private fun AuthDialogBody(
 
 @Composable
 private fun AuthDialogConfirmButton(
-    selectedMethod: AcpAuthMethodInfo?,
+    selectedMethod: AgentAuthMethod?,
     isGatewayEnvAuth: Boolean,
     isManualEnvAuth: Boolean,
     requiredEnvVarsFilled: Boolean,
@@ -329,8 +329,8 @@ private fun AuthDialogConfirmButton(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AuthMethodOption(
-    method: AcpAuthMethodInfo,
-    selectedMethod: AcpAuthMethodInfo?,
+    method: AgentAuthMethod,
+    selectedMethod: AgentAuthMethod?,
     onSelectedAuthMethodChange: (String) -> Unit,
     envValues: MutableMap<String, String>,
     isGatewayBacked: Boolean,
@@ -383,7 +383,7 @@ private fun AuthMethodOption(
 }
 
 private fun computeConfirmEnabled(
-    selectedMethod: AcpAuthMethodInfo?,
+    selectedMethod: AgentAuthMethod?,
     isGatewayEnvAuth: Boolean,
     requiredEnvVarsFilled: Boolean,
 ): Boolean =
@@ -395,7 +395,7 @@ private fun computeConfirmEnabled(
 
 @Composable
 private fun AuthenticationMethodDetails(
-    method: AcpAuthMethodInfo,
+    method: AgentAuthMethod,
     envValues: MutableMap<String, String>,
     isGatewayBacked: Boolean,
     onOpenLink: (String) -> Unit,
@@ -428,7 +428,7 @@ private fun AuthenticationMethodDetails(
 }
 
 @Composable
-private fun ManualEnvVarInstructions(method: AcpAuthMethodInfo) {
+private fun ManualEnvVarInstructions(method: AgentAuthMethod) {
     Text(
         text = stringResource(R.string.serverlist_auth_env_instructions),
         style = MaterialTheme.typography.bodySmall,
@@ -453,7 +453,7 @@ private fun ManualEnvVarInstructions(method: AcpAuthMethodInfo) {
 
 @Composable
 private fun GatewayEnvVarInputs(
-    method: AcpAuthMethodInfo,
+    method: AgentAuthMethod,
     envValues: MutableMap<String, String>,
     onEnvValueChange: (String, String) -> Unit,
 ) {

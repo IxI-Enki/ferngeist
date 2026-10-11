@@ -14,7 +14,6 @@ import com.agentclientprotocol.model.Implementation
 import com.agentclientprotocol.protocol.Protocol
 import com.agentclientprotocol.protocol.ProtocolOptions
 import com.agentclientprotocol.transport.WebSocketTransport
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -78,7 +77,13 @@ private const val WEB_SOCKET_CONNECT_TIMEOUT_MS = 30_000L
 
 internal class AcpTransportClient(
     private val connectivityObserver: ConnectivityObserver,
-    private val gatewayRepository: GatewayRepository?,
+    // Mints a fresh attachToken for a gateway session — the gateway resume call, in
+    // production. The transport holds this instead of the repository: resume is the only
+    // gateway call it ever made, and its caller already owns a repository.
+    private val resumeAttachToken: suspend (
+        gateway: AcpConnectionConfig.Gateway,
+        session: AcpConnectionConfig.ResumeInfo,
+    ) -> String,
     private val scope: CoroutineScope,
     private val diagnosticsStore: AcpDiagnosticsStore,
     private val updateConnectionState: (AcpConnectionState) -> Unit,
@@ -86,8 +91,15 @@ internal class AcpTransportClient(
     // Runs after a background reconnect's handshake, before Connected is announced.
     private val onReconnected: suspend (AcpInitializeResult) -> Unit = {},
     private val onRemoteTurnEnded: suspend (sessionId: String, stopReason: String) -> Unit = { _, _ -> },
+    // Runs when the gateway reports it restored a session itself; see [RemoteResumed].
+    private val onRemoteResumed: suspend (sessionId: String, replayedFrames: Int) -> Unit = { _, _ -> },
 ) {
     private var reconnectJob: Job? = null
+
+    // Set when gateway resume answered 400: the session is gone for good, so the reconnect
+    // loop must stop retrying and the facade must start a fresh connect. Cleared only by a
+    // fresh user-initiated connect ([cancelReconnectLoop]).
+    private var resumeRejected = false
 
     // A reconnect loop is armed. Between attempts the state reads Disconnected/Failed,
     // yet the connection is not idle: the foreground service must outlive the backoff,
@@ -225,7 +237,7 @@ internal class AcpTransportClient(
         return runCatching {
             diagnosticsStore.appendRpcEntry(RpcDirection.OutboundRequest, "authenticate")
             client.authenticate(AuthMethodId(methodId))
-            currentConfig = currentConfig?.copy(preferredAuthMethodId = methodId)
+            currentConfig = currentConfig?.withPreferredAuthMethodId(methodId)
             scope.launch { emitManagerEvent(AcpManagerEvent.Authenticated(methodId)) }
             AcpAuthenticateResult.Success
         }.getOrElse { error ->
@@ -266,6 +278,9 @@ internal class AcpTransportClient(
         reconnectJob?.cancel()
         reconnectJob = null
         _reconnectPending.value = false
+        // A fresh user-initiated connect supersedes the resume rejection that stopped
+        // the previous loop.
+        resumeRejected = false
         // Reset here, not in the loop's finally: a cancelled loop finishes after its
         // replacement started, and would clear the flag under the new attempt.
         deferConnectedState = false
@@ -303,45 +318,23 @@ internal class AcpTransportClient(
         updateConnectionState(AcpConnectionState.Connecting)
         diagnosticsStore.setWebSocketState(WebSocketState.CONNECTING)
 
-        val rawEndpointUrl = config.webSocketUrl ?: "${config.scheme}://${config.host}"
-        // A gateway agent is always launched in resilient mode, so a gateway connection
-        // must carry a sessionId. If it does not, the gateway could not provision a
-        // session (the agent crashed, its runtime lease is held, or the device hit its
-        // session limit) and returned a session-less connect descriptor. The resilient
-        // ACP endpoint rejects a connect without sessionId/attachToken with HTTP 400, so
-        // attempting it here would loop on a doomed handshake. Fail fast with an
-        // actionable error instead; the caller's retry rebuilds a fresh handoff.
-        if (config.isGatewayConnection && config.sessionId == null) {
-            val error =
-                IllegalStateException(
-                    "The gateway could not start a session for this agent. " +
-                        "It may have crashed or reached its session limit — try again, " +
-                        "or restart the agent from the server list.",
-                )
-            updateConnectionState(AcpConnectionState.Failed(error))
-            diagnosticsStore.setWebSocketState(WebSocketState.FAILED)
-            diagnosticsStore.appendError("connect", error.message ?: "Gateway session unavailable")
-            return false
-        }
-        // Resilient config without an attachToken — skip the direct WebSocket connect
-        // and route straight to resume, which mints a fresh attachToken.
-        if (config.isResilientSession && config.attachToken == null) {
-            return connectSessionResume(config, resetState, scheduleReconnectOnFailure)
-        }
+        // A gateway handoff always carries the session the gateway provisioned, so the
+        // attach URL is built from it. There is no bearer path: the gateway authenticates
+        // the attach with the attachToken in the URL, and the device credential covers the
+        // REST calls.
+        val resume = (config as? AcpConnectionConfig.Gateway)?.resume
         val (wsUrl, diagnosticsUrl) =
-            if (config.isResilientSession) {
-                val sid = config.sessionId!!
-                val att = config.attachToken!!
-                val base = rawEndpointUrl.substringBefore('?')
-                "$base?sessionId=$sid&attachToken=$att" to "$base?sessionId=$sid&attachToken=***"
+            if (resume != null) {
+                val base = config.endpoint.substringBefore('?')
+                "$base?sessionId=${resume.sessionId}&attachToken=${resume.attachToken}" to
+                    "$base?sessionId=${resume.sessionId}&attachToken=***"
             } else {
-                rawEndpointUrl to rawEndpointUrl
+                config.endpoint to config.endpoint
             }
         val wsResult =
             runCatching {
                 establishSession(
                     wsUrl = wsUrl,
-                    bearerToken = if (config.isResilientSession) null else config.webSocketBearerToken,
                     resetState = resetState,
                     diagnosticsUrl = diagnosticsUrl,
                 )
@@ -376,10 +369,12 @@ internal class AcpTransportClient(
         // loop must never die on an unexpected exception type).
         if (error is CancellationException) throw error
         // 409 means the gateway has an active resilient session for this runtime — the
-        // attachToken from connectRuntime is not enough; we must call resumeSession first
-        // to explicitly migrate the live session to this client.
-        if (config.isResilientSession && isWebSocketConflictError(error)) {
-            return connectSessionResume(config, resetState, scheduleReconnectOnFailure)
+        // attachToken the handoff carried is not enough; resume must run first to migrate
+        // the live session to this client. The gateway's attach-conflict semantics are
+        // unchanged in v2, so this recovery stays.
+        val gateway = config as? AcpConnectionConfig.Gateway
+        if (gateway != null && isWebSocketConflictError(error)) {
+            return connectSessionResume(gateway, resetState, scheduleReconnectOnFailure)
         }
         if (isCancellationLikeError(error)) {
             updateConnectionState(AcpConnectionState.Disconnected)
@@ -397,17 +392,15 @@ internal class AcpTransportClient(
 
     @Suppress("TooGenericExceptionCaught")
     private suspend fun connectSessionResume(
-        config: AcpConnectionConfig,
+        gateway: AcpConnectionConfig.Gateway,
         resetState: () -> Unit,
         scheduleReconnectOnFailure: Boolean,
     ): Boolean {
-        val resumeParams = resolveResumeParams(config) ?: return false
-
         val result =
             runCatching {
                 resumeAndEstablishSession(
-                    params = resumeParams,
-                    config = config,
+                    gateway = gateway,
+                    resume = gateway.resume,
                     resetState = resetState,
                 )
             }
@@ -421,7 +414,13 @@ internal class AcpTransportClient(
             updateConnectionState(AcpConnectionState.Failed(error))
             diagnosticsStore.setWebSocketState(WebSocketState.FAILED)
             diagnosticsStore.appendError("connect-resume", formatAcpErrorMessage(error, "Session resume failed"))
-            if (scheduleReconnectOnFailure) {
+            // 400 means the session is gone (the gateway restarted, or its agent failed).
+            // Retrying resume can never succeed: stop the loop and tell the facade to start
+            // a fresh connect instead of scheduling another attempt.
+            if (error is GatewaySessionResumeRejectedException) {
+                resumeRejected = true
+                emitManagerEvent(AcpManagerEvent.SessionResumeRejected)
+            } else if (scheduleReconnectOnFailure) {
                 scheduleReconnect(resetState)
             }
             false
@@ -430,22 +429,15 @@ internal class AcpTransportClient(
 
     /** Mints a fresh attachToken via gateway resume, then attaches the WebSocket. */
     private suspend fun resumeAndEstablishSession(
-        params: ResumeSessionParams,
-        config: AcpConnectionConfig,
+        gateway: AcpConnectionConfig.Gateway,
+        resume: AcpConnectionConfig.ResumeInfo,
         resetState: () -> Unit,
     ): Boolean {
-        val resumeResponse =
-            params.gatewayRepo.resumeSession(
-                scheme = params.gatewayScheme,
-                host = params.gatewayHost,
-                gatewayCredential = params.gatewayCredential,
-                sessionId = params.sessionId,
-            )
-        currentConfig = config.copy(attachToken = resumeResponse.attachToken)
-        val rawEndpointUrl = config.webSocketUrl ?: "${config.scheme}://${config.host}"
-        val base = rawEndpointUrl.substringBefore('?')
-        val wsUrl = "$base?sessionId=${params.sessionId}&attachToken=${resumeResponse.attachToken}"
-        val diagnosticsUrl = "$base?sessionId=${params.sessionId}&attachToken=***"
+        val attachToken = resumeAttachToken(gateway, resume)
+        currentConfig = gateway.copy(resume = resume.copy(attachToken = attachToken))
+        val base = gateway.endpoint.substringBefore('?')
+        val wsUrl = "$base?sessionId=${resume.sessionId}&attachToken=$attachToken"
+        val diagnosticsUrl = "$base?sessionId=${resume.sessionId}&attachToken=***"
 
         prepareForConnectAttempt(resetState)
         updateConnectionState(AcpConnectionState.Connecting)
@@ -453,53 +445,21 @@ internal class AcpTransportClient(
 
         return establishSession(
             wsUrl = wsUrl,
-            bearerToken = null,
             resetState = resetState,
             diagnosticsUrl = diagnosticsUrl,
         )
     }
 
-    /** Resolves the fields required for a gateway session resume, or null if any is absent. */
-    private fun resolveResumeParams(config: AcpConnectionConfig): ResumeSessionParams? =
-        buildResumeParamsOrNull(
-            config.sessionId,
-            gatewayRepository,
-            config.gatewayScheme,
-            config.gatewayHost,
-            config.gatewayCredential,
-        )
-
-    private fun buildResumeParamsOrNull(
-        sessionId: String?,
-        gatewayRepo: GatewayRepository?,
-        gatewayScheme: String?,
-        gatewayHost: String?,
-        gatewayCredential: String?,
-    ): ResumeSessionParams? {
-        if (listOf(sessionId, gatewayRepo, gatewayScheme, gatewayHost, gatewayCredential).any { it == null }) {
-            return null
+    /** Copy of this config that re-runs [methodId] after a reconnect. */
+    private fun AcpConnectionConfig.withPreferredAuthMethodId(methodId: String): AcpConnectionConfig =
+        when (this) {
+            is AcpConnectionConfig.Manual -> copy(preferredAuthMethodId = methodId)
+            is AcpConnectionConfig.Gateway -> copy(preferredAuthMethodId = methodId)
         }
-        return ResumeSessionParams(
-            sessionId = sessionId!!,
-            gatewayRepo = gatewayRepo!!,
-            gatewayScheme = gatewayScheme!!,
-            gatewayHost = gatewayHost!!,
-            gatewayCredential = gatewayCredential!!,
-        )
-    }
-
-    private data class ResumeSessionParams(
-        val sessionId: String,
-        val gatewayRepo: GatewayRepository,
-        val gatewayScheme: String,
-        val gatewayHost: String,
-        val gatewayCredential: String,
-    )
 
     @OptIn(UnstableApi::class)
     private suspend fun establishSession(
         wsUrl: String,
-        bearerToken: String?,
         resetState: () -> Unit,
         diagnosticsUrl: String = wsUrl,
     ): Boolean {
@@ -518,9 +478,6 @@ internal class AcpTransportClient(
                 withTimeout(WEB_SOCKET_CONNECT_TIMEOUT_MS) {
                     acquireHttpClient().webSocketSession {
                         url(wsUrl)
-                        bearerToken?.takeIf { it.isNotBlank() }?.let {
-                            headers.append("Authorization", "Bearer $it")
-                        }
                     }
                 }
             } catch (_: TimeoutCancellationException) {
@@ -569,6 +526,7 @@ internal class AcpTransportClient(
             }
         }
         protocol.onRemoteTurnEnded(onRemoteTurnEnded)
+        protocol.onRemoteResumed(onRemoteResumed)
         protocol.start()
 
         sdkClient = Client(protocol)
@@ -586,8 +544,30 @@ internal class AcpTransportClient(
     }
 
     @Suppress("TooGenericExceptionCaught")
+    private suspend fun reconnectOnce(
+        config: AcpConnectionConfig,
+        resetState: () -> Unit,
+    ): Boolean {
+        val gateway = config as? AcpConnectionConfig.Gateway
+        return try {
+            if (gateway != null) {
+                connectSessionResume(gateway, resetState, scheduleReconnectOnFailure = false)
+            } else {
+                connectInternal(config, resetState, scheduleReconnectOnFailure = false)
+            }
+        } catch (error: Throwable) {
+            // A reconnect attempt must never crash the app or kill the loop:
+            // network drops (ConnectException), handshake failures, and
+            // gateway HTTP errors all surface here. Log + retry with backoff.
+            if (error is CancellationException) throw error
+            diagnosticsStore.appendError("reconnect", formatAcpErrorMessage(error, "Reconnect failed"))
+            false
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
     private fun scheduleReconnect(resetState: () -> Unit) {
-        if (reconnectJob != null) return
+        if (reconnectJob != null || resumeRejected) return
         _reconnectPending.value = true
         // Lazy: assigned before it runs, so the finally's ownership check sees itself
         // even when the loop completes without suspending.
@@ -596,69 +576,7 @@ internal class AcpTransportClient(
                 try {
                     val config = currentConfig ?: return@launch
                     while (sdkClient == null) {
-                        // Wait until the device is actually online before spending a retry.
-                        // This also resets the backoff counter when connectivity had dropped,
-                        // so the reconnect (and the offline-queue flush it triggers) fires
-                        // promptly once the network returns instead of idling out the 30s cap.
-                        awaitConnectivityForReconnect()
-                        reconnectAttempts++
-                        diagnosticsStore.setReconnectAttempt(reconnectAttempts)
-                        // Exponential backoff with full jitter to prevent thundering-herd
-                        // reconnects when many clients retry against the same gateway.
-                        // Capped at 30s; retries forever (no attempt cap).
-                        delay(computeReconnectDelayMs(reconnectAttempts))
-
-                        deferConnectedState = true
-                        val reconnected =
-                            try {
-                                if (config.isResilientSession) {
-                                    connectSessionResume(config, resetState, scheduleReconnectOnFailure = false)
-                                } else {
-                                    connectInternal(config, resetState, scheduleReconnectOnFailure = false)
-                                }
-                            } catch (error: Throwable) {
-                                // A reconnect attempt must never crash the app or kill the loop:
-                                // network drops (ConnectException), handshake failures, and
-                                // gateway HTTP errors all surface here. Log + retry with backoff.
-                                if (error is CancellationException) throw error
-                                diagnosticsStore.appendError(
-                                    "reconnect",
-                                    formatAcpErrorMessage(error, "Reconnect failed"),
-                                )
-                                false
-                            }
-
-                        if (reconnected) {
-                            val initialized = initialize()
-                            // ACP auth state is per-connection: a fresh socket after reconnect
-                            // has no authenticated session, so re-run authentication with the
-                            // stored preferred method before session ops resume.
-                            val authenticated =
-                                currentConfig?.preferredAuthMethodId?.let { methodId ->
-                                    authenticate(methodId)
-                                }
-                            // An open socket is not a usable connection. Breaking out here
-                            // regardless left the state Connected, and every reuse guard reads
-                            // that as "already connected and initialized" (ServerListViewModel's
-                            // reuse guard, ChatConnectionHub's listing/delete legs): session ops
-                            // then ran on a client whose handshake never completed, and their
-                            // failure was recorded as an empty result. Drop the socket and let
-                            // the loop retry with backoff instead.
-                            if (initialized != null && authenticated !is AcpAuthenticateResult.Failure) {
-                                // Announced only now: Connected sent the facade straight into
-                                // session/load while initialize was still in flight, and a
-                                // failed handshake then closed the socket under that load.
-                                // Sessions are restored first, so whoever reacts to Connected
-                                // finds them registered instead of loading them a second time.
-                                onReconnected(initialized)
-                                announceConnected()
-                                break
-                            }
-                            runCatching { sdkClient?.protocol?.close() }
-                            sdkClient = null
-                            updateConnectionState(AcpConnectionState.Disconnected)
-                            diagnosticsStore.markDisconnected()
-                        }
+                        if (runReconnectAttempt(config, resetState)) break
                     }
                 } finally {
                     // A transport drop mid-attempt cancels this loop and arms a new one;
@@ -670,6 +588,66 @@ internal class AcpTransportClient(
                 }
             }
         reconnectJob?.start()
+    }
+
+    /**
+     * One reconnect attempt: waits for connectivity, backs off, reconnects and
+     * re-authenticates. Returns true when the loop must stop — either the resume was
+     * rejected (the session is gone for good, so the facade's fresh connect supersedes
+     * this loop) or the socket is connected and usable.
+     */
+    private suspend fun runReconnectAttempt(
+        config: AcpConnectionConfig,
+        resetState: () -> Unit,
+    ): Boolean {
+        // A rejected resume (400) means this session is gone for good; the
+        // facade's fresh connect supersedes this loop, so stop retrying.
+        if (resumeRejected) return true
+        // Wait until the device is actually online before spending a retry.
+        // This also resets the backoff counter when connectivity had dropped,
+        // so the reconnect (and the offline-queue flush it triggers) fires
+        // promptly once the network returns instead of idling out the 30s cap.
+        awaitConnectivityForReconnect()
+        reconnectAttempts++
+        diagnosticsStore.setReconnectAttempt(reconnectAttempts)
+        // Exponential backoff with full jitter to prevent thundering-herd
+        // reconnects when many clients retry against the same gateway.
+        // Capped at 30s; retries forever (no attempt cap).
+        delay(computeReconnectDelayMs(reconnectAttempts))
+
+        deferConnectedState = true
+        if (reconnectOnce(config, resetState)) {
+            val initialized = initialize()
+            // ACP auth state is per-connection: a fresh socket after reconnect
+            // has no authenticated session, so re-run authentication with the
+            // stored preferred method before session ops resume.
+            val authenticated =
+                currentConfig?.preferredAuthMethodId?.let { methodId ->
+                    authenticate(methodId)
+                }
+            // An open socket is not a usable connection. Breaking out here
+            // regardless left the state Connected, and every reuse guard reads
+            // that as "already connected and initialized" (ServerListViewModel's
+            // reuse guard, ChatConnectionHub's listing/delete legs): session ops
+            // then ran on a client whose handshake never completed, and their
+            // failure was recorded as an empty result. Drop the socket and let
+            // the loop retry with backoff instead.
+            if (initialized != null && authenticated !is AcpAuthenticateResult.Failure) {
+                // Announced only now: Connected sent the facade straight into
+                // session/load while initialize was still in flight, and a
+                // failed handshake then closed the socket under that load.
+                // Sessions are restored first, so whoever reacts to Connected
+                // finds them registered instead of loading them a second time.
+                onReconnected(initialized)
+                announceConnected()
+                return true
+            }
+            runCatching { sdkClient?.protocol?.close() }
+            sdkClient = null
+            updateConnectionState(AcpConnectionState.Disconnected)
+            diagnosticsStore.markDisconnected()
+        }
+        return false
     }
 
     private suspend fun handleUnexpectedTransportTermination(

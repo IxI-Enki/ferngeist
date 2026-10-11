@@ -166,8 +166,6 @@ object AppModule {
         connectivityObserver: ConnectivityObserver,
         gatewayRepository: GatewayRepository,
         sessionRepository: SessionRepository,
-        launchableTargetRepository: LaunchableTargetRepository,
-        gatewaySourceRepository: GatewaySourceRepository,
         applicationScope: CoroutineScope,
     ): ChatConnectionHub =
         ChatConnectionHub(
@@ -175,8 +173,6 @@ object AppModule {
             scope = applicationScope,
             connectivityObserver = connectivityObserver,
             sessionRepository = sessionRepository,
-            launchableTargetRepository = launchableTargetRepository,
-            gatewaySourceRepository = gatewaySourceRepository,
         )
 
     /** Supplies the chat-session facade factory backed by ACP. */

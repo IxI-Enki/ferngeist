@@ -1,13 +1,11 @@
-@file:OptIn(com.agentclientprotocol.annotations.UnstableApi::class)
-
 package com.tamimarafat.ferngeist.feature.serverlist
 
 import app.cash.turbine.test
-import com.agentclientprotocol.model.AgentCapabilities
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpInitializeResult
-import com.tamimarafat.ferngeist.acp.bridge.connection.AgentInfo
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLaunchEvent
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLaunchOutcome
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLaunchSession
+import com.tamimarafat.ferngeist.acp.bridge.launcher.AgentLauncher
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.ServerConfig
 import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
@@ -18,7 +16,6 @@ import com.tamimarafat.ferngeist.core.model.store.AuthEnvValueStore
 import com.tamimarafat.ferngeist.core.model.store.RecentCwdStore
 import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import com.tamimarafat.ferngeist.feature.serverlist.consent.AgentLaunchConsentStore
-import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -46,16 +43,15 @@ class ServerListViewModelTest {
     private val gatewaySourceRepository = mockk<GatewaySourceRepository>(relaxed = true)
     private val launchableTargetRepository = mockk<LaunchableTargetRepository>(relaxed = true)
     private val sessionRepository = mockk<SessionRepository>(relaxed = true)
-    private val connectionManager = mockk<AcpConnectionManager>(relaxed = true)
-    private val gatewayRepository = mockk<GatewayRepository>(relaxed = true)
+    private val agentLauncher = mockk<AgentLauncher>()
+    private val launchSession = mockk<AgentLaunchSession>(relaxed = true)
     private val authEnvValueStore = mockk<AuthEnvValueStore>(relaxed = true)
     private val agentLaunchConsentStore = mockk<AgentLaunchConsentStore>(relaxed = true)
     private val sessionSettingsRepository = mockk<LaunchableTargetSessionSettingsRepository>(relaxed = true)
     private val recentCwdStore = mockk<RecentCwdStore>(relaxed = true)
     private val recentSelectionStore = mockk<RecentSelectionStore>(relaxed = true)
-    private val chatConnectionHub = mockk<com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub>(relaxed = true)
-    private val connectionStateFlow = MutableStateFlow<AcpConnectionState>(AcpConnectionState.Disconnected)
-    private val eventsFlow = MutableSharedFlow<com.tamimarafat.ferngeist.acp.bridge.connection.AcpManagerEvent>()
+    private val connectionStateFlow = MutableStateFlow<ChatConnectionState>(ChatConnectionState.Disconnected)
+    private val eventsFlow = MutableSharedFlow<AgentLaunchEvent>()
 
     @Before
     fun setup() {
@@ -66,11 +62,12 @@ class ServerListViewModelTest {
         // that never does, and the loading flag would never clear.
         every { launchableTargetRepository.getTargets() } returns flowOf(emptyList())
         every { sessionRepository.getRecentSessions(any()) } returns flowOf(emptyList())
-        every { connectionManager.connectionState } returns connectionStateFlow
-        every { connectionManager.events } returns eventsFlow
-        every { chatConnectionHub.createBrowserManager(any()) } returns connectionManager
-        every { chatConnectionHub.warmServers } returns MutableStateFlow(emptySet())
-        every { chatConnectionHub.warmManagerFor(any()) } returns null
+        every { agentLauncher.session(any()) } returns launchSession
+        every { agentLauncher.liveServerIds } returns MutableStateFlow(emptySet())
+        every { agentLauncher.hasWarmChat(any()) } returns false
+        coEvery { agentLauncher.prewarmSessions(any()) } returns Unit
+        every { launchSession.connectionState } returns connectionStateFlow
+        every { launchSession.events } returns eventsFlow
     }
 
     @After
@@ -87,12 +84,11 @@ class ServerListViewModelTest {
                     server = ServerConfig(id = serverId, name = "Test Server", host = "localhost"),
                 )
 
-            // Mock initialize success to allow first connection to complete
-            coEvery { connectionManager.connectAndInitialize(any()) } returns
-                AcpInitializeResult.Ready(
-                    agentInfo = AgentInfo("Test Agent", "1.0"),
-                    agentCapabilities = AgentCapabilities(),
-                    authMethods = emptyList(),
+            // Mock launch success to allow first connection to complete
+            coEvery { launchSession.launch(any()) } returns
+                AgentLaunchOutcome.Ready(
+                    agentName = "Test Agent",
+                    capabilities = emptyList(),
                 )
 
             val viewModel = createViewModel()
@@ -103,32 +99,32 @@ class ServerListViewModelTest {
                 advanceUntilIdle()
 
                 // Verify it connected once
-                coVerify(exactly = 1) { connectionManager.connectAndInitialize(any()) }
+                coVerify(exactly = 1) { launchSession.launch(any()) }
 
                 // Should have navigated
                 val firstEvent = awaitItem()
                 assertTrue(
                     "Expected NavigateToSessions(serverId=$serverId) after first connect, got $firstEvent",
-                    firstEvent is com.tamimarafat.ferngeist.feature.serverlist.ServerListEvent.NavigateToSessions &&
+                    firstEvent is ServerListEvent.NavigateToSessions &&
                         firstEvent.serverId == serverId,
                 )
 
                 // 2. Setup "already connected" state for second call
-                connectionStateFlow.value = AcpConnectionState.Connected
-                every { connectionManager.isConnected } returns true
+                connectionStateFlow.value = ChatConnectionState.Connected
+                every { launchSession.isConnected } returns true
 
                 // 3. Second call with same server
                 viewModel.connectAndOpenServer(server)
                 advanceUntilIdle()
 
                 // Verify that connect was NOT called again during the second attempt.
-                coVerify(exactly = 1) { connectionManager.connectAndInitialize(any()) }
+                coVerify(exactly = 1) { launchSession.launch(any()) }
 
                 // Should have navigated AGAIN (instantly)
                 val secondEvent = awaitItem()
                 assertTrue(
                     "Expected NavigateToSessions(serverId=$serverId) on reuse, got $secondEvent",
-                    secondEvent is com.tamimarafat.ferngeist.feature.serverlist.ServerListEvent.NavigateToSessions &&
+                    secondEvent is ServerListEvent.NavigateToSessions &&
                         secondEvent.serverId == serverId,
                 )
 
@@ -150,11 +146,10 @@ class ServerListViewModelTest {
                     server = ServerConfig(id = serverBId, name = "Server B", host = "localhost"),
                 )
 
-            coEvery { connectionManager.connectAndInitialize(any()) } returns
-                AcpInitializeResult.Ready(
-                    agentInfo = AgentInfo("Test Agent", "1.0"),
-                    agentCapabilities = AgentCapabilities(),
-                    authMethods = emptyList(),
+            coEvery { launchSession.launch(any()) } returns
+                AgentLaunchOutcome.Ready(
+                    agentName = "Test Agent",
+                    capabilities = emptyList(),
                 )
 
             val viewModel = createViewModel()
@@ -165,11 +160,11 @@ class ServerListViewModelTest {
                 val firstEvent = awaitItem()
                 assertTrue(
                     "Expected NavigateToSessions for server A, got $firstEvent",
-                    firstEvent is com.tamimarafat.ferngeist.feature.serverlist.ServerListEvent.NavigateToSessions &&
+                    firstEvent is ServerListEvent.NavigateToSessions &&
                         firstEvent.serverId == serverAId,
                 )
-                connectionStateFlow.value = AcpConnectionState.Connected
-                every { connectionManager.isConnected } returns true
+                connectionStateFlow.value = ChatConnectionState.Connected
+                every { launchSession.isConnected } returns true
 
                 // Connect to server B — reuse guard should NOT fire (different serverId)
                 viewModel.connectAndOpenServer(serverB)
@@ -178,7 +173,7 @@ class ServerListViewModelTest {
                 val secondEvent = awaitItem()
                 assertTrue(
                     "Expected NavigateToSessions for server B, got $secondEvent",
-                    secondEvent is com.tamimarafat.ferngeist.feature.serverlist.ServerListEvent.NavigateToSessions &&
+                    secondEvent is ServerListEvent.NavigateToSessions &&
                         secondEvent.serverId == serverBId,
                 )
 
@@ -195,29 +190,61 @@ class ServerListViewModelTest {
                     server = ServerConfig(id = serverId, name = "Test Server", host = "localhost"),
                 )
 
-            coEvery { connectionManager.connectAndInitialize(any()) } returns
-                AcpInitializeResult.Ready(
-                    agentInfo = AgentInfo("Test Agent", "1.0"),
-                    agentCapabilities = AgentCapabilities(),
-                    authMethods = emptyList(),
+            coEvery { launchSession.launch(any()) } returns
+                AgentLaunchOutcome.Ready(
+                    agentName = "Test Agent",
+                    capabilities = emptyList(),
                 )
 
             val viewModel = createViewModel()
 
             viewModel.events.test {
-                every { connectionManager.isConnected } returns false
+                every { launchSession.isConnected } returns false
 
                 // connectAndOpenServer with isConnected=false should proceed past guard
                 viewModel.connectAndOpenServer(server)
                 val event = awaitItem()
                 assertTrue(
                     "Expected NavigateToSessions, got $event",
-                    event is com.tamimarafat.ferngeist.feature.serverlist.ServerListEvent.NavigateToSessions &&
+                    event is ServerListEvent.NavigateToSessions &&
                         event.serverId == serverId,
                 )
 
                 // Verify full connection lifecycle ran (guard was skipped)
-                coVerify(exactly = 1) { connectionManager.connectAndInitialize(any()) }
+                coVerify(exactly = 1) { launchSession.launch(any()) }
+
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `connectAndOpenServer should prewarm sessions before navigating`() =
+        runTest(testDispatcher) {
+            val serverId = UUID.randomUUID().toString()
+            val server =
+                LaunchableTarget.Manual(
+                    server = ServerConfig(id = serverId, name = "Test Server", host = "localhost"),
+                )
+
+            coEvery { launchSession.launch(any()) } returns
+                AgentLaunchOutcome.Ready(
+                    agentName = "Test Agent",
+                    capabilities = emptyList(),
+                )
+
+            val viewModel = createViewModel()
+
+            viewModel.events.test {
+                viewModel.connectAndOpenServer(server)
+                val event = awaitItem()
+                assertTrue(
+                    "Expected NavigateToSessions, got $event",
+                    event is ServerListEvent.NavigateToSessions &&
+                        event.serverId == serverId,
+                )
+
+                // The listing warms the cache for the server we are about to open.
+                coVerify(exactly = 1) { agentLauncher.prewarmSessions(serverId) }
 
                 cancelAndIgnoreRemainingEvents()
             }
@@ -228,12 +255,11 @@ class ServerListViewModelTest {
             gatewaySourceRepository,
             launchableTargetRepository,
             sessionRepository,
-            gatewayRepository,
             authEnvValueStore,
             agentLaunchConsentStore,
             sessionSettingsRepository,
             recentCwdStore,
             recentSelectionStore,
-            chatConnectionHub,
+            agentLauncher,
         )
 }

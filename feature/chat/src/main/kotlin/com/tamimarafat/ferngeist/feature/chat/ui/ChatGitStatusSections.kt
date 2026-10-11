@@ -46,14 +46,14 @@ import com.tamimarafat.ferngeist.core.common.ui.EdgeFade
 import com.tamimarafat.ferngeist.core.common.ui.ErrorStateCard
 import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.feature.chat.R
-import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
-import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 
 @Composable
 internal fun GitStatusListContent(
-    status: GatewayGitStatus,
-    onFileClick: (GatewayChangedFile) -> Unit,
+    status: ChatGitStatus,
+    onFileClick: (ChatChangedFile) -> Unit,
 ) {
     val additions = status.changed.sumOf { it.added }
     val deletions = status.changed.sumOf { it.removed }
@@ -113,7 +113,7 @@ internal fun GitStatusListContent(
 }
 
 @Composable
-private fun GitStatusHeader(status: GatewayGitStatus) {
+private fun GitStatusHeader(status: ChatGitStatus) {
     // Header: title + branch pill + ahead/behind
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -131,7 +131,7 @@ private fun GitStatusHeader(status: GatewayGitStatus) {
 }
 
 @Composable
-private fun GitStatusBranchMeta(status: GatewayGitStatus) {
+private fun GitStatusBranchMeta(status: ChatGitStatus) {
     // Branch pill + ahead/behind (like git branch -v)
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -249,7 +249,7 @@ private fun GitStatusSummaryCard(
 @Composable
 internal fun GitDiffDetailContent(
     path: String,
-    file: GatewayChangedFile?,
+    file: ChatChangedFile?,
     diff: List<ToolCallContent.Diff>?,
     diffPath: String?,
     isLoading: Boolean,
@@ -281,7 +281,7 @@ internal fun GitDiffDetailContent(
 
 @Composable
 private fun GitDiffDetailHeader(
-    file: GatewayChangedFile?,
+    file: ChatChangedFile?,
     onBack: () -> Unit,
 ) {
     // Header: back arrow + status badge + file name + counts
@@ -343,7 +343,7 @@ private fun GitStatusBadge(status: String) {
 }
 
 @Composable
-private fun GitFileDiffCounts(file: GatewayChangedFile) {
+private fun GitFileDiffCounts(file: ChatChangedFile) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -376,7 +376,7 @@ private fun GitFileDiffCounts(file: GatewayChangedFile) {
 @Composable
 private fun GitDiffDetailBody(
     path: String,
-    file: GatewayChangedFile?,
+    file: ChatChangedFile?,
     diff: List<ToolCallContent.Diff>?,
     diffPath: String?,
     isLoading: Boolean,
@@ -450,7 +450,7 @@ private fun GitDiffDetailBody(
 
 @Composable
 private fun ChangedFileRow(
-    file: GatewayChangedFile,
+    file: ChatChangedFile,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -506,7 +506,7 @@ private fun ChangedFileRow(
 }
 
 @Composable
-private fun ChangedFileDiffCounts(file: GatewayChangedFile) {
+private fun ChangedFileDiffCounts(file: ChatChangedFile) {
     // Reuse the diff-blocks visual (proportion of additions vs deletions)
     // with compact +N / -M counts, matching the top-bar indicator.
     Row(

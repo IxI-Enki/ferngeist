@@ -1,0 +1,331 @@
+package com.tamimarafat.ferngeist.feature.chat.ui
+
+import androidx.compose.animation.AnimatedContentScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tamimarafat.ferngeist.core.common.ui.SessionSharedBoundsKey
+import com.tamimarafat.ferngeist.feature.chat.ChatIntent
+import com.tamimarafat.ferngeist.feature.chat.ChatViewModel
+import com.tamimarafat.ferngeist.feature.chat.OnSwitchSession
+import com.tamimarafat.ferngeist.feature.chat.R
+import com.tamimarafat.ferngeist.feature.chat.SwitcherUiState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalSharedTransitionApi::class,
+)
+@Composable
+internal fun ChatScreenScaffold(
+    screenState: ChatScreenState,
+    sessionId: String,
+    fallbackTitle: String,
+    viewModel: ChatViewModel,
+    onNavigateBack: () -> Unit,
+    onSwitchSession: OnSwitchSession,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedContentScope: AnimatedContentScope,
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true,
+    sharedBoundsEnabled: Boolean = true,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    // Hover of a drag over this pane, reported by the content receiver below and read by the
+    // composer's button: while it is true the button shows what the drop would do.
+    var dropTargetActive by remember { mutableStateOf(false) }
+    val nothingToAttachMessage = stringResource(R.string.chat_attach_nothing_found)
+
+    // Suppressed while the workspace shows the session list beside this chat. The list's
+    // session card registers both of these keys for the same session, so two nodes claiming
+    // one key made the shell animate to nothing: the chat pane's top bar rendered with no
+    // title, no model subtitle and no cwd, visible only in semantics. One claimant restores it.
+    val transitionModifier =
+        if (sharedBoundsEnabled) {
+            with(sharedTransitionScope) {
+                Modifier.sharedBounds(
+                    sharedContentState =
+                        rememberSharedContentState(
+                            key = SessionSharedBoundsKey(sessionId),
+                        ),
+                    animatedVisibilityScope = animatedContentScope,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
+                )
+            }
+        } else {
+            Modifier
+        }
+
+    Box(
+        modifier =
+            transitionModifier
+                .fillMaxSize()
+                .then(modifier)
+                .background(MaterialTheme.colorScheme.surface)
+                // The pane, not the composer: a drag anywhere over the conversation is a drop
+                // onto the composer's attachments, and the field below still finds this
+                // receiver on its ancestors for paste.
+                .composerContentReceiver(
+                    canSendImages = screenState.state.canSendImages,
+                    canSendFiles = screenState.state.supportsEmbeddedContext,
+                    onUris = screenState.attachUris,
+                    onDragHoverChange = { dropTargetActive = it },
+                    onNothingToAttach = {
+                        coroutineScope.launch {
+                            screenState.snackbarHostState.showSnackbar(nothingToAttachMessage)
+                        }
+                    },
+                ),
+    ) {
+        val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+        // Chrome-style switch: the whole chat rides the bubble drag 1:1 in the
+        // layout phase (no recomposition per frame), springs back or flies off
+        // on release. The surface behind is the plain background.
+        val chatOffset = remember { Animatable(0f) }
+
+        Scaffold(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .offset {
+                        IntOffset(chatOffset.value.roundToInt(), 0)
+                    },
+            containerColor = Color.Transparent,
+            topBar = {
+                ChatScreenTopBar(
+                    screenState = screenState,
+                    sessionId = sessionId,
+                    fallbackTitle = fallbackTitle,
+                    scrollBehavior = scrollBehavior,
+                    coroutineScope = coroutineScope,
+                    viewModel = viewModel,
+                    onNavigateBack = onNavigateBack,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedContentScope = animatedContentScope,
+                    showBackButton = showBackButton,
+                    sharedBoundsEnabled = sharedBoundsEnabled,
+                )
+            },
+        ) { innerPadding ->
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize(),
+            ) {
+                ChatScreenOverlays(
+                    screenState = screenState,
+                    innerPadding = innerPadding,
+                    coroutineScope = coroutineScope,
+                    focusManager = focusManager,
+                    viewModel = viewModel,
+                    chatOffset = chatOffset,
+                    onSwitchSession = onSwitchSession,
+                    appBarScrollConnection = scrollBehavior.nestedScrollConnection,
+                    dropTargetActive = dropTargetActive,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun BoxScope.ChatScreenOverlays(
+    screenState: ChatScreenState,
+    innerPadding: PaddingValues,
+    coroutineScope: CoroutineScope,
+    focusManager: FocusManager,
+    viewModel: ChatViewModel,
+    chatOffset: Animatable<Float, AnimationVector1D>,
+    onSwitchSession: OnSwitchSession,
+    appBarScrollConnection: NestedScrollConnection,
+    dropTargetActive: Boolean,
+) {
+    val switcherState by viewModel.switcherUiState.collectAsStateWithLifecycle()
+    ChatScreenContentOverlays(
+        screenState = screenState,
+        innerPadding = innerPadding,
+        viewModel = viewModel,
+        switcherState = switcherState,
+        onSwitchSession = onSwitchSession,
+        appBarScrollConnection = appBarScrollConnection,
+    )
+    ChatScreenSnackbar(screenState)
+
+    if (screenState.showComposerToolbar) {
+        ChatComposerHost(
+            screenState = screenState,
+            coroutineScope = coroutineScope,
+            focusManager = focusManager,
+            viewModel = viewModel,
+            switcherState = switcherState,
+            chatOffset = chatOffset,
+            onSwitchSession = onSwitchSession,
+            onSwitcherClick = { screenState.showSwitcherSheet.value = true },
+            dropTargetActive = dropTargetActive,
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.ChatScreenContentOverlays(
+    screenState: ChatScreenState,
+    innerPadding: PaddingValues,
+    viewModel: ChatViewModel,
+    switcherState: SwitcherUiState,
+    onSwitchSession: OnSwitchSession,
+    appBarScrollConnection: NestedScrollConnection,
+) {
+    ChatScreenDialogsHost(screenState, viewModel)
+    if (screenState.showGitStatusSheet.value) {
+        screenState.state.gitStatus?.let { status ->
+            GitStatusSheet(
+                status = status,
+                gitFileDiff = screenState.state.gitFileDiff,
+                gitFileDiffPath = screenState.state.gitFileDiffPath,
+                isGitFileDiffLoading = screenState.state.isGitFileDiffLoading,
+                gitFileDiffError = screenState.state.gitFileDiffError,
+                onLoadGitDiff = { path ->
+                    viewModel.dispatch(ChatIntent.LoadGitDiff(path))
+                },
+                onDismiss = { screenState.showGitStatusSheet.value = false },
+            )
+        }
+    }
+    if (screenState.showSwitcherSheet.value) {
+        SessionSwitcherSheet(
+            uiState = switcherState,
+            onSwitch = { session ->
+                screenState.showSwitcherSheet.value = false
+                onSwitchSession(session, null)
+            },
+            onClose = { session ->
+                // Sheet stays open: the row disappears when the hub drops the
+                // session, and a refusal lands in the snackbar behind it.
+                viewModel.dispatch(ChatIntent.CloseSession(session.serverId, session.sessionId))
+            },
+            onDismiss = { screenState.showSwitcherSheet.value = false },
+        )
+    }
+
+    ChatScreenBody(
+        state = screenState.state,
+        listState = screenState.scrollHandle.listState,
+        userScrollDetector = screenState.scrollHandle.userScrollDetector,
+        appBarScrollConnection = appBarScrollConnection,
+        renderedLastMessageId = screenState.renderedLastMessageId,
+        listTopPadding = innerPadding.calculateTopPadding(),
+        listBottomPadding = screenState.listBottomPadding,
+        onRetryLoad = { viewModel.dispatch(ChatIntent.RetryLoad) },
+        onThoughtClick = { segmentId ->
+            screenState.selectedThoughtSegmentId.value = segmentId
+        },
+        onToolCallClick = { segmentId ->
+            screenState.selectedToolCallSegmentId.value = segmentId
+        },
+        onStreamLayoutSettled = screenState.scrollHandle.onStreamLayoutSettled,
+        onRetryMessage = { clientId ->
+            viewModel.dispatch(ChatIntent.RetryMessage(clientId))
+        },
+    )
+
+    ChatBottomFade(bandHeight = screenState.bottomFadeBandHeight)
+
+    ChatScreenSnackbar(screenState)
+}
+
+// How much of the surface colour the bottom fade reaches at the very bottom of
+// the screen. Deliberately short of 1f: content going under the composer is
+// dimmed, not dissolved, so it stays faintly readable the way it does when it
+// passes under the top bar.
+private const val BOTTOM_FADE_MAX_ALPHA = 0.75f
+
+/**
+ * Mirrors the top bar at the bottom of the chat: content going under the
+ * composer is dimmed into the surface instead of being cut off by it.
+ *
+ * The band starts just above the composer's top edge and runs to the bottom of
+ * the screen, so content is only dimmed once it reaches the composer — and, at
+ * rest, the last message ends below the band's transparent edge and stays
+ * crisp.
+ *
+ * Unlike the top bar, the band never reaches the surface colour: it bottoms out
+ * at [BOTTOM_FADE_MAX_ALPHA], leaving what has scrolled behind the composer
+ * faintly readable rather than dissolving it away.
+ */
+@Composable
+private fun BoxScope.ChatBottomFade(bandHeight: Dp) {
+    if (bandHeight <= 0.dp) return
+    val surface = MaterialTheme.colorScheme.surface
+    Box(
+        modifier =
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(bandHeight)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        1f to surface.copy(alpha = BOTTOM_FADE_MAX_ALPHA),
+                    ),
+                ),
+    )
+}
+
+@Composable
+private fun BoxScope.ChatScreenSnackbar(screenState: ChatScreenState) {
+    SnackbarHost(
+        hostState = screenState.snackbarHostState,
+        modifier =
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = screenState.snackbarBottomPadding,
+                ).zIndex(2f),
+    )
+}

@@ -59,12 +59,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionState
 import com.tamimarafat.ferngeist.core.common.ui.AgentIconBadge
 import com.tamimarafat.ferngeist.core.common.ui.ServerNameSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.ServerSharedBoundsKey
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.common.ui.onSecondaryClick
+import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.feature.serverlist.R
 import com.tamimarafat.ferngeist.feature.serverlist.ServerListUiState
@@ -444,7 +444,7 @@ private data class ServerConnectionUiState(
             // The home VM's own verification socket hangs up after every tap,
             // so it must not drive the dot.
             val isConnected = serverId in liveServerIds
-            val isFailed = isConnecting && uiState.connectionState is AcpConnectionState.Failed
+            val isFailed = isConnecting && uiState.connectionState is ChatConnectionState.Failed
             return ServerConnectionUiState(
                 isConnecting = isConnecting,
                 isConnected = isConnected,

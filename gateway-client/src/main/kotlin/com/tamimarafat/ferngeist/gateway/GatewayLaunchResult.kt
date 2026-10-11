@@ -2,14 +2,14 @@ package com.tamimarafat.ferngeist.gateway
 
 import com.tamimarafat.ferngeist.core.model.GatewaySource
 import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
-import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
  * The raw result of launching a gateway agent runtime: the (possibly
- * refreshed) gateway source, the started runtime, and the WebSocket handoff.
+ * refreshed) gateway source and the connect handoff for the runtime the
+ * gateway spawned.
  *
  * This deliberately contains no [AcpConnectionConfig] — that type lives in
  * acp-bridge, and this module must not depend upward. Callers compose their
@@ -17,26 +17,14 @@ import kotlinx.coroutines.withContext
  */
 data class GatewayLaunchResult(
     val gatewaySource: GatewaySource,
-    val runtime: GatewayRuntime,
     val handoff: GatewayConnectResponse,
 )
 
-/** Runtime status the gateway reports for a process it is currently holding. */
-private const val RUNTIME_STATUS_RUNNING = "running"
-
 /**
- * Starts (or reuses) the gateway runtime for [agentId] and requests the
- * runtime-scoped ACP WebSocket handoff — the two-stage launch every
- * gateway-backed agent needs.
- *
- * Pass `new = true` to start an isolated agent process instead of reusing
- * an existing one for [agentId].
- *
- * Pass [reuseRuntimeId] to skip runtime selection entirely and attach to a
- * specific runtime the caller has already identified — the case for a chat
- * returning to the runtime holding its own live gateway session. Without it,
- * the gateway picks the runtime by its own reuse heuristic, which hands back
- * whichever session the chosen runtime already holds.
+ * Connects [agentId] on the gateway (protocol v2) and returns the runtime/session
+ * handoff. One call does both: the gateway owns the agent process lifetime, so there
+ * is no start-then-connect sequence, no runtime selection, and no client-side retry —
+ * a launch either gets a runtime with an attached session or fails.
  *
  * Refreshes the stored credential when it is due. Returns [Result.failure]
  * with a user-facing message when the gateway is unpaired or the credential
@@ -50,8 +38,6 @@ suspend fun launchGatewayRuntime(
     gatewaySource: GatewaySource,
     agentId: String,
     requireSupportedProtocol: Boolean = false,
-    new: Boolean = false,
-    reuseRuntimeId: String? = null,
 ): Result<GatewayLaunchResult> =
     try {
         launchRefreshedRuntime(
@@ -60,16 +46,14 @@ suspend fun launchGatewayRuntime(
             gatewaySource = gatewaySource,
             agentId = agentId,
             requireSupportedProtocol = requireSupportedProtocol,
-            new = new,
-            reuseRuntimeId = reuseRuntimeId,
         )
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
         // Broad catch: every step here is a network boundary (credential refresh,
-        // protocol probe, agent start, runtime connect). Callers read the Result on
-        // the main dispatcher and render it, so an exception escaping this function
-        // does not surface as an error — it kills the chat screen's load coroutine.
+        // protocol probe, agent connect). Callers read the Result on the main
+        // dispatcher and render it, so an exception escaping this function does
+        // not surface as an error — it kills the chat screen's load coroutine.
         Result.failure(error)
     }
 
@@ -83,8 +67,6 @@ private suspend fun launchRefreshedRuntime(
     gatewaySource: GatewaySource,
     agentId: String,
     requireSupportedProtocol: Boolean,
-    new: Boolean,
-    reuseRuntimeId: String?,
 ): Result<GatewayLaunchResult> {
     val refreshedSource =
         try {
@@ -111,117 +93,36 @@ private suspend fun launchRefreshedRuntime(
             .requireSupportedProtocol()
     }
 
-    return startAndConnect(
-        gatewayRepository = gatewayRepository,
-        gatewaySource = refreshedSource,
-        agentId = agentId,
-        new = new,
-        reuseRuntimeId = reuseRuntimeId,
-    )
+    return attemptConnect(gatewayRepository, refreshedSource, agentId)
 }
 
 /**
- * Runs the two-stage launch for an already-refreshed [gatewaySource] and folds the
+ * Runs the connect call for an already-refreshed [gatewaySource] and folds the
  * outcome into a [Result].
  *
  * [CancellationException] is rethrown rather than folded into the failure, so a
  * cancelled caller sees cancellation instead of a launch error it would render on a
  * screen that is already gone. Every other exception is the launch failure the
- * function's contract promises to surface.
- *
- * When the connect stage reports a held runtime lease (another device attached
- * first), the picked runtime is unusable, so the launch retries once as an
- * isolated spawn instead of failing the chat. The retry runs only for a
- * gateway-picked runtime: an explicit [reuseRuntimeId] names this chat's own
- * session, which must be resumed rather than duplicated, and a retry that
- * already asked for an isolated runtime has nothing left to escalate to.
+ * function's contract promises to surface — including the gateway's own error text
+ * when the agent fails to start (HTTP 502), which reaches the caller verbatim.
  */
-private suspend fun startAndConnect(
-    gatewayRepository: GatewayRepository,
-    gatewaySource: GatewaySource,
-    agentId: String,
-    new: Boolean,
-    reuseRuntimeId: String?,
-): Result<GatewayLaunchResult> {
-    val first =
-        attemptStartAndConnect(gatewayRepository, gatewaySource, agentId, new, reuseRuntimeId)
-    if (!shouldRetryIsolated(first, new, reuseRuntimeId)) return first
-    return attemptStartAndConnect(gatewayRepository, gatewaySource, agentId, new = true, reuseRuntimeId = null)
-}
-
-/**
- * True when [first] refused a gateway-picked runtime on a held lease: retrying
- * as an isolated spawn can still succeed, while any other outcome (success,
- * own-session reattach, already-isolated attempt, unrelated failure) must
- * keep its result.
- */
-private fun shouldRetryIsolated(
-    first: Result<GatewayLaunchResult>,
-    new: Boolean,
-    reuseRuntimeId: String?,
-): Boolean {
-    if (new || reuseRuntimeId != null) return false
-    val failure = first.exceptionOrNull() ?: return false
-    return isRuntimeLeaseHeld(failure)
-}
-
-/** The gateway's held-lease marker on a refused connect: HTTP 409 with its error body. */
-private const val RUNTIME_LEASE_HELD_MARKER = "runtime_lease_held"
-
-/**
- * True when a refused connect means the picked runtime's lease is held.
- *
- * The marker is read from the response body, never from `message`: that message is a
- * human-facing sentence that embeds the raw body ("Gateway request failed: 409 Conflict
- * at <endpoint>. Response: {…}"), so matching it classified *any* 409 quoting the marker
- * as a held lease and retried as an isolated spawn — a second runtime and agent process
- * for the same agent. The catalog's agent-delete check reads the body the same way.
- */
-private fun isRuntimeLeaseHeld(error: Throwable): Boolean =
-    error is GatewayRequestException &&
-        error.statusCode == HttpStatusCode.Conflict.value &&
-        gatewayErrorMessage(error.responseBody)?.contains(RUNTIME_LEASE_HELD_MARKER) == true
-
 @Suppress("TooGenericExceptionCaught")
-private suspend fun attemptStartAndConnect(
+private suspend fun attemptConnect(
     gatewayRepository: GatewayRepository,
     gatewaySource: GatewaySource,
     agentId: String,
-    new: Boolean,
-    reuseRuntimeId: String?,
 ): Result<GatewayLaunchResult> =
     try {
-        val runtime =
-            if (reuseRuntimeId != null) {
-                GatewayRuntime(id = reuseRuntimeId, status = RUNTIME_STATUS_RUNNING, agentId = agentId)
-            } else {
-                withContext(Dispatchers.IO) {
-                    gatewayRepository.startAgent(
-                        scheme = gatewaySource.scheme,
-                        host = gatewaySource.host,
-                        gatewayCredential = gatewaySource.gatewayCredential,
-                        agentId = agentId,
-                        new = new,
-                    )
-                }
-            }
         val handoff =
             withContext(Dispatchers.IO) {
-                gatewayRepository.connectRuntime(
+                gatewayRepository.connectAgent(
                     scheme = gatewaySource.scheme,
                     host = gatewaySource.host,
                     gatewayCredential = gatewaySource.gatewayCredential,
-                    runtimeId = runtime.id,
-                    sessionMode = "resilient",
+                    agentId = agentId,
                 )
             }
-        Result.success(
-            GatewayLaunchResult(
-                gatewaySource = gatewaySource,
-                runtime = runtime,
-                handoff = handoff,
-            ),
-        )
+        Result.success(GatewayLaunchResult(gatewaySource = gatewaySource, handoff = handoff))
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {

@@ -4,16 +4,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agentclientprotocol.model.AgentCapabilities
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthMethodInfo
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpAuthenticateResult
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionConfig
-import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectivityObserver
-import com.tamimarafat.ferngeist.acp.bridge.connection.buildEnvPayload
-import com.tamimarafat.ferngeist.acp.bridge.connection.loadPersistedEnvValues
-import com.tamimarafat.ferngeist.acp.bridge.connection.persistEnvValues
-import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
-import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub.ListSessionsResult
-import com.tamimarafat.ferngeist.acp.bridge.hub.GatewayEndpoint
+import com.tamimarafat.ferngeist.acp.bridge.catalog.CatalogAuthMethod
+import com.tamimarafat.ferngeist.acp.bridge.catalog.SessionCatalog
+import com.tamimarafat.ferngeist.acp.bridge.catalog.SessionCatalog.ListSessionsResult
+import com.tamimarafat.ferngeist.acp.bridge.catalog.SessionCatalog.ListingAuthentication
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
@@ -24,7 +18,6 @@ import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetSessionSettingsRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
-import com.tamimarafat.ferngeist.core.model.store.AuthEnvValueStore
 import com.tamimarafat.ferngeist.core.model.store.AuthEnvValuesUnreadableException
 import com.tamimarafat.ferngeist.feature.sessionlist.cwd.RecentCwdStore
 import com.tamimarafat.ferngeist.feature.sessionlist.cwd.filterSessionsByCwd
@@ -34,7 +27,6 @@ import com.tamimarafat.ferngeist.gateway.GatewayCredentialExpiredException
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.GatewayWorktree
 import com.tamimarafat.ferngeist.gateway.refreshGatewaySourceIfNeeded
-import com.tamimarafat.ferngeist.gateway.resolveGatewayWebSocketUrl
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -59,7 +51,7 @@ data class SessionListPendingAuthentication(
     val serverId: String,
     val serverName: String,
     val agentName: String,
-    val authMethods: List<AcpAuthMethodInfo>,
+    val authMethods: List<CatalogAuthMethod>,
     val preferredAuthMethodId: String? = null,
     val persistedEnvValues: Map<String, String> = emptyMap(),
     val authErrorMessage: String? = null,
@@ -79,9 +71,9 @@ sealed interface PendingAuthAction {
  * Coordinates session list data and ACP authentication flows.
  *
  * All transport work (borrow-warm-else-own listing, gateway REST close, the
- * Room session-table write) lives behind [ChatConnectionHub]'s listing seam;
+ * Room session-table write) lives behind [SessionCatalog]'s listing seam;
  * this VM only maps results onto UI state, drives the auth dialogs, and keeps
- * env-value persistence. It never holds an [AcpConnectionManager].
+ * env-value persistence. It never holds a transport.
  *
  * Carries more functions than detekt's TooManyFunctions budget: the auth
  * recovery flows (gateway runtime restart, env-var persistence, retry
@@ -98,9 +90,7 @@ class SessionListViewModel
         private val launchableTargetRepository: LaunchableTargetRepository,
         private val sessionRepository: SessionRepository,
         private val gatewayRepository: GatewayRepository,
-        private val chatConnectionHub: ChatConnectionHub,
-        private val connectivityObserver: ConnectivityObserver,
-        private val authEnvValueStore: AuthEnvValueStore,
+        private val sessionCatalog: SessionCatalog,
         private val sessionSettingsRepository: LaunchableTargetSessionSettingsRepository,
         private val recentCwdStore: RecentCwdStore,
     ) : ViewModel() {
@@ -175,7 +165,7 @@ class SessionListViewModel
 
         /** Sessions currently holding a live gateway connection (for the row dot). */
         val liveSessionIds: StateFlow<Set<String>> =
-            chatConnectionHub
+            sessionCatalog
                 .connectedSessionIds(serverId)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -187,26 +177,26 @@ class SessionListViewModel
         private val _refreshing = MutableStateFlow(false)
         val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
         val connectionState: StateFlow<ChatConnectionState> =
-            chatConnectionHub.warmServers
+            sessionCatalog.warmServers
                 .map { warmServers ->
                     val warm = serverId in warmServers
                     // One source of truth: hub-tracked chats holding live
-                    // transports. Listing transports live inside the hub seam
-                    // and hang up after every list, so they must not drive the pill.
+                    // transports. Listing transports hang up after every list, so
+                    // they must not drive the pill.
                     if (warm) ChatConnectionState.Connected else ChatConnectionState.Disconnected
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatConnectionState.Disconnected)
 
-        /** Last-known agent capabilities for this server (from hub listings). */
+        /** Last-known agent capabilities for this server (from catalog listings). */
         private val _agentCapabilities =
             MutableStateFlow<AgentCapabilities?>(
-                chatConnectionHub.listingAgentCapabilities(serverId),
+                sessionCatalog.agentCapabilities(serverId),
             )
         val agentCapabilities: StateFlow<AgentCapabilities?> = _agentCapabilities.asStateFlow()
 
-        /** Last-known transport diagnostics for this server (from hub listings). */
+        /** Last-known transport diagnostics for this server (from catalog listings). */
         private val _connectionDiagnostics =
             MutableStateFlow<ChatConnectionDiagnostics>(
-                chatConnectionHub.listingDiagnostics(serverId)?.let(::mapDiagnostics) ?: ChatConnectionDiagnostics(),
+                sessionCatalog.listingDiagnostics(serverId) ?: ChatConnectionDiagnostics(),
             )
         val connectionDiagnostics: StateFlow<ChatConnectionDiagnostics> = _connectionDiagnostics.asStateFlow()
 
@@ -257,14 +247,14 @@ class SessionListViewModel
                 // locally filtered cache would keep standing in for the agent's
                 // own answer. One retry per network transition — a listing that
                 // fails again leaves the flag set but no new transition to fire on.
-                connectivityObserver.isConnected.collect { connected ->
+                sessionCatalog.networkAvailable.collect { connected ->
                     if (connected && lastListingFailed) {
                         refreshSessions()
                     }
                 }
             }
             viewModelScope.launch {
-                chatConnectionHub.warmServers.collect { warmServers ->
+                sessionCatalog.warmServers.collect { warmServers ->
                     val hasWarmHub = serverId in warmServers
                     if (hasWarmHub && _isLoading.value && sessions.value.isNotEmpty()) {
                         android.util.Log.d(
@@ -280,23 +270,6 @@ class SessionListViewModel
         }
 
         /**
-         * Resolves the gateway REST endpoint for [serverId], or null for
-         * non-gateway targets (manual agents have no gateway leg).
-         */
-        private suspend fun gatewayEndpoint(): GatewayEndpoint? =
-            when (val target = launchableTargetRepository.getTarget(serverId)) {
-                is LaunchableTarget.GatewayAgent -> gatewayEndpoint(target)
-                else -> null
-            }
-
-        private fun gatewayEndpoint(target: LaunchableTarget.GatewayAgent): GatewayEndpoint =
-            GatewayEndpoint(
-                scheme = target.gatewaySource.scheme,
-                host = target.gatewaySource.host,
-                credential = target.gatewaySource.gatewayCredential,
-            )
-
-        /**
          * Drops gateway leases the gateway forgot while the app was away, so
          * the list stops offering disconnects that can only fail. Only when
          * the transport worked — a failed listing means the gateway is likely
@@ -306,16 +279,14 @@ class SessionListViewModel
          */
         private suspend fun reconcileGatewayLeases(result: ListSessionsResult) {
             if (result !is ListSessionsResult.Listed && result !is ListSessionsResult.Unsupported) return
-            gatewayEndpoint()?.let { endpoint ->
-                chatConnectionHub.reconcileGatewaySessions(serverId, endpoint)
-            }
+            sessionCatalog.reconcileGatewayLeases(serverId)
         }
 
         /**
-         * Refreshes the session list through the hub's listing seam. The hub
+         * Refreshes the session list through the catalog's listing seam. It
          * borrows a warm chat transport when one holds the gateway slot, else
          * runs its own browser transport; both the Room write and the
-         * capability gate happen inside the hub.
+         * capability gate happen inside the catalog.
          *
          * @param isUserInitiated true when triggered by pull-to-refresh gesture;
          *   sets [refreshing] so the pull indicator shows only on user drag.
@@ -333,7 +304,7 @@ class SessionListViewModel
                         // and an agent filtering by cwd matches it exactly, so a filtered
                         // listing would drop the repo's worktree chats (and every other
                         // directory). The cwd filter is applied locally by sessionRows.
-                        val result = chatConnectionHub.listSessions(serverId, cwd = null)
+                        val result = sessionCatalog.listSessions(serverId, cwd = null)
                         when (result) {
                             is ListSessionsResult.Listed -> {
                                 lastListingFailed = false
@@ -378,7 +349,7 @@ class SessionListViewModel
         }
 
         /**
-         * Publishes hub snapshots and clears the loading flags for first
+         * Publishes catalog snapshots and clears the loading flags for first
          * paint, then reconciles stale gateway leases in the background: the
          * reconcile's up-to-10s REST window must never extend the spinner. It
          * only prunes Room rows, which re-emit when they land.
@@ -387,36 +358,28 @@ class SessionListViewModel
             result: ListSessionsResult,
             generation: Int,
         ) {
-            syncHubObservables()
+            syncCatalogObservables()
             if (generation == refreshGeneration) {
                 _isLoading.value = false
                 _refreshing.value = false
             }
             viewModelScope.launch {
                 reconcileGatewayLeases(result)
-                sessionWorktrees.refresh(gatewayEndpoint())
-                if (generation == refreshGeneration) syncHubObservables()
+                sessionWorktrees.refresh()
+                if (generation == refreshGeneration) syncCatalogObservables()
             }
         }
 
-        /** Pulls the hub's last-known capability/diagnostic snapshots into local state. */
-        private fun syncHubObservables() {
-            chatConnectionHub.listingAgentCapabilities(serverId)?.let { _agentCapabilities.value = it }
-            chatConnectionHub.listingDiagnostics(serverId)?.let { _connectionDiagnostics.value = mapDiagnostics(it) }
+        /** Pulls the catalog's last-known capability/diagnostic snapshots into local state. */
+        private fun syncCatalogObservables() {
+            sessionCatalog.agentCapabilities(serverId)?.let { _agentCapabilities.value = it }
+            sessionCatalog.listingDiagnostics(serverId)?.let { _connectionDiagnostics.value = it }
         }
-
-        private fun mapDiagnostics(diagnostics: com.tamimarafat.ferngeist.acp.bridge.connection.ConnectionDiagnostics) =
-            ChatConnectionDiagnostics(
-                serverUrl = diagnostics.serverUrl,
-                pendingRequestCount = diagnostics.pendingRequestCount,
-                recentErrors = diagnostics.recentErrors.map { it.message },
-                lastUpdatedAtMs = diagnostics.lastUpdatedAtMs,
-            )
 
         /**
          * Proactively cancels in-flight refresh work before opening a chat, so
          * the chat's fresh attach never races a lingering list socket for the
-         * gateway's single-attach slot (the hub owns the hang-up itself).
+         * gateway's single-attach slot (the catalog owns the hang-up itself).
          */
         fun onChatOpened() {
             refreshJob?.cancel()
@@ -426,7 +389,7 @@ class SessionListViewModel
 
         override fun onCleared() {
             refreshJob?.cancel()
-            chatConnectionHub.releaseListing(serverId)
+            sessionCatalog.releaseListing(serverId)
         }
 
         /**
@@ -451,12 +414,12 @@ class SessionListViewModel
 
         /**
          * Long-press close: stops the backing agent process by deleting its
-         * gateway session. Routed through the hub seam, which handles both
+         * gateway session. Routed through the catalog seam, which handles both
          * tracked (hot chat) and cold Room-known sessions.
          */
         fun closeSession(sessionId: String) {
             viewModelScope.launch(Dispatchers.IO) {
-                if (chatConnectionHub.isStreaming(serverId, sessionId)) {
+                if (sessionCatalog.isStreaming(serverId, sessionId)) {
                     _events.emit(
                         SessionListEvent.ShowError(
                             "This session is still responding. Cancel or close it from inside the chat first.",
@@ -465,16 +428,12 @@ class SessionListViewModel
                     return@launch
                 }
                 val target = launchableTargetRepository.getTarget(serverId)
-                val endpoint =
-                    when (target) {
-                        is LaunchableTarget.GatewayAgent -> gatewayEndpoint(target)
-                        else -> {
-                            _events.emit(SessionListEvent.ShowError("Close is only available for gateway sessions."))
-                            return@launch
-                        }
-                    }
+                if (target !is LaunchableTarget.GatewayAgent) {
+                    _events.emit(SessionListEvent.ShowError("Close is only available for gateway sessions."))
+                    return@launch
+                }
                 runCatching {
-                    chatConnectionHub.closeSession(serverId, sessionId, endpoint)
+                    sessionCatalog.closeSession(serverId, sessionId)
                 }.onSuccess { closed ->
                     if (!closed) {
                         _events.emit(SessionListEvent.ShowError("This session has no live process to close."))
@@ -495,7 +454,7 @@ class SessionListViewModel
          */
         fun deleteSession(sessionId: String) {
             viewModelScope.launch(Dispatchers.IO) {
-                if (chatConnectionHub.isStreaming(serverId, sessionId)) {
+                if (sessionCatalog.isStreaming(serverId, sessionId)) {
                     _events.emit(
                         SessionListEvent.ShowError(
                             "This session is still responding. Cancel or close it from inside the chat first.",
@@ -503,9 +462,8 @@ class SessionListViewModel
                     )
                     return@launch
                 }
-                val endpoint = gatewayEndpoint()
                 runCatching {
-                    chatConnectionHub.deleteSession(serverId, sessionId, endpoint)
+                    sessionCatalog.deleteSession(serverId, sessionId)
                 }.onSuccess { deleted ->
                     if (!deleted) {
                         _events.emit(SessionListEvent.ShowError("This session could not be found."))
@@ -599,7 +557,7 @@ class SessionListViewModel
             force: Boolean = false,
         ) {
             viewModelScope.launch(Dispatchers.IO) {
-                if (chatConnectionHub.isStreaming(serverId, sessionId)) {
+                if (sessionCatalog.isStreaming(serverId, sessionId)) {
                     _events.emit(
                         SessionListEvent.ShowError(
                             "This session is still responding. Cancel or close it from inside the chat first.",
@@ -607,23 +565,22 @@ class SessionListViewModel
                     )
                     return@launch
                 }
-                val endpoint = gatewayEndpoint()
-                if (endpoint == null) {
+                if (launchableTargetRepository.getTarget(serverId) !is LaunchableTarget.GatewayAgent) {
                     _events.emit(
                         SessionListEvent.ShowError("Removing a worktree is only available for gateway sessions."),
                     )
                     return@launch
                 }
-                runCatching { chatConnectionHub.closeSession(serverId, sessionId, endpoint) }
+                runCatching { sessionCatalog.closeSession(serverId, sessionId) }
                 val path = worktrees.value?.firstOrNull { it.id == worktreeId }?.path
-                if (!sessionWorktrees.remove(endpoint, sessionId, worktreeId, force)) return@launch
+                if (!sessionWorktrees.remove(sessionId, worktreeId, force)) return@launch
                 val orphaned =
                     sessions.value.filter { session ->
                         val cwd = session.cwd
                         session.id == sessionId || (path != null && cwd != null && isSameCwd(cwd, path))
                     }
                 for (session in orphaned) {
-                    runCatching { chatConnectionHub.deleteSession(serverId, session.id, endpoint) }
+                    runCatching { sessionCatalog.deleteSession(serverId, session.id) }
                 }
             }
         }
@@ -649,16 +606,16 @@ class SessionListViewModel
                     return@launch
                 }
 
-                // The hub routes the call to the transport that raised the
+                // The catalog routes the call to the transport that raised the
                 // challenge (a borrowed warm chat transport when warm-borrowed).
-                when (val result = chatConnectionHub.authenticateListing(serverId, methodId)) {
-                    is AcpAuthenticateResult.Failure -> {
+                when (val result = sessionCatalog.authenticateListing(serverId, methodId)) {
+                    is ListingAuthentication.Failed -> {
                         _pendingAuthentication.update { it?.copy(authErrorMessage = result.message) }
                         _isLoading.value = false
                         return@launch
                     }
 
-                    AcpAuthenticateResult.Success -> Unit
+                    ListingAuthentication.Succeeded -> Unit
                 }
 
                 viewModelScope.launch(Dispatchers.IO) {
@@ -683,20 +640,10 @@ class SessionListViewModel
                 _isLoading.value = true
                 _pendingAuthentication.update { it?.copy(authErrorMessage = null) }
 
-                chatConnectionHub.disconnectListingTransport(serverId)
-
                 val connected =
                     when (server) {
                         is LaunchableTarget.Manual ->
-                            chatConnectionHub.connectListingTransport(
-                                serverId,
-                                AcpConnectionConfig(
-                                    scheme = server.server.scheme,
-                                    host = server.server.host,
-                                    preferredAuthMethodId = server.server.preferredAuthMethodId,
-                                    serverDisplayName = server.name,
-                                ),
-                            )
+                            sessionCatalog.reconnectListingToManual(serverId, server)
 
                         is LaunchableTarget.GatewayAgent -> false
                     }
@@ -708,8 +655,7 @@ class SessionListViewModel
                     return@launch
                 }
 
-                val initializeResult = chatConnectionHub.initializeListingTransport(serverId)
-                if (initializeResult == null) {
+                if (!sessionCatalog.initializeListing(serverId)) {
                     _pendingAuthentication.update {
                         it?.copy(authErrorMessage = "Failed to initialize ${server.name}")
                     }
@@ -755,12 +701,7 @@ class SessionListViewModel
                     agentName = auth.agentName,
                     authMethods = auth.authMethods,
                     preferredAuthMethodId = currentServer.preferredAuthMethodId,
-                    persistedEnvValues =
-                        loadPersistedEnvValues(
-                            authEnvValueStore,
-                            currentServer.id,
-                            auth.authMethods,
-                        ),
+                    persistedEnvValues = sessionCatalog.persistedEnvValues(currentServer.id, auth.authMethods),
                     authErrorMessage = auth.challengeMessage,
                     gatewayRuntimeId = auth.gatewayRuntimeId,
                     pendingAction = action,
@@ -837,16 +778,17 @@ class SessionListViewModel
 
         /**
          * Restarts the gateway runtime with the env payload, then asks the hub
-         * to reconnect the raising transport to the new runtime handoff.
-         * Returns null after surfacing the failure.
+         * to reconnect the raising transport to the restarted runtime.
+         * Returns the runtime id it restarted (the gateway keeps it), or null
+         * after surfacing the failure.
          */
         private suspend fun restartAndReconnect(
             pending: SessionListPendingAuthentication,
             currentServer: LaunchableTarget,
             gatewaySource: com.tamimarafat.ferngeist.core.model.GatewaySource,
-            method: AcpAuthMethodInfo,
+            method: CatalogAuthMethod,
             envValues: Map<String, String>,
-        ): com.tamimarafat.ferngeist.gateway.GatewayConnectResponse? {
+        ): String? {
             val runtimeId =
                 pending.gatewayRuntimeId ?: run {
                     _pendingAuthentication.update {
@@ -855,7 +797,7 @@ class SessionListViewModel
                     _isLoading.value = false
                     return null
                 }
-            val handoff =
+            val restart =
                 runCatching {
                     withContext(Dispatchers.IO) {
                         gatewayRepository.restartRuntime(
@@ -863,7 +805,7 @@ class SessionListViewModel
                             host = gatewaySource.host,
                             gatewayCredential = gatewaySource.gatewayCredential,
                             runtimeId = runtimeId,
-                            envVars = buildEnvPayload(method, envValues),
+                            envVars = sessionCatalog.envPayload(method, envValues),
                         )
                     }
                 }.getOrElse { error ->
@@ -876,47 +818,41 @@ class SessionListViewModel
 
             // The transport that owns the socket is the one that raised the
             // challenge (a borrowed warm chat transport when warm-borrowed);
-            // restart its transport against the new runtime handoff through
-            // the hub, which retains that transport.
-            chatConnectionHub.disconnectListingTransport(serverId)
+            // restart its transport against the new session through the catalog,
+            // which retains that transport.
             val reconnected =
-                chatConnectionHub.connectListingTransport(
-                    serverId,
-                    AcpConnectionConfig(
-                        scheme = gatewaySource.scheme,
-                        host = gatewaySource.host,
-                        webSocketUrl = resolveGatewayWebSocketUrl(gatewaySource, handoff),
-                        webSocketBearerToken = handoff.bearerToken,
-                        preferredAuthMethodId = method.id,
-                        gatewayRuntimeId = handoff.runtimeId,
-                        gatewaySourceId = gatewaySource.id,
-                        serverDisplayName = currentServer.name,
-                    ),
+                sessionCatalog.reconnectListingToGateway(
+                    serverId = serverId,
+                    gatewaySource = gatewaySource,
+                    runtimeId = runtimeId,
+                    restart = restart,
+                    authMethodId = method.id,
+                    displayName = currentServer.name,
                 )
             if (!reconnected) {
                 _pendingAuthentication.update {
                     it?.copy(
                         authErrorMessage = "Failed to reconnect to ${currentServer.name}",
-                        gatewayRuntimeId = handoff.runtimeId,
+                        gatewayRuntimeId = runtimeId,
                     )
                 }
                 _isLoading.value = false
                 return null
             }
-            return handoff
+            return runtimeId
         }
 
         /**
          * Handles gateway-backed env authentication by restarting the runtime with env vars.
          *
          * Each failure path exits early — no auth context, an unreadable stored copy, a failed
-         * handoff — so the exit count is inherent to the sequence rather than a sign of nested
-         * conditions that want flattening.
+         * restart, a failed reconnect — so the exit count is inherent to the sequence rather
+         * than a sign of nested conditions that want flattening.
          */
         @Suppress("ReturnCount")
         private suspend fun authenticateGatewayEnvVar(
             pending: SessionListPendingAuthentication,
-            method: AcpAuthMethodInfo,
+            method: CatalogAuthMethod,
             envValues: Map<String, String>,
         ) {
             // Gateway-backed env auth requires a fresh process environment. Restart
@@ -927,7 +863,7 @@ class SessionListViewModel
             val gatewaySource = context.gatewaySource
 
             try {
-                persistEnvValues(authEnvValueStore, currentServer.id, method, envValues)
+                sessionCatalog.persistEnvValues(currentServer.id, method, envValues)
             } catch (error: AuthEnvValuesUnreadableException) {
                 // The stored copy decrypts but cannot be parsed, so this write's base was an
                 // empty map. Continuing would destroy secrets the user still has; the stored
@@ -939,7 +875,7 @@ class SessionListViewModel
                 )
                 return
             }
-            val handoff =
+            val runtimeId =
                 restartAndReconnect(
                     pending = pending,
                     currentServer = currentServer,
@@ -949,29 +885,28 @@ class SessionListViewModel
                 ) ?: return
 
             // Keep the whole env-auth sequence on the transport that owns the
-            // socket — the same transport the hub just reconnected.
-            val initializeResult = chatConnectionHub.initializeListingTransport(serverId)
-            if (initializeResult == null) {
+            // socket — the same transport the catalog just reconnected.
+            if (!sessionCatalog.initializeListing(serverId)) {
                 _pendingAuthentication.update {
                     it?.copy(
                         authErrorMessage = "Failed to initialize ${currentServer.name}",
-                        gatewayRuntimeId = handoff.runtimeId,
+                        gatewayRuntimeId = runtimeId,
                     )
                 }
                 _isLoading.value = false
                 return
             }
 
-            when (val result = chatConnectionHub.authenticateListing(serverId, method.id)) {
-                is AcpAuthenticateResult.Failure -> {
+            when (val result = sessionCatalog.authenticateListing(serverId, method.id)) {
+                is ListingAuthentication.Failed -> {
                     _pendingAuthentication.update {
-                        it?.copy(authErrorMessage = result.message, gatewayRuntimeId = handoff.runtimeId)
+                        it?.copy(authErrorMessage = result.message, gatewayRuntimeId = runtimeId)
                     }
                     _isLoading.value = false
                     return
                 }
 
-                AcpAuthenticateResult.Success -> Unit
+                ListingAuthentication.Succeeded -> Unit
             }
 
             viewModelScope.launch(Dispatchers.IO) {

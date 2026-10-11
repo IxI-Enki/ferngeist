@@ -1,6 +1,6 @@
 package com.tamimarafat.ferngeist.feature.sessionlist.worktree
 
-import com.tamimarafat.ferngeist.acp.bridge.hub.GatewayEndpoint
+import com.tamimarafat.ferngeist.core.model.GatewaySource
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
@@ -33,8 +33,8 @@ private const val WORKTREE_REMOVE_FAILED = "Failed to remove the worktree."
  * managed ones, and removing them.
  *
  * A separate type from the view model that drives it: a worktree is a self-contained gateway
- * concern with its own state, and the view model's part shrinks to supplying the endpoint,
- * opening the chat, and forwarding what the endpoints said.
+ * concern with its own state, and the view model's part shrinks to opening the chat and
+ * forwarding what the endpoints said.
  *
  * @param emitEvent hands a message to the session list's snackbar.
  * @param openChat opens the chat that will run in the created worktree.
@@ -79,15 +79,20 @@ internal class SessionWorktrees(
      * hidden. Any other failure keeps the last successful list: a transient network fault
      * must not make the branch chips of running chats vanish.
      */
-    suspend fun refresh(endpoint: GatewayEndpoint?) {
-        if (endpoint == null) {
-            _managed.value = null
-            return
-        }
+    suspend fun refresh() {
+        val gateway =
+            gatewaySource() ?: run {
+                _managed.value = null
+                return
+            }
+        refreshWith(gateway)
+    }
+
+    private suspend fun refreshWith(gateway: GatewaySource) {
         try {
             _managed.value =
                 withContext(Dispatchers.IO) {
-                    gatewayRepository.listWorktrees(endpoint.scheme, endpoint.host, endpoint.credential)
+                    gatewayRepository.listWorktrees(gateway.scheme, gateway.host, gateway.gatewayCredential)
                 }
         } catch (error: CancellationException) {
             throw error
@@ -97,6 +102,17 @@ internal class SessionWorktrees(
             // Transport fault: keep the last successful list.
         }
     }
+
+    /**
+     * This target's stored gateway endpoint, or null for a non-gateway target.
+     *
+     * The stored source, never a re-fetched one: a refresh must not cost a REST round trip
+     * ([create] refreshes the credential itself before it lists).
+     */
+    private suspend fun gatewaySource(): GatewaySource? =
+        withContext(Dispatchers.IO) {
+            (launchableTargetRepository.getTarget(serverId) as? LaunchableTarget.GatewayAgent)?.gatewaySource
+        }
 
     /**
      * Creates a worktree for [repo] and opens a chat in it.
@@ -144,13 +160,7 @@ internal class SessionWorktrees(
                         branch = branch,
                     )
                 }
-            refresh(
-                GatewayEndpoint(
-                    scheme = gateway.scheme,
-                    host = gateway.host,
-                    credential = gateway.gatewayCredential,
-                ),
-            )
+            refreshWith(gateway)
             openChat(worktree.path)
         } catch (_: GatewayCredentialExpiredException) {
             _error.value = "This gateway's credential expired. Pair it again to create worktrees."
@@ -187,17 +197,17 @@ internal class SessionWorktrees(
      * @return true when the worktree is gone, including when the gateway had already lost it.
      */
     suspend fun remove(
-        endpoint: GatewayEndpoint,
         sessionId: String,
         worktreeId: String,
         force: Boolean,
     ): Boolean {
+        val gateway = gatewaySource() ?: return false
         var removed = true
         try {
             gatewayRepository.deleteWorktree(
-                scheme = endpoint.scheme,
-                host = endpoint.host,
-                gatewayCredential = endpoint.credential,
+                scheme = gateway.scheme,
+                host = gateway.host,
+                gatewayCredential = gateway.gatewayCredential,
                 worktreeId = worktreeId,
                 force = force,
             )
@@ -231,7 +241,7 @@ internal class SessionWorktrees(
             removed = false
             emitEvent(SessionListEvent.ShowError(WORKTREE_REMOVE_FAILED))
         }
-        refresh(endpoint)
+        refresh()
         return removed
     }
 

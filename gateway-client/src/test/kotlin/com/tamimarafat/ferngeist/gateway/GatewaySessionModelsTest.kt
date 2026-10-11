@@ -3,90 +3,35 @@ package com.tamimarafat.ferngeist.gateway
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GatewaySessionModelsTest {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // Connect bodies must omit null fields — mirrors the wire-side
-    // connectRequestJson (encodeDefaults = false) in GatewayRepositoryImpl.
-    private val requestJson =
-        Json {
-            encodeDefaults = false
-            ignoreUnknownKeys = true
-        }
-
     @Test
-    fun `connectResponse with session fields deserializes correctly`() {
+    fun `connectResponse deserializes the v2 handoff`() {
         val raw =
             """
             {
                 "runtimeId": "rt-1",
-                "scheme": "ws",
-                "host": "192.168.1.5:5788",
-                "websocketUrl": "ws://192.168.1.5:5788/v1/acp/rt-1",
-                "websocketPath": "/v1/acp/rt-1",
-                "bearerToken": "bt-abc",
-                "tokenExpiresAt": "2026-05-26T10:00:00Z",
                 "sessionId": "sess-42",
-                "attachToken": "at-def"
+                "attachToken": "at-def",
+                "websocketUrl": "ws://192.168.1.5:5788/v1/runtimes/rt-1/ws"
             }
             """.trimIndent()
         val resp = json.decodeFromString<GatewayConnectResponse>(raw)
+        assertEquals("rt-1", resp.runtimeId)
         assertEquals("sess-42", resp.sessionId)
         assertEquals("at-def", resp.attachToken)
-        assertEquals("rt-1", resp.runtimeId)
+        assertEquals("ws://192.168.1.5:5788/v1/runtimes/rt-1/ws", resp.webSocketUrl)
     }
 
     @Test
-    fun `connectResponse without session fields defaults to null`() {
-        val raw =
-            """
-            {
-                "runtimeId": "rt-1",
-                "scheme": "ws",
-                "host": "192.168.1.5:5788",
-                "websocketUrl": "ws://192.168.1.5:5788/v1/acp/rt-1",
-                "websocketPath": "/v1/acp/rt-1",
-                "bearerToken": "bt-abc",
-                "tokenExpiresAt": "2026-05-26T10:00:00Z"
-            }
-            """.trimIndent()
-        val resp = json.decodeFromString<GatewayConnectResponse>(raw)
-        assertNull(resp.sessionId)
-        assertNull(resp.attachToken)
-    }
-
-    @Test
-    fun `connectRequest serializes sessionMode`() {
-        val req = GatewayConnectRequest(sessionMode = "resilient")
-        val raw = requestJson.encodeToString(GatewayConnectRequest.serializer(), req)
-        assertEquals("""{"sessionMode":"resilient"}""", raw.trim())
-    }
-
-    @Test
-    fun `connectRequest without sessionMode omits field`() {
-        val req = GatewayConnectRequest()
-        val raw = requestJson.encodeToString(GatewayConnectRequest.serializer(), req)
-        assertEquals("""{}""", raw.trim())
-    }
-
-    @Test
-    fun `connect body omits null fields on the wire`() {
-        assertEquals(
-            """{"sessionMode":"resilient"}""",
-            buildConnectRequestBody(sessionMode = "resilient"),
-        )
-        assertEquals("""{}""", buildConnectRequestBody(sessionMode = null))
-    }
-
-    // A runtime leases one session, so the connect endpoint cannot isolate a
-    // chat: only /agents/{id}/start carries the flag that spawns a new runtime.
-    @Test
-    fun `start body requests an isolated runtime only when asked`() {
-        assertEquals("""{"new":true}""", buildStartAgentRequestBody(new = true))
-        assertNull(buildStartAgentRequestBody(new = false))
+    fun `restartResponse deserializes the session and attach token`() {
+        val raw = """{"sessionId":"sess-9","attachToken":"at-restart"}""".trimIndent()
+        val resp = json.decodeFromString<GatewayRestartResponse>(raw)
+        assertEquals("sess-9", resp.sessionId)
+        assertEquals("at-restart", resp.attachToken)
     }
 
     @Test
@@ -145,20 +90,11 @@ class GatewaySessionModelsTest {
                     gatewayCredential: String,
                 ) = TODO()
 
-                override suspend fun startAgent(
+                override suspend fun connectAgent(
                     scheme: String,
                     host: String,
                     gatewayCredential: String,
                     agentId: String,
-                    new: Boolean,
-                ) = TODO()
-
-                override suspend fun connectRuntime(
-                    scheme: String,
-                    host: String,
-                    gatewayCredential: String,
-                    runtimeId: String,
-                    sessionMode: String?,
                 ) = TODO()
 
                 override suspend fun restartRuntime(

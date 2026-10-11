@@ -1,12 +1,11 @@
 package com.tamimarafat.ferngeist.acp.bridge.hub
 
-import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnectionManager
+import com.tamimarafat.ferngeist.acp.bridge.connection.AcpConnection
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 
 /**
  * The [ChatConnectionHub] operations a chat session depends on: attendance
- * (register/abandon/refresh), the snapshot paint cache, and gateway-slot
- * capacity checks.
+ * (register/abandon/refresh) and the snapshot paint cache.
  *
  * Extracted behind this seam so the facade's attendance behavior is testable
  * against a recording fake without constructing a live hub, and so
@@ -19,13 +18,13 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
  */
 interface ChatConnectionSurface {
     /** Creates an app-scoped chat manager, tracked as pending until [register] promotes it. */
-    fun acquireChatManager(): AcpConnectionManager
+    fun acquireChatManager(): AcpConnection
 
     /** Releases an acquired manager that never registered (failed spawn, cleared screen). */
-    fun abandon(manager: AcpConnectionManager)
+    fun abandon(manager: AcpConnection)
 
     /** The live transport for a tracked chat, or null when untracked/cold. */
-    fun managerFor(chatId: String): AcpConnectionManager?
+    fun managerFor(chatId: String): AcpConnection?
 
     /** Last rendered snapshot for a chat; survives eviction/screen-close so reopen paints instantly. */
     fun snapshotFor(chatId: String): ChatSessionSnapshot?
@@ -48,36 +47,8 @@ interface ChatConnectionSurface {
         agentId: String,
         isConnected: () -> Boolean,
         isStreaming: () -> Boolean,
-        manager: AcpConnectionManager? = null,
+        manager: AcpConnection? = null,
     ): String
-
-    /** True when this agent on this source already holds a live (connected) gateway session. */
-    fun hasLiveGatewaySession(
-        gatewaySourceId: String,
-        agentId: String,
-    ): Boolean
-
-    /**
-     * The gateway session recorded on this chat's persisted row, or null when it
-     * has never connected one. Survives process death, unlike the hub's entry
-     * table, so it is what a cold chat reattaches from.
-     */
-    suspend fun persistedGatewaySessionId(
-        serverId: String,
-        sessionId: String,
-    ): String?
-
-    /**
-     * Takes the gateway session the session list's listing transport left behind on
-     * [serverId], or null when there is none or the listing is still connected. The
-     * listing hangs up after each list, but its gateway session — and the running,
-     * initialized agent behind it — stays up; it is this device's spare, not another
-     * chat's. Taking it clears the record so it is handed out once.
-     */
-    fun claimIdleListingSession(serverId: String): IdleListingSession? = null
-
-    /** Frees a device gateway-session slot before a spawn when the device cap is reached. */
-    suspend fun ensureGatewayCapacity(endpoint: GatewayEndpoint)
 
     /** Recomputes screen presence from the entry table; call after transport changes. */
     fun refresh()
@@ -100,9 +71,3 @@ interface ChatConnectionSurface {
         cwd: String?,
     ): String?
 }
-
-/** A gateway session a disconnected listing transport left on [runtimeId]. */
-data class IdleListingSession(
-    val gatewaySessionId: String,
-    val runtimeId: String,
-)

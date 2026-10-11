@@ -266,26 +266,30 @@ class GatewayWorkspaceTest {
             val repo =
                 repoCapturing(
                     responseBody =
-                        """{"name":"gw","version":"dev","protocolVersion":"v1","remote":{"configured":true}}""",
+                        """{"name":"gw","version":"dev","protocolVersion":"v2","remote":{"configured":true}}""",
                 )
 
             val status = repo.fetchStatus("http", "10.0.0.2:5788")
 
-            assertEquals("v1", status.protocolVersion)
+            assertEquals("v2", status.protocolVersion)
         }
 
     @Test
-    fun `fetchStatus accepts the legacy v1alpha1 protocol version`() =
+    fun `fetchStatus rejects the removed v1 protocol version`() =
         runTest {
             val repo =
                 repoCapturing(
                     responseBody =
-                        """{"name":"gw","version":"old","protocolVersion":"v1alpha1","remote":{"configured":true}}""",
+                        """{"name":"gw","version":"old","protocolVersion":"v1","remote":{"configured":true}}""",
                 )
 
-            val status = repo.fetchStatus("http", "10.0.0.2:5788")
-
-            assertEquals("v1alpha1", status.protocolVersion)
+            try {
+                repo.fetchStatus("http", "10.0.0.2:5788")
+                fail("expected GatewayProtocolMismatchException")
+            } catch (e: GatewayProtocolMismatchException) {
+                assertTrue(e.message.orEmpty().contains("v1"))
+                assertTrue(e.message.orEmpty().contains("v2"))
+            }
         }
 
     @Test
@@ -302,7 +306,7 @@ class GatewayWorkspaceTest {
                 fail("expected GatewayProtocolMismatchException")
             } catch (e: GatewayProtocolMismatchException) {
                 assertTrue(e.message.orEmpty().contains("v0"))
-                assertTrue(e.message.orEmpty().contains("v1"))
+                assertTrue(e.message.orEmpty().contains("v2"))
             }
         }
 

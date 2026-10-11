@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * SessionPort exposes the snapshot and the user-facing operations (send,
  * cancel, config, permissions) without revealing implementation details.
- * The transport layer (AcpConnectionManager) creates and owns implementations
+ * The transport layer (AcpConnection) creates and owns implementations
  * of this interface; feature modules consume it without importing concrete
  * bridge classes.
  *

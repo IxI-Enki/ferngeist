@@ -11,7 +11,7 @@ Kotlin + Jetpack Compose + Hilt + KSP. `minSdk 30`, `targetSdk 37`, JVM target 1
 Nine Gradle modules (see `settings.gradle.kts` — the authoritative list; `core/designsystem` and `data/datastore` are **not** modules, despite older docs):
 
 - `app` — `FerngeistApplication` (`@HiltAndroidApp`), `MainActivity` (`@AndroidEntryPoint`), theme, navigation host, workspace panes, FCM + foreground service. Flavour-specific sources live in `src/google/kotlin` and `src/foss/kotlin` (e.g. `FcmTokenBootstrap.kt`, `AddGatewayQrScanner.kt`).
-- `acp-bridge` — the ACP seam. `connection/` owns transport, auth headers, capability negotiation, and the connect orchestrator; `session/` owns `SessionBridge`, `SessionMessageReducer`, `SessionStateEngine`; `hub/` multiplexes one connection across concurrent chats; `facade/` is what feature modules see.
+- `acp-bridge` — the ACP seam. `connection/` owns transport, auth headers, capability negotiation, and the connect orchestrator; `session/` owns `SessionBridge`, `SessionMessageReducer`, `SessionRuntime`; `hub/` multiplexes one connection across concurrent chats; `facade/` is what the chat feature sees; `launcher/` is the server list's launch-and-auth seam.
 - `gateway-client` — HTTP/WebSocket client for the optional remote gateway (`GatewayRepositoryImpl`), launch/lease, proof auth, credential refresh.
 - `core/model` — pure data types (`ChatMessage`, `AssistantSegment`, `ServerConfig`, `GatewaySource`) plus repository *interfaces*. No Android UI deps.
 - `core/common` — `MviViewModel<State, Intent, Effect>` (the shared ViewModel base: `MutableStateFlow` for state, `Channel(BUFFERED)` for effects) and shared UI atoms (`EdgeFade`, `ConnectionStatusPill`, `WindowSizeSeam`).
@@ -37,6 +37,7 @@ The streaming reveal (what is visible per frame, the leading-edge fade, height g
 |---|---|
 | `acp-bridge/src/main/kotlin/.../connection/` | transport, auth, capability, connect orchestration |
 | `acp-bridge/src/main/kotlin/.../session/` | bridge, reducer, state engine, runtime |
+| `acp-bridge/src/main/kotlin/.../launcher/` | server list's launch, gateway handoff, auth |
 | `feature/chat/src/main/kotlin/.../ui/` | `ChatScreen`, `MessageBubble`, composer, scroll policy |
 | `feature/chat/src/test/kotlin/.../` | run/segment, scroll policy, view model tests |
 | `data/database/` | Room schema + `FerngeistMigrations.kt` |

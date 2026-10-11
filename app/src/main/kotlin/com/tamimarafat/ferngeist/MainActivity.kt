@@ -415,33 +415,40 @@ private fun BatteryOptimizationGate(
     context: Context,
 ) {
     val batteryPrefs = remember(context) { BatteryOptimizationPreferences(context) }
-    val isDismissed by batteryPrefs.isDismissed.collectAsState(initial = false)
-    var dismissLoaded by remember { mutableStateOf(false) }
+    var prefsLoaded by remember { mutableStateOf(false) }
+    var dismissed by remember { mutableStateOf(false) }
     var showBatteryDialog by remember { mutableStateOf(false) }
     val anyConnected by chatConnectionHub.anyConnected.collectAsState()
 
     LaunchedEffect(batteryPrefs) {
-        batteryPrefs.isDismissed.first()
-        dismissLoaded = true
+        dismissed = batteryPrefs.isDismissed.first()
+        prefsLoaded = true
     }
 
-    LaunchedEffect(anyConnected, isDismissed, dismissLoaded) {
-        if (!dismissLoaded) return@LaunchedEffect
-        val shouldShow =
-            anyConnected &&
-                !isDismissed &&
-                !BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
-        showBatteryDialog = shouldShow
+    // One-shot: latch on the first connected transport and hold the prompt until the user
+    // decides. [ChatConnectionHub.anyConnected] counts listing/verification transports too,
+    // and drops to false the moment the last of them is torn down — opening a chat releases
+    // the agent screen's transport before the chat's own connects — so tracking it live made
+    // the prompt blink out and back for as long as the handoff took.
+    LaunchedEffect(anyConnected, prefsLoaded) {
+        if (!anyConnected) return@LaunchedEffect
+        val exemptionMissing = !BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+        if (prefsLoaded && !dismissed && exemptionMissing) {
+            showBatteryDialog = true
+        }
     }
 
-    if (showBatteryDialog) {
+    if (showBatteryDialog && !dismissed) {
         BatteryOptimizationDialog(
             onDismiss = {
                 showBatteryDialog = false
+                dismissed = true
                 batteryPrefs.markDismissed()
             },
             onBackFromSettings = {
                 if (BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
+                    showBatteryDialog = false
+                    dismissed = true
                     batteryPrefs.markDismissed()
                 }
             },

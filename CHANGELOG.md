@@ -1,3 +1,29 @@
+
+## [1.2.0] - 2026-10-11
+
+### Documentation
+
+- *(readme)* Refresh versions and simplify gateway setup ([c137f43](https://github.com/arafatamim/Ferngeist/commit/c137f430041126b2b4ee1e7665f1af7ce389d1dc))
+
+### Features
+
+- *(nav)* Morph server card into session list on open ([1e3e18b](https://github.com/arafatamim/Ferngeist/commit/1e3e18b12c1e471f12e1e345df55f48dc6068518))
+
+### Fixes
+
+- *(chat)* Surface the server's own error for failed prompts and connects ([45299f8](https://github.com/arafatamim/Ferngeist/commit/45299f81afb9dcb2ae5b7a9a4d3233019e065900))
+- *(bridge)* Close leaked gateway sessions and drop dead code ([6ce9a52](https://github.com/arafatamim/Ferngeist/commit/6ce9a5274365fe32b7d2ead79c4b214005e192c8))
+- *(app)* Keep the battery prompt up until the user decides ([3877006](https://github.com/arafatamim/Ferngeist/commit/3877006b2a9113a2287aa75b9f066b04f2453c7c))
+- *(bridge)* Detect mismatched gateway protocol on server connect ([0b992fb](https://github.com/arafatamim/Ferngeist/commit/0b992fba729dce7f325b3adf88046771600d5ca1))
+
+### Refactoring
+
+- *(bridge)* Restructure acp-bridge and adopt gateway v2 recovery ([6d5a3c5](https://github.com/arafatamim/Ferngeist/commit/6d5a3c5a5361a6ab4b88f0da3945cbb52625ccdb))
+
+### Testing
+
+- *(e2e)* Stress concurrent agent chats while the app is backgrounded ([1b0cdd5](https://github.com/arafatamim/Ferngeist/commit/1b0cdd52a6d6db3643fcbdef014baa2490db65d4))
+
 ## [1.1.0] - 2026-10-11
 
 ### Documentation

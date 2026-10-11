@@ -87,8 +87,9 @@ data class GatewayAgentSecurity(
 )
 
 /**
- * Response of `POST /v1/agents/{id}/connect` (protocol v2): the gateway spawns (or
- * reuses) the agent's runtime and binds it to a fresh session in one call. Auth uses
+ * Response of `POST /v1/agents/{id}/connect` and `POST /v1/runtimes/{id}/restart`
+ * (protocol v2): the gateway launches a fresh agent process and binds it to a new
+ * session in one call, so a restart hands back a different [runtimeId]. Auth uses
  * the device credential; [attachToken] authorises the ACP WebSocket attach.
  */
 @Serializable
@@ -105,19 +106,6 @@ data class GatewayConnectResponse(
 @Serializable
 data class GatewayRestartRequest(
     val env: Map<String, String>,
-)
-
-/**
- * Response of `POST /v1/runtimes/{id}/restart` (protocol v2): the restarted runtime
- * keeps the id the caller passed, so the attach URL is rebuilt from it; the gateway
- * only hands back the new session and its attach token.
- */
-@Serializable
-data class GatewayRestartResponse(
-    @SerialName("sessionId")
-    val sessionId: String,
-    @SerialName("attachToken")
-    val attachToken: String,
 )
 
 @Serializable
@@ -137,16 +125,6 @@ data class GatewayLogEntry(
 data class GatewayPairStartResponse(
     @SerialName("challengeId") val challengeId: String,
     @SerialName("expiresAt") val expiresAt: String,
-)
-
-@Serializable
-data class GatewayPairStatusResponse(
-    @SerialName("challengeId") val challengeId: String,
-    @SerialName("expiresAt") val expiresAt: String,
-    val state: String,
-    @SerialName("completedDevice") val completedDevice: String? = null,
-    @SerialName("completedDeviceId") val completedDeviceId: String? = null,
-    @SerialName("completedDeviceExpiresAt") val completedDeviceExpiresAt: String? = null,
 )
 
 /** Body of `POST /v1/agents/custom`. */
@@ -208,10 +186,10 @@ data class GatewaySessionSummary(
     /**
      * Whether the gateway will still resume this session.
      *
-     * Mirrors the gateway's own check (`RuntimeSession.Resume` /
-     * `FindReconnectableByRuntime`): only an `active` or `disconnected` session
-     * holds a live runtime lease. Anything else (`failed`, `closing`) has a dead
-     * runtime behind it, so attaching to its `runtimeId` fails on connect.
+     * Mirrors the gateway's own `RuntimeSession.Resume` check: only an `active` or
+     * `disconnected` session still owns a live agent process. Anything else
+     * (`failed`, `closing`) has a dead runtime behind it, so attaching to its
+     * `runtimeId` fails on connect.
      */
     val isResumable: Boolean
         get() = status == STATUS_ACTIVE || status == STATUS_DISCONNECTED
@@ -220,25 +198,6 @@ data class GatewaySessionSummary(
         const val STATUS_ACTIVE = "active"
         const val STATUS_DISCONNECTED = "disconnected"
     }
-}
-
-/**
- * Text file read response from `GET /v1/runtimes/{id}/files`. The gateway returns the ACP
- * SDK's [com.agentclientprotocol.model.EmbeddedResourceResource.TextResourceContents] shape
- * directly; the gateway's `size`/`truncated` extensions are carried alongside.
- */
-sealed interface GatewayFileRead {
-    data class Text(
-        val contents: com.agentclientprotocol.model.EmbeddedResourceResource.TextResourceContents,
-        val size: Int,
-        val truncated: Boolean = false,
-    ) : GatewayFileRead
-
-    data class Binary(
-        val contents: com.agentclientprotocol.model.EmbeddedResourceResource.BlobResourceContents,
-        val size: Int,
-        val truncated: Boolean = false,
-    ) : GatewayFileRead
 }
 
 @Serializable

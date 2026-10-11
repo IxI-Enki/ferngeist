@@ -12,9 +12,6 @@ interface LaunchableTargetSessionSettingsDao {
     @Query("SELECT * FROM launchable_target_session_settings WHERE targetId = :targetId")
     fun getSettingsByTargetId(targetId: String): Flow<LaunchableTargetSessionSettingsEntity?>
 
-    @Query("SELECT * FROM launchable_target_session_settings WHERE targetId = :targetId")
-    suspend fun getSettingsByTargetIdBlocking(targetId: String): LaunchableTargetSessionSettingsEntity?
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSettings(settings: LaunchableTargetSessionSettingsEntity)
 

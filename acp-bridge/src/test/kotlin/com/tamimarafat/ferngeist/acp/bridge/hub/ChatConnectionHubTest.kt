@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -299,6 +300,21 @@ class ChatConnectionHubTest {
             assertTrue(closed)
             assertFalse(hub.isTracked("srv", "s1"))
             assertNull(sessions.getSession("srv", "s1")?.gatewaySessionId)
+        }
+
+    @Test
+    fun `hangUpBrowserTransport deletes the gateway session a failed attach left behind, once`() =
+        runTest {
+            val repo = FakeGatewayRepo()
+            val hub = newHub(repo)
+            val transport = hub.createBrowserManager(CoroutineScope(SupervisorJob()))
+            val unreachable = gatewayConfig().copy(endpoint = "ws://127.0.0.1:1/v1/acp/rt-1")
+            withContext(Dispatchers.IO) { transport.connectAndInitializeWithoutReconnect(unreachable) }
+
+            hub.hangUpBrowserTransport(transport)
+            hub.hangUpBrowserTransport(transport)
+
+            assertEquals(listOf("s1"), repo.closed)
         }
 
     /** A gateway transport config: the hub's resume lambda reads only its scheme/host/credential. */

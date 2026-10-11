@@ -1,6 +1,5 @@
 package com.tamimarafat.ferngeist.gateway
 
-import com.agentclientprotocol.model.EmbeddedResourceResource
 import com.agentclientprotocol.model.ToolCallContent
 import io.ktor.client.HttpClient
 import io.ktor.client.request.accept
@@ -15,11 +14,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 class GatewayRepositoryImpl
@@ -68,22 +62,6 @@ class GatewayRepositoryImpl
                 "v1",
                 "pair",
                 "start",
-            )
-
-        override suspend fun getPairingStatus(
-            scheme: String,
-            host: String,
-            challengeId: String,
-        ): GatewayPairStatusResponse =
-            httpClient.getJson(
-                json = json,
-                scheme = scheme,
-                host = host,
-                credential = null,
-                "v1",
-                "pair",
-                "status",
-                challengeId,
             )
 
         override suspend fun fetchAgents(
@@ -314,7 +292,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             runtimeId: String,
             envVars: Map<String, String>,
-        ): GatewayRestartResponse =
+        ): GatewayConnectResponse =
             httpClient.postJson(
                 json = json,
                 scheme = scheme,
@@ -345,58 +323,6 @@ class GatewayRepositoryImpl
                     "logs",
                 )
             return response.logs
-        }
-
-        override suspend fun fetchWorkspaceFile(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            path: String,
-            acpSessionId: String?,
-        ): GatewayFileRead {
-            val endpoint =
-                buildGatewayEndpoint(
-                    scheme,
-                    host,
-                    segments = arrayOf("v1", "runtimes", runtimeId, "files"),
-                    query = mapOf("path" to path) + acpSessionQuery(acpSessionId),
-                )
-            val authHeaders =
-                GatewayProofAuth.buildAuthHeaders(
-                    gatewayCredential = gatewayCredential,
-                    method = "GET",
-                    endpoint = endpoint,
-                    body = null,
-                )
-            val response =
-                httpClient.get {
-                    url(endpoint)
-                    accept(ContentType.Application.Json)
-                    authHeaders.let { applyGatewayAuthHeaders(it) }
-                }
-            if (!response.status.isSuccess()) {
-                throw gatewayRequestException(
-                    response.status.value,
-                    response.status.description,
-                    endpoint,
-                    response.bodyAsText(),
-                )
-            }
-            val body = response.bodyAsText()
-            val jsonElement = json.parseToJsonElement(body).jsonObject
-            val size = jsonElement["size"]?.jsonPrimitive?.intOrNull ?: 0
-            val truncated = jsonElement["truncated"]?.jsonPrimitive?.booleanOrNull ?: false
-            // The gateway returns the ACP TextResourceContents or BlobResourceContents
-            // shape (plus size/truncated extensions). The two are distinguished by the
-            // presence of `blob` (binary) vs `text`.
-            return if (jsonElement["blob"] != null) {
-                val contents = json.decodeFromJsonElement<EmbeddedResourceResource.BlobResourceContents>(jsonElement)
-                GatewayFileRead.Binary(contents, size, truncated)
-            } else {
-                val contents = json.decodeFromJsonElement<EmbeddedResourceResource.TextResourceContents>(jsonElement)
-                GatewayFileRead.Text(contents, size, truncated)
-            }
         }
 
         override suspend fun fetchGitStatus(

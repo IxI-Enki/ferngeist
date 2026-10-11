@@ -268,7 +268,7 @@ class AcpChatSessionFacade(
 
     /**
      * Ensures the transport is connected so queued prompts can drain. A fresh
-     * connect is the only path: the gateway spawns or reuses the runtime and
+     * connect is the only path: the gateway launches a fresh runtime and
      * mints the session, and the session attach follows from [ensureSessionReadyForSend].
      */
     override suspend fun reconnect() {
@@ -637,7 +637,7 @@ class AcpChatSessionFacade(
 
     /**
      * Builds a connection config for a gateway-backed agent by connecting it on
-     * the gateway: one call spawns (or reuses) the runtime and mints the session,
+     * the gateway: one call launches a fresh runtime and mints the session,
      * so the app neither picks a runtime nor retries a launch.
      */
     private suspend fun buildGatewayConnectionConfig(target: LaunchableTarget.GatewayAgent): AcpConnectionConfig? {

@@ -27,14 +27,6 @@ class GatewaySessionModelsTest {
     }
 
     @Test
-    fun `restartResponse deserializes the session and attach token`() {
-        val raw = """{"sessionId":"sess-9","attachToken":"at-restart"}""".trimIndent()
-        val resp = json.decodeFromString<GatewayRestartResponse>(raw)
-        assertEquals("sess-9", resp.sessionId)
-        assertEquals("at-restart", resp.attachToken)
-    }
-
-    @Test
     fun `sessionResumeResponse deserializes`() {
         val raw = """{"attachToken":"at-resume-1"}""".trimIndent()
         val resp = json.decodeFromString<GatewaySessionResumeResponse>(raw)
@@ -76,12 +68,6 @@ class GatewaySessionModelsTest {
                 override suspend fun startPairing(
                     scheme: String,
                     host: String,
-                ) = TODO()
-
-                override suspend fun getPairingStatus(
-                    scheme: String,
-                    host: String,
-                    challengeId: String,
                 ) = TODO()
 
                 override suspend fun fetchAgents(
@@ -158,15 +144,6 @@ class GatewaySessionModelsTest {
                     gatewayCredential: String,
                     subscription: GatewayPushSubscription,
                 ) = TODO()
-
-                override suspend fun fetchWorkspaceFile(
-                    scheme: String,
-                    host: String,
-                    gatewayCredential: String,
-                    runtimeId: String,
-                    path: String,
-                    acpSessionId: String?,
-                ): GatewayFileRead = TODO()
 
                 override suspend fun fetchGitStatus(
                     scheme: String,

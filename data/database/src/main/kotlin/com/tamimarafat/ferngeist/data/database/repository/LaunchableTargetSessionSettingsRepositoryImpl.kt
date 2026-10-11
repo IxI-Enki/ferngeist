@@ -15,9 +15,6 @@ class LaunchableTargetSessionSettingsRepositoryImpl(
             entity?.toDomain() ?: LaunchableTargetSessionSettings(targetId = targetId)
         }
 
-    override suspend fun getSettingsBlocking(targetId: String): LaunchableTargetSessionSettings? =
-        dao.getSettingsByTargetIdBlocking(targetId)?.toDomain()
-
     override suspend fun updateCwd(
         targetId: String,
         cwd: String,

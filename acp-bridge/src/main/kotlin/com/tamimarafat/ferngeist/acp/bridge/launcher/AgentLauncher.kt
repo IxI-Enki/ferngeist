@@ -26,9 +26,9 @@ import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.store.AuthEnvValueStore
 import com.tamimarafat.ferngeist.core.model.store.AuthEnvValuesUnreadableException
+import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
 import com.tamimarafat.ferngeist.gateway.GatewayCredentialExpiredException
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
-import com.tamimarafat.ferngeist.gateway.GatewayRestartResponse
 import com.tamimarafat.ferngeist.gateway.refreshGatewaySourceIfNeeded
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -95,6 +95,7 @@ class AgentLauncher(
     fun session(scope: CoroutineScope): AgentLaunchSession =
         AgentLaunchSession(
             connection = hub.createBrowserManager(scope),
+            hangUp = hub::hangUpBrowserTransport,
             scope = scope,
             gatewayRepository = gatewayRepository,
             gatewaySourceRepository = gatewaySourceRepository,
@@ -109,6 +110,7 @@ class AgentLauncher(
 @Suppress("TooManyFunctions")
 class AgentLaunchSession internal constructor(
     private val connection: AcpConnection,
+    private val hangUp: (AcpConnection, Boolean) -> Unit,
     scope: CoroutineScope,
     private val gatewayRepository: GatewayRepository,
     private val gatewaySourceRepository: GatewaySourceRepository,
@@ -159,7 +161,7 @@ class AgentLaunchSession internal constructor(
         authMethods = initialized.authMethods
         return when (initialized) {
             is AcpInitializeResult.Ready -> {
-                connection.disconnect()
+                hangUp(connection, false)
                 pendingGateway = null
                 AgentLaunchOutcome.Ready(
                     agentName = initialized.agentInfo.name,
@@ -202,13 +204,16 @@ class AgentLaunchSession internal constructor(
     /** Hangs the verification transport up and forgets the runtime it was using. */
     fun disconnect() {
         pendingGateway = null
-        connection.disconnect()
+        hangUp(connection, false)
     }
 
     /** Surfaces whatever stopped a connect or an initialize, then logs the long form. */
     private suspend fun connectFailure(server: LaunchableTarget): AgentLaunchOutcome {
         if (!connection.isConnected) {
-            return AgentLaunchOutcome.Failed(recentConnectError("Failed to connect to ${server.name}"))
+            val error = recentConnectError("Failed to connect to ${server.name}")
+            // The gateway launched a session before the attach failed.
+            hangUp(connection, false)
+            return AgentLaunchOutcome.Failed(error)
         }
         val detail =
             buildInitializeFailureMessage(
@@ -220,6 +225,7 @@ class AgentLaunchSession internal constructor(
                 runtimeId = pendingGateway?.runtimeId,
             )
         logConnectionFailure(server, "initialize", detail)
+        hangUp(connection, false)
         return AgentLaunchOutcome.Failed(shortInitializeFailureMessage(server))
     }
 
@@ -262,9 +268,6 @@ class AgentLaunchSession internal constructor(
             return AgentAuthOutcome.Failure(error.message ?: "Saved environment values could not be read.")
         }
 
-        // The restarted runtime keeps the id passed to restart; the gateway hands
-        // back only the new session and its attach token.
-        val runtimeId = gateway.runtimeId
         val restart =
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -272,16 +275,17 @@ class AgentLaunchSession internal constructor(
                         scheme = source.scheme,
                         host = source.host,
                         gatewayCredential = source.gatewayCredential,
-                        runtimeId = runtimeId,
+                        runtimeId = gateway.runtimeId,
                         envVars = envPayload,
                     )
                 }
             }.getOrElse { error ->
                 return AgentAuthOutcome.Failure(error.message ?: "Failed to restart ${server.name}.")
             }
-        pendingGateway = PendingGateway(source = source, runtimeId = runtimeId)
+        // Restart launches a new runtime; later retries and diagnostics must target it.
+        pendingGateway = PendingGateway(source = source, runtimeId = restart.runtimeId)
 
-        return reconnectWithHandoff(server, source, method, runtimeId, restart)
+        return reconnectWithHandoff(server, source, method, restart)
     }
 
     /** Reconnects onto the restarted runtime and completes initialize + authenticate. */
@@ -289,17 +293,15 @@ class AgentLaunchSession internal constructor(
         server: LaunchableTarget,
         source: GatewaySource,
         method: AcpAuthMethodInfo,
-        runtimeId: String,
-        restart: GatewayRestartResponse,
+        restart: GatewayConnectResponse,
     ): AgentAuthOutcome {
         connection.disconnect()
         val reconnected =
             withContext(Dispatchers.IO) {
                 connection.connect(
-                    AcpConnectionConfig.fromGatewayRestart(
+                    AcpConnectionConfig.fromGatewayHandoff(
                         gatewaySource = source,
-                        runtimeId = runtimeId,
-                        restart = restart,
+                        handoff = restart,
                         authMethodId = method.id,
                         // This reconnect never published a display name.
                         displayName = null,
@@ -320,7 +322,7 @@ class AgentLaunchSession internal constructor(
                     gatewaySourceRepository = gatewaySourceRepository,
                     server = server,
                     gatewaySource = source,
-                    runtimeId = runtimeId,
+                    runtimeId = restart.runtimeId,
                 )
             return AgentAuthOutcome.Failure(detail, connectionError = shortInitializeFailureMessage(server))
         }

@@ -170,12 +170,6 @@ class AcpChatSessionFacadeTest {
             host: String,
         ) = TODO("unused in facade tests")
 
-        override suspend fun getPairingStatus(
-            scheme: String,
-            host: String,
-            challengeId: String,
-        ) = TODO("unused in facade tests")
-
         override suspend fun completePairing(
             scheme: String,
             host: String,
@@ -243,15 +237,6 @@ class AcpChatSessionFacadeTest {
             gatewayCredential: String,
             subscription: com.tamimarafat.ferngeist.gateway.GatewayPushSubscription,
         ) = Unit
-
-        override suspend fun fetchWorkspaceFile(
-            scheme: String,
-            host: String,
-            gatewayCredential: String,
-            runtimeId: String,
-            path: String,
-            acpSessionId: String?,
-        ) = TODO("unused in facade tests")
 
         override suspend fun fetchGitStatus(
             scheme: String,

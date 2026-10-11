@@ -23,8 +23,6 @@ internal class ElicitationFlow {
 
     fun takePending(key: String): PendingElicitation? = pending.remove(key)
 
-    fun peekSessionId(key: String): String? = pending[key]?.sessionId
-
     // Explicit iterator with remove() to avoid ConcurrentModificationException
     // from mutating the ConcurrentHashMap during iteration.
     fun cancelAll(): List<String> {

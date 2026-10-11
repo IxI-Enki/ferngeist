@@ -14,12 +14,6 @@ interface GatewayPairingRepository {
         host: String,
     ): GatewayPairStartResponse
 
-    suspend fun getPairingStatus(
-        scheme: String,
-        host: String,
-        challengeId: String,
-    ): GatewayPairStatusResponse
-
     suspend fun completePairing(
         scheme: String,
         host: String,
@@ -47,8 +41,8 @@ interface GatewayRuntimeRepository {
     ): List<GatewayAgent>
 
     /**
-     * Connects [agentId] on the gateway: one call that spawns (or reuses) the agent's
-     * runtime and returns the session handoff plus the ACP WebSocket URL to attach to.
+     * Connects [agentId] on the gateway: one call that launches a fresh agent process
+     * and returns the session handoff plus the ACP WebSocket URL to attach to.
      */
     suspend fun connectAgent(
         scheme: String,
@@ -57,13 +51,17 @@ interface GatewayRuntimeRepository {
         agentId: String,
     ): GatewayConnectResponse
 
+    /**
+     * Relaunches the agent behind [runtimeId] with [envVars]. The gateway closes the old
+     * session only after the new one starts, and the handoff names a **new** runtime.
+     */
     suspend fun restartRuntime(
         scheme: String,
         host: String,
         gatewayCredential: String,
         runtimeId: String,
         envVars: Map<String, String>,
-    ): GatewayRestartResponse
+    ): GatewayConnectResponse
 
     suspend fun fetchRuntimeLogs(
         scheme: String,
@@ -120,24 +118,6 @@ interface GatewayPushRepository {
 
 /** Workspace file and git operations. */
 interface GatewayWorkspaceRepository {
-    /**
-     * Reads a file inside a runtime's project directory. [path] is relative to the
-     * agent's cwd (captured from the ACP session/new params.cwd) and must not escape it.
-     * The response is the ACP SDK's resource-contents shape (text or binary).
-     *
-     * [acpSessionId] scopes this and the git calls below to that ACP session's cwd; null
-     * falls back to the runtime's most recently opened session. A session the gateway has
-     * not seen yet answers 404.
-     */
-    suspend fun fetchWorkspaceFile(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-        path: String,
-        acpSessionId: String? = null,
-    ): GatewayFileRead
-
     /** Returns the git branch, ahead/behind, and changed files for a runtime's project directory. */
     suspend fun fetchGitStatus(
         scheme: String,

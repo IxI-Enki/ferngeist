@@ -635,11 +635,6 @@ internal class SessionGateway(
      */
     fun getSession(sessionId: String): SessionPort? = getLoadedSession(sessionId)
 
-    /** Removes a session from the registry and closes its bridge + cancels its pending permissions. */
-    fun removeSession(sessionId: String) {
-        clearSessionState(sessionId, closeBridge = true)
-    }
-
     /**
      * Ends a turn the gateway reports finished on an earlier connection. Its chunks
      * reach the reattached bridge, but its terminal reply answered a request this

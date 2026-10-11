@@ -16,8 +16,8 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * Integration tests for the workspace endpoints ([GatewayRepositoryImpl.fetchWorkspaceFile],
- * [GatewayRepositoryImpl.fetchGitStatus], [GatewayRepositoryImpl.fetchGitDiff]) exercising the
+ * Integration tests for the workspace endpoints ([GatewayRepositoryImpl.fetchGitStatus],
+ * [GatewayRepositoryImpl.fetchGitDiff]) exercising the
  * real HTTP path: request building, query-param encoding (which is part of the proof-signed
  * endpoint), and JSON decoding of the gateway's exact response shapes.
  */
@@ -98,11 +98,8 @@ class GatewayWorkspaceTest {
 
             runCatching { repo.fetchGitStatus("http", "10.0.0.2:5788", "plain-token", "rt-1", acpSessionId = "s-1") }
             repo.fetchGitDiff("http", "10.0.0.2:5788", "plain-token", "rt-1", acpSessionId = "s-1")
-            runCatching {
-                repo.fetchWorkspaceFile("http", "10.0.0.2:5788", "plain-token", "rt-1", "a.txt", acpSessionId = "s-1")
-            }
 
-            assertEquals(listOf("acpSessionId=s-1", "acpSessionId=s-1", "path=a.txt&acpSessionId=s-1"), queries)
+            assertEquals(listOf("acpSessionId=s-1", "acpSessionId=s-1"), queries)
         }
 
     @Test
@@ -160,69 +157,6 @@ class GatewayWorkspaceTest {
 
             val request = requireNotNull(captured)
             assertTrue(request.url.encodedQuery.isNullOrEmpty())
-        }
-
-    @Test
-    fun `fetchWorkspaceFile sends the path query and decodes a text file`() =
-        runTest {
-            var captured: HttpRequestData? = null
-            val repo =
-                repoCapturing(
-                    responseBody =
-                        """
-                        {
-                            "text": "hello world\n",
-                            "uri": "file:///repo/README.md",
-                            "mimeType": "text/plain; charset=utf-8",
-                            "size": 13,
-                            "truncated": false
-                        }
-                        """.trimIndent(),
-                ) { captured = it }
-
-            val file = repo.fetchWorkspaceFile("http", "10.0.0.2:5788", "plain-token", "rt-1", "README.md")
-
-            val request = requireNotNull(captured)
-            assertEquals("/v1/runtimes/rt-1/files", request.url.encodedPath)
-            assertEquals("path=README.md", request.url.encodedQuery)
-            val text = file as GatewayFileRead.Text
-            assertEquals("hello world\n", text.contents.text)
-            assertEquals("file:///repo/README.md", text.contents.uri)
-            assertFalse(text.truncated)
-        }
-
-    @Test
-    fun `fetchWorkspaceFile decodes a truncated response`() =
-        runTest {
-            val repo =
-                repoCapturing(
-                    responseBody = """{"text":"...","uri":"file:///repo/big.txt","size":1048576,"truncated":true}""",
-                )
-
-            val file = repo.fetchWorkspaceFile("http", "10.0.0.2:5788", "plain-token", "rt-1", "big.txt")
-
-            val text = file as GatewayFileRead.Text
-            assertTrue(text.truncated)
-            assertEquals(1048576, text.size)
-        }
-
-    @Test
-    fun `fetchWorkspaceFile decodes a binary response`() =
-        runTest {
-            val repo =
-                repoCapturing(
-                    responseBody =
-                        """{"blob":"AAECAw==","uri":"file:///repo/clip.png",""" +
-                            """"mimeType":"image/png","size":4,"truncated":false}""",
-                )
-
-            val file = repo.fetchWorkspaceFile("http", "10.0.0.2:5788", "plain-token", "rt-1", "clip.png")
-
-            val binary = file as GatewayFileRead.Binary
-            assertEquals("AAECAw==", binary.contents.blob)
-            assertEquals("image/png", binary.contents.mimeType)
-            assertEquals(4, binary.size)
-            assertFalse(binary.truncated)
         }
 
     @Test

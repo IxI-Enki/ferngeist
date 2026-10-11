@@ -106,12 +106,6 @@ internal class FakeGatewayRepo : GatewayRepository {
         host: String,
     ) = TODO("unused in these tests")
 
-    override suspend fun getPairingStatus(
-        scheme: String,
-        host: String,
-        challengeId: String,
-    ) = TODO("unused in these tests")
-
     override suspend fun completePairing(
         scheme: String,
         host: String,
@@ -195,15 +189,6 @@ internal class FakeGatewayRepo : GatewayRepository {
         host: String,
         gatewayCredential: String,
         subscription: com.tamimarafat.ferngeist.gateway.GatewayPushSubscription,
-    ) = TODO("unused in these tests")
-
-    override suspend fun fetchWorkspaceFile(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-        path: String,
-        acpSessionId: String?,
     ) = TODO("unused in these tests")
 
     override suspend fun fetchGitStatus(

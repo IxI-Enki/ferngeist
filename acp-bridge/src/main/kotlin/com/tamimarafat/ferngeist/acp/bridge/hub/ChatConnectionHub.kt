@@ -14,6 +14,7 @@ import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.GatewayRequestException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.util.concurrent.CopyOnWriteArrayList
 
 /** Gateway endpoint triple needed for session-scoped REST calls (close, capacity). */
@@ -266,7 +268,7 @@ class ChatConnectionHub(
                 if (browserManagers.remove(manager)) {
                     revision.value += 1
                 }
-                manager.release()
+                hangUpBrowserTransport(manager, release = true)
             }
         }
 
@@ -463,7 +465,36 @@ class ChatConnectionHub(
         if (browserManagers.remove(transport)) {
             revision.value += 1
         }
-        transport.release()
+        hangUpBrowserTransport(transport, release = true)
+    }
+
+    /**
+     * Hangs [transport] up ([release] also frees it) and DELETEs the gateway session
+     * it was bound to. A gateway v2 connect launches a dedicated agent process, so a
+     * listing or probe socket merely disconnected keeps it alive until the gateway's
+     * reaper, counting against the per-device session limit.
+     */
+    fun hangUpBrowserTransport(
+        transport: AcpConnection,
+        release: Boolean = false,
+    ) {
+        // An explicit disconnect already ran this, so skip the repeat DELETE.
+        val gateway =
+            (transport.currentConnectionConfig() as? AcpConnectionConfig.Gateway)
+                ?.takeIf { transport.connectionState.value != AcpConnectionState.Disconnected }
+        if (release) transport.release() else transport.disconnect()
+        gateway ?: return
+        scope.launch(Dispatchers.IO) {
+            // Best-effort: the reaper still collects a session this misses.
+            runCatching {
+                gatewayRepository.closeSession(
+                    gateway.scheme,
+                    gateway.host,
+                    gateway.gatewayCredential,
+                    gateway.resume.sessionId,
+                )
+            }
+        }
     }
 
     /** Any tracked chat manager for [serverId], connected or not; null when none is tracked. */

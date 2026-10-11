@@ -132,8 +132,6 @@ interface SessionRepository {
 interface LaunchableTargetSessionSettingsRepository {
     fun getSettings(targetId: String): Flow<LaunchableTargetSessionSettings>
 
-    suspend fun getSettingsBlocking(targetId: String): LaunchableTargetSessionSettings?
-
     suspend fun updateCwd(
         targetId: String,
         cwd: String,

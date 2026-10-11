@@ -5,7 +5,6 @@ import com.agentclientprotocol.model.AgentCapabilities
 import com.tamimarafat.ferngeist.core.model.GatewaySource
 import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
-import com.tamimarafat.ferngeist.gateway.GatewayRestartResponse
 import com.tamimarafat.ferngeist.gateway.resolveGatewayWebSocketUrl
 
 /**
@@ -93,46 +92,7 @@ sealed interface AcpConnectionConfig {
                 preferredAuthMethodId = authMethodId,
                 displayName = displayName,
             )
-
-        /**
-         * The transport config for a restarted gateway runtime: the runtime keeps the
-         * id the caller passed, so the attach URL is rebuilt from the source's
-         * scheme/host ([gatewaySource]) rather than the (dropped) connect handoff —
-         * the same `/v1/acp/{runtimeId}` endpoint [resolveGatewayWebSocketUrl] yields
-         * for a connect. [restart] carries only the new session and its attach token.
-         */
-        fun fromGatewayRestart(
-            gatewaySource: GatewaySource,
-            runtimeId: String,
-            restart: GatewayRestartResponse,
-            authMethodId: String?,
-            displayName: String?,
-        ): Gateway =
-            Gateway(
-                endpoint = gatewayAttachEndpoint(gatewaySource, runtimeId),
-                runtimeId = runtimeId,
-                sourceId = gatewaySource.id,
-                gatewayCredential = gatewaySource.gatewayCredential,
-                resume = ResumeInfo(sessionId = restart.sessionId, attachToken = restart.attachToken),
-                scheme = gatewaySource.scheme,
-                host = gatewaySource.host,
-                preferredAuthMethodId = authMethodId,
-                displayName = displayName,
-            )
     }
-}
-
-/** The `/v1/acp/{runtimeId}` WebSocket endpoint on the gateway source, scheme preserved. */
-private fun gatewayAttachEndpoint(
-    gatewaySource: GatewaySource,
-    runtimeId: String,
-): String {
-    val socketScheme =
-        when (gatewaySource.scheme.lowercase()) {
-            "https", "wss" -> "wss"
-            else -> "ws"
-        }
-    return "$socketScheme://${gatewaySource.host}/v1/acp/$runtimeId"
 }
 
 /** The transport config for a directly-reachable manual ACP server. */

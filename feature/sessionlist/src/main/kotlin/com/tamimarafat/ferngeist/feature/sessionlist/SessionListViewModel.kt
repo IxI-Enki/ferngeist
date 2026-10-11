@@ -779,8 +779,8 @@ class SessionListViewModel
         /**
          * Restarts the gateway runtime with the env payload, then asks the hub
          * to reconnect the raising transport to the restarted runtime.
-         * Returns the runtime id it restarted (the gateway keeps it), or null
-         * after surfacing the failure.
+         * Returns the new runtime id the restart launched, or null after
+         * surfacing the failure.
          */
         private suspend fun restartAndReconnect(
             pending: SessionListPendingAuthentication,
@@ -824,7 +824,6 @@ class SessionListViewModel
                 sessionCatalog.reconnectListingToGateway(
                     serverId = serverId,
                     gatewaySource = gatewaySource,
-                    runtimeId = runtimeId,
                     restart = restart,
                     authMethodId = method.id,
                     displayName = currentServer.name,
@@ -833,13 +832,14 @@ class SessionListViewModel
                 _pendingAuthentication.update {
                     it?.copy(
                         authErrorMessage = "Failed to reconnect to ${currentServer.name}",
-                        gatewayRuntimeId = runtimeId,
+                        // The gateway closed the old runtime once the new one started.
+                        gatewayRuntimeId = restart.runtimeId,
                     )
                 }
                 _isLoading.value = false
                 return null
             }
-            return runtimeId
+            return restart.runtimeId
         }
 
         /**

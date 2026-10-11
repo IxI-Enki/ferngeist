@@ -26,8 +26,8 @@ import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.core.model.store.AuthEnvValueStore
+import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
-import com.tamimarafat.ferngeist.gateway.GatewayRestartResponse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -220,24 +220,20 @@ class SessionCatalog(
     ): Boolean = reconnectListing(serverId) { server.toConnectionConfig() }
 
     /**
-     * Reconnects the retained listing transport for [serverId] to the runtime
-     * `POST /v1/runtimes/{id}/restart` handed back: the restarted runtime keeps
-     * [runtimeId], so only the session and its attach token come from [restart].
-     * Returns false when the attempt failed.
+     * Reconnects the retained listing transport for [serverId] to the new runtime
+     * `POST /v1/runtimes/{id}/restart` handed back. Returns false when the attempt failed.
      */
     suspend fun reconnectListingToGateway(
         serverId: String,
         gatewaySource: GatewaySource,
-        runtimeId: String,
-        restart: GatewayRestartResponse,
+        restart: GatewayConnectResponse,
         authMethodId: String,
         displayName: String,
     ): Boolean =
         reconnectListing(serverId) {
-            AcpConnectionConfig.fromGatewayRestart(
+            AcpConnectionConfig.fromGatewayHandoff(
                 gatewaySource = gatewaySource,
-                runtimeId = runtimeId,
-                restart = restart,
+                handoff = restart,
                 authMethodId = authMethodId,
                 displayName = displayName,
             )
@@ -451,6 +447,8 @@ class SessionCatalog(
                 }
             }
         if (!connected) {
+            // A failed attach still leaves the session the gateway just launched.
+            hangUpListing(listing)
             return ListSessionsResult.Failed(
                 transport.diagnostics.value.recentErrors
                     .lastOrNull { it.source == "connect" || it.source == "connection" }
@@ -491,12 +489,9 @@ class SessionCatalog(
 
     /** Disconnects the browser transport of [listing] (kept for reuse, not closed). */
     private suspend fun hangUpListing(listing: ListingSession) {
-        val transport = listing.browserTransport
-        if (transport.isConnected) {
-            // NonCancellable: called from CancellationException catches, where a
-            // plain IO hop would re-cancel before disconnect() runs.
-            withContext(NonCancellable + Dispatchers.IO) { transport.disconnect() }
-        }
+        // NonCancellable: called from CancellationException catches, where a
+        // plain IO hop would re-cancel before disconnect() runs.
+        withContext(NonCancellable + Dispatchers.IO) { hub.hangUpBrowserTransport(listing.browserTransport) }
     }
 
     /**

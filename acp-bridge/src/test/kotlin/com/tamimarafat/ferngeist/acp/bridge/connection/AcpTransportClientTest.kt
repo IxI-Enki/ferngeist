@@ -1,8 +1,6 @@
 package com.tamimarafat.ferngeist.acp.bridge.connection
 
 import com.tamimarafat.ferngeist.acp.bridge.ConnectivityObserverStub
-import com.tamimarafat.ferngeist.core.model.GatewaySource
-import com.tamimarafat.ferngeist.gateway.GatewayRestartResponse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -126,44 +124,6 @@ class AcpTransportClientTest {
                 client.reconnectPending.value,
             )
         }
-
-    @Test
-    fun `restart handoff rebuilds the attach URL and carries the new session`() {
-        val source =
-            GatewaySource(
-                name = "Home",
-                scheme = "http",
-                host = "192.168.1.5:5788",
-                gatewayCredential = "cred-1",
-            )
-        val restart = GatewayRestartResponse(sessionId = "sess-9", attachToken = "at-9")
-
-        val config =
-            AcpConnectionConfig.fromGatewayRestart(
-                gatewaySource = source,
-                runtimeId = "rt-9",
-                restart = restart,
-                authMethodId = "agent-auth",
-                displayName = "Codex",
-            )
-
-        assertEquals("ws://192.168.1.5:5788/v1/acp/rt-9", config.endpoint)
-        assertEquals("sess-9", config.resume.sessionId)
-        assertEquals("at-9", config.resume.attachToken)
-        assertEquals("rt-9", config.runtimeId)
-        assertEquals("agent-auth", config.preferredAuthMethodId)
-        assertEquals("Codex", config.displayName)
-
-        val secure =
-            AcpConnectionConfig.fromGatewayRestart(
-                gatewaySource = source.copy(scheme = "https"),
-                runtimeId = "rt-9",
-                restart = restart,
-                authMethodId = null,
-                displayName = null,
-            )
-        assertEquals("wss://192.168.1.5:5788/v1/acp/rt-9", secure.endpoint)
-    }
 
     private fun scheduleReconnect(client: AcpTransportClient) {
         val method = client.javaClass.getDeclaredMethod("scheduleReconnect", Function0::class.java)

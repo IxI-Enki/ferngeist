@@ -51,12 +51,18 @@ class GatewayLaunchRuntimeTest {
             val engine =
                 MockEngine { request ->
                     requested += "${request.method.value} ${request.url.encodedPath}"
-                    respond("""{"sessionId":"sess-7","attachToken":"at-7"}""", HttpStatusCode.OK)
+                    respond(
+                        """{"runtimeId":"runtime-4","sessionId":"sess-7","attachToken":"at-7",""" +
+                            """"websocketUrl":"ws://gw.local:5788/v1/acp/runtime-4"}""",
+                        HttpStatusCode.OK,
+                    )
                 }
             val repository = GatewayRepositoryImpl(HttpClient(engine), json)
 
             val restarted = repository.restartRuntime("http", "gw.local:5788", "cred", "runtime-3", emptyMap())
 
+            // A restart launches a new runtime; the client must attach to that one.
+            assertEquals("runtime-4", restarted.runtimeId)
             assertEquals("sess-7", restarted.sessionId)
             assertEquals("at-7", restarted.attachToken)
             assertEquals(listOf("POST /v1/runtimes/runtime-3/restart"), requested)

@@ -1,7 +1,6 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import com.tamimarafat.ferngeist.gateway.GatewayAgent
-import com.tamimarafat.ferngeist.gateway.GatewayFileRead
 import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 
@@ -46,12 +45,6 @@ class FakeGatewayRepository : GatewayRepository {
     override suspend fun startPairing(
         scheme: String,
         host: String,
-    ) = TODO()
-
-    override suspend fun getPairingStatus(
-        scheme: String,
-        host: String,
-        challengeId: String,
     ) = TODO()
 
     override suspend fun fetchAgents(
@@ -130,15 +123,6 @@ class FakeGatewayRepository : GatewayRepository {
         gatewayCredential: String,
         subscription: com.tamimarafat.ferngeist.gateway.GatewayPushSubscription,
     ) = Unit
-
-    override suspend fun fetchWorkspaceFile(
-        scheme: String,
-        host: String,
-        gatewayCredential: String,
-        runtimeId: String,
-        path: String,
-        acpSessionId: String?,
-    ): GatewayFileRead = TODO()
 
     override suspend fun fetchGitStatus(
         scheme: String,

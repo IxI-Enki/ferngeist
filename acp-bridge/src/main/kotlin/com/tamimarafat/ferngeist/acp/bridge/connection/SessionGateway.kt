@@ -402,6 +402,7 @@ internal class SessionGateway(
                                 AcpSessionUpdateMapper.mapStopReason(
                                     event.response.stopReason,
                                 ),
+                                gatewayTurnDurationMs(event.response._meta),
                             ),
                         )
                     }

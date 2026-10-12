@@ -396,6 +396,8 @@ sealed interface AppSessionEvent {
 
     data class TurnComplete(
         val stopReason: String,
+        /** How long the gateway saw the turn run, when it says; the phone may hear the end late. */
+        val durationMs: Long? = null,
     ) : AppSessionEvent
 
     data class Unknown(

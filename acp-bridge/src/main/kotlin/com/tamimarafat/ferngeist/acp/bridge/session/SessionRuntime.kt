@@ -68,6 +68,9 @@ class SessionRuntime(
     /** The reply still streaming at the last publish, so its close can be stamped. */
     private var openReplyId: String? = null
 
+    /** The gateway's measure of the turn that just ended, for [stampClosedReply]. */
+    private var turnDurationMs: Long? = null
+
     private val _snapshot =
         MutableStateFlow(
             SessionSnapshot(
@@ -167,6 +170,7 @@ class SessionRuntime(
             // A reply closed by a reattach ended while this client was away; stamping it now would
             // time the outage, not the turn, so it gets no time at all.
             if (event is AppSessionEvent.SessionLoadComplete) openReplyId = null
+            if (event is AppSessionEvent.TurnComplete) turnDurationMs = event.durationMs
             debug { "event#$seq liveApplied messages=${live.messages.size} streaming=${live.isStreaming}" }
             publishLive(loadState = SessionLoadState.READY, error = null)
         }
@@ -539,6 +543,7 @@ class SessionRuntime(
      * Every path that closes a reply (turn end, cancel, a failed send, a steer, a new prompt)
      * publishes, so stamping here catches them all without each one knowing about time. The turn
      * runs from its prompt's send; replayed history never streams here, so it is never stamped.
+     * The gateway's duration wins over the wall clock: a dozing phone hears the end late.
      */
     private fun stampClosedReply() {
         val messages = live.messages
@@ -546,14 +551,16 @@ class SessionRuntime(
         val reply = messages.getOrNull(index)?.takeIf { !it.isStreaming && it.turn == null }
         val prompt = messages.subList(0, index.coerceAtLeast(0)).lastOrNull { it.role == ChatMessage.Role.USER }
         if (reply != null && prompt != null) {
+            val finishedAt = turnDurationMs?.let { prompt.createdAt + it } ?: wallClock()
             live =
                 live.copy(
                     messages =
                         messages.toMutableList().apply {
-                            this[index] = reply.copy(turn = TurnTiming(prompt.createdAt, wallClock()))
+                            this[index] = reply.copy(turn = TurnTiming(prompt.createdAt, finishedAt))
                         },
                 )
         }
+        turnDurationMs = null
         val last = live.messages.lastOrNull()
         openReplyId = if (last?.isStreaming == true) last.id else null
     }

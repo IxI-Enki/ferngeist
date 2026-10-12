@@ -7,8 +7,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
@@ -27,6 +29,16 @@ internal data class RemoteTurnEnded(
 
 private val remoteTurnEndedMethod =
     AcpMethod.AcpNotificationMethod("_ferngeist/turn_ended", RemoteTurnEnded.serializer())
+
+/**
+ * The turn's length as the gateway measured it, from `_meta.ferngeist.durationMs` on a prompt
+ * response. Null from an agent reached directly or from an older gateway.
+ */
+internal fun gatewayTurnDurationMs(meta: JsonElement?): Long? =
+    ((meta as? JsonObject)?.get("ferngeist") as? JsonObject)
+        ?.get("durationMs")
+        ?.let { it as? JsonPrimitive }
+        ?.longOrNull
 
 /** Routes [RemoteTurnEnded] notices to [onTurnEnded]. Register before [Protocol.start]. */
 internal fun Protocol.onRemoteTurnEnded(onTurnEnded: suspend (sessionId: String, stopReason: String) -> Unit) {

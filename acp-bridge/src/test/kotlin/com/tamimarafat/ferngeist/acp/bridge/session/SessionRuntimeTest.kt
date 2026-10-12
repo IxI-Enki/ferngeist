@@ -45,6 +45,19 @@ class SessionRuntimeTest {
         }
 
     @Test
+    fun the_gateways_duration_times_the_turn_not_when_the_phone_heard_it_end() =
+        runTest {
+            val runtime = SessionRuntime(sessionId = "ses_test", wallClock = { Long.MAX_VALUE })
+            runtime.onLocalPromptStarted("go", emptyList(), emptyList())
+            runtime.onEvent(AppSessionEvent.AgentMessage("done"))
+            runtime.onEvent(AppSessionEvent.TurnComplete("end_turn", durationMs = 120_000L))
+
+            val messages = runtime.snapshot.value.messages
+            val prompt = messages.first()
+            assertEquals(TurnTiming(prompt.createdAt, prompt.createdAt + 120_000L), messages.last().turn)
+        }
+
+    @Test
     fun a_reply_closed_by_a_reattach_gets_no_time() =
         runTest {
             val runtime = SessionRuntime(sessionId = "ses_test", wallClock = { 9_000L })

@@ -65,7 +65,7 @@ private const val CHASE_PASSES = 3
 internal class ChatScrollHandle(
     val listState: LazyListState,
     val userScrollDetector: NestedScrollConnection,
-    val onStreamLayoutSettled: () -> Unit,
+    val onStreamLayoutSettled: (Int) -> Unit,
     val onSendMessage: () -> Unit,
     val jumpToTop: suspend () -> Unit,
     val showJumpToBottom: State<Boolean>,
@@ -452,9 +452,29 @@ private class ChatScrollDecisionRunner(
     }
 
     /** Streaming resize: delegate to policy and apply the decision. */
-    fun onStreamLayoutSettled() {
+    fun onStreamLayoutSettled(growthPx: Int) {
         val decision = policy.onStreamingBubbleResized()
-        if (decision is ScrollDecision.FollowGrowth) followGrowth() else run(decision)
+        if (decision is ScrollDecision.FollowGrowth) followStreamGrowth(growthPx) else run(decision)
+    }
+
+    /**
+     * Streaming growth, pixel-pinned: compensates exactly the pixels the live bubble just
+     * grew, so the content end stays glued to the viewport end instead of jumping there
+     * once per chunk. Overshoot clamps at the end, so a stale baseline after a recompose
+     * degrades to a snap rather than flinging past it.
+     */
+    fun followStreamGrowth(deltaPx: Int) {
+        if (easing || !policy.shouldFollowGrowth() || deltaPx <= 0) return
+        scrollJob?.cancel()
+        scrollJob =
+            scope.launch {
+                programmaticScrolling = true
+                try {
+                    listState.scrollBy(deltaPx.toFloat())
+                } finally {
+                    programmaticScrolling = false
+                }
+            }
     }
 
     /** Send button: delegate to policy and apply the decision. */

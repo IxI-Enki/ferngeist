@@ -49,7 +49,6 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -102,7 +101,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -145,7 +143,7 @@ fun MessageBubble(
     onToolCallClick: (String) -> Unit,
     modifier: Modifier = Modifier,
     isLastMessage: Boolean = false,
-    onStreamLayoutSettled: () -> Unit = {},
+    onStreamLayoutSettled: (Int) -> Unit = {},
     onRetryMessage: ((String) -> Unit)? = null,
 ) {
     val isUser = message.role == ChatMessage.Role.USER
@@ -169,12 +167,24 @@ fun MessageBubble(
             MaterialTheme.colorScheme.onSurface
         }
     var fullscreenImage by remember { mutableStateOf<ChatImageData?>(null) }
+    // Baseline for the growth delta reported to the scroll follow. Keyed by message: a new
+    // last message starts at zero, so its first delta is its whole height, which is exactly
+    // what the list grew by.
+    var lastStreamHeightPx by remember(message.id) { mutableIntStateOf(0) }
 
     AnimatedVisibility(
         visibleState = entrance,
         modifier =
             modifier.fillMaxWidth().then(
-                if (isLastMessage && live) Modifier.onSizeChanged { onStreamLayoutSettled() } else Modifier,
+                if (isLastMessage && live) {
+                    Modifier.onSizeChanged { size ->
+                        val growth = size.height - lastStreamHeightPx
+                        lastStreamHeightPx = size.height
+                        onStreamLayoutSettled(growth)
+                    }
+                } else {
+                    Modifier
+                },
             ),
         enter =
             fadeIn(tween(ENTRANCE_FADE_MS)) +
@@ -488,6 +498,11 @@ private fun AssistantMessageContent(
         // and tool calls still reads the way the agent produced it. Grouping must not reorder:
         // collecting thoughts and prose in separate passes would hoist every reasoning bubble
         // above the prose that preceded it.
+        val liveSegmentId =
+            message.segments
+                .lastOrNull()
+                ?.id
+                .takeIf { message.isStreaming }
         val blocks = message.segments.displayBlocks()
         blocks.forEach { block ->
             if (!gateOpen) return@forEach
@@ -495,14 +510,18 @@ private fun AssistantMessageContent(
                 when (block) {
                     is SegmentBlock.Run ->
                         if (block.kind == AssistantSegment.Kind.THOUGHT) {
-                            AssistantSegmentContent(
-                                // The run's LAST chunk, not the first: AssistantSegmentContent
-                                // decides the streaming shimmer by comparing against
-                                // segments.lastOrNull(), so the shimmer follows the growing edge.
-                                segment = block.segments.last(),
-                                message = message,
+                            // Reasoning with no adjacent call still gets the rail: the same live
+                            // single-line row while it streams, the same foldable group once settled.
+                            ToolCallGroup(
+                                items = listOf(block),
+                                isStreaming = message.isStreaming,
+                                isTail = block === blocks.last(),
+                                liveSegmentId = liveSegmentId,
+                                onToolCallClick = onToolCallClick,
                                 onThoughtClick = onThoughtClick,
+                                foldsInFlight = reveals.foldsInFlight,
                             )
+                            Spacer(modifier = Modifier.height(8.dp))
                         } else if (block.text.isNotBlank()) {
                             // Keyed by the run's first chunk: MarkdownStateStore caches the whole
                             // run's parse under that id, and the key is stable as chunks arrive,
@@ -523,11 +542,7 @@ private fun AssistantMessageContent(
                             items = block.items,
                             isStreaming = message.isStreaming,
                             isTail = block === blocks.last(),
-                            liveSegmentId =
-                                message.segments
-                                    .lastOrNull()
-                                    ?.id
-                                    .takeIf { message.isStreaming },
+                            liveSegmentId = liveSegmentId,
                             onToolCallClick = onToolCallClick,
                             onThoughtClick = onThoughtClick,
                             foldsInFlight = reveals.foldsInFlight,
@@ -536,11 +551,10 @@ private fun AssistantMessageContent(
                     }
 
                     is SegmentBlock.Single ->
-                        AssistantSegmentContent(
-                            segment = block.segment,
-                            message = message,
-                            onThoughtClick = onThoughtClick,
-                        )
+                        if (block.segment.kind == AssistantSegment.Kind.PLAN) {
+                            PlanBubble(block.segment.planEntries.orEmpty())
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                 }
             }
         }
@@ -643,41 +657,6 @@ internal class BubbleReveals {
 }
 
 /**
- * Renders one non-MESSAGE segment.
- *
- * MESSAGE never reaches here: a streamed reply arrives one segment per chunk, and rendering each
- * of those as its own markdown block puts one word per line until the reducer folds the run at
- * turn close. [AssistantMessageContent] renders MESSAGE through `displayBlocks()` instead.
- */
-@Composable
-private fun AssistantSegmentContent(
-    segment: AssistantSegment,
-    message: ChatMessage,
-    onThoughtClick: (String) -> Unit,
-) {
-    when (segment.kind) {
-        // Both render through displayBlocks(): MESSAGE as runs, TOOL_CALL as groups.
-        AssistantSegment.Kind.MESSAGE, AssistantSegment.Kind.TOOL_CALL -> Unit
-
-        AssistantSegment.Kind.THOUGHT -> {
-            ThoughtBubble(
-                // The message id, not the segment id: the segment id changes on every chunk, and
-                // the polygon set and verb must stay put for the whole turn or the row flickers.
-                streamKey = message.id,
-                isStreaming = message.isStreaming && message.segments.lastOrNull()?.id == segment.id,
-                onClick = { onThoughtClick(segment.id) },
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        AssistantSegment.Kind.PLAN -> {
-            PlanBubble(segment.planEntries.orEmpty())
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-    }
-}
-
-/**
  * Renders [text] as markdown, fading in each block the parser just created.
  *
  * While the parse is still in flight this falls back to the raw text at body typography. A
@@ -730,51 +709,6 @@ private fun RenderedMarkdown(
             style = MaterialTheme.typography.bodyMedium,
             modifier = modifier.fillMaxWidth(),
         )
-    }
-}
-
-@Composable
-private fun ThoughtBubble(
-    streamKey: String,
-    isStreaming: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val reasoningDesc = stringResource(R.string.chat_reasoning_desc)
-
-    Row(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clickable { onClick() }
-                .semantics {
-                    contentDescription = reasoningDesc
-                },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (isStreaming) {
-            // Same indicator a streamed reply gets. The chevron is deliberately withheld: it
-            // marks the settled row that expands on tap, not the in-flight one.
-            StreamingIndicator(
-                streamKey = streamKey,
-                baseColor = baseColor,
-                modifier = Modifier.padding(vertical = 4.dp),
-            )
-        } else {
-            Text(
-                text = stringResource(R.string.chat_show_reasoning),
-                style = MaterialTheme.typography.bodySmall.copy(color = baseColor),
-                modifier = Modifier.padding(vertical = 4.dp),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = reasoningDesc,
-                tint = baseColor,
-                modifier = Modifier.size(16.dp),
-            )
-        }
     }
 }
 

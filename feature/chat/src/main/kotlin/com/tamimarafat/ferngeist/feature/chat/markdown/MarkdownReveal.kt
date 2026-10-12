@@ -63,15 +63,16 @@ private const val REVEAL_MIN_CHARS_PER_SECOND = 60f
  */
 private const val REVEAL_CATCH_UP_SECONDS = 0.35f
 
-/** Advances the cursor by one frame of [dtSeconds]. Never passes [target]. */
+/** Advances the cursor by one frame of [dtSeconds], at most [maxCharsPerSecond]. Never passes [target]. */
 internal fun revealStep(
     shown: Float,
     target: Int,
     dtSeconds: Float,
+    maxCharsPerSecond: Float = Float.MAX_VALUE,
 ): Float {
     val backlog = target - shown
     if (backlog <= 0f) return shown
-    val rate = max(REVEAL_MIN_CHARS_PER_SECOND, backlog / REVEAL_CATCH_UP_SECONDS)
+    val rate = max(REVEAL_MIN_CHARS_PER_SECOND, backlog / REVEAL_CATCH_UP_SECONDS).coerceAtMost(maxCharsPerSecond)
     return min(target.toFloat(), shown + rate * dtSeconds)
 }
 
@@ -147,6 +148,7 @@ private fun List<InlineNode>.inlineLength(): Int =
 @Stable
 internal class RunReveal(
     startHidden: Boolean,
+    private val maxCharsPerSecond: Float = Float.MAX_VALUE,
 ) {
     private class Step(
         val from: Float,
@@ -194,7 +196,7 @@ internal class RunReveal(
         frameMs: Long,
         dtSeconds: Float,
     ) {
-        val next = revealStep(shown, target, dtSeconds)
+        val next = revealStep(shown, target, dtSeconds, maxCharsPerSecond)
         if (next > shown) {
             steps.addLast(Step(shown, next, frameMs))
             shown = next

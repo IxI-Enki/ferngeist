@@ -398,7 +398,7 @@ internal fun ChatScreenBody(
     onRetryLoad: () -> Unit,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
-    onStreamLayoutSettled: () -> Unit = {},
+    onStreamLayoutSettled: (Int) -> Unit = {},
     onRetryMessage: ((String) -> Unit)? = null,
 ) {
     when {
@@ -598,7 +598,7 @@ private fun ChatMessageList(
     listBottomPadding: Dp,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
-    onStreamLayoutSettled: () -> Unit = {},
+    onStreamLayoutSettled: (Int) -> Unit = {},
     onRetryMessage: ((String) -> Unit)? = null,
 ) {
     val allMessages = state.messages
@@ -753,7 +753,7 @@ private fun ChatMessageItem(
     renderedLastMessageId: String?,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
-    onStreamLayoutSettled: () -> Unit,
+    onStreamLayoutSettled: (Int) -> Unit,
     onRetryMessage: ((String) -> Unit)?,
 ) {
     // Keyed by the same keys the renderer draws from (run keys, not segment ids), so the document

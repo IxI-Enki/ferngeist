@@ -86,8 +86,9 @@ private fun easedBottomPx(targetPx: Int): Int {
 
 /**
  * The previous reply, held at its runway height while the next prompt glides up past it: collapsing
- * it on send pops the new prompt into its place. Let go once the row leaves composition, off screen,
- * where its height no longer moves anything.
+ * it on send pops the new prompt into its place. Let go once the row leaves composition, or once the
+ * reader scrolls: the row can stay composed just above the prompt, and scrolling up would show the
+ * held height as a gap. Letting go at the glide's end instead drops the reply into view on its own.
  */
 internal class RunwayHold {
     // ponytail: plain fields written in composition; a repeated composition derives the same values.
@@ -116,7 +117,7 @@ internal fun Modifier.runwayRow(
 ): Modifier =
     when (key) {
         runway.replyKey -> runwayReply(scroll, runway)
-        runway.hold.key -> heldReply(runway.hold, key)
+        runway.hold.key -> if (scroll.following) heldReply(runway.hold, key) else this
         else -> this
     }
 

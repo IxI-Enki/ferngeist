@@ -239,6 +239,7 @@
         <item quantity="other">usou %1$d ferramentas</item>
     </plurals>
     <!-- Present-continuous variants, shown while the group still has a running call -->
+    <string name="chat_tool_summary_separator">", "</string>
     <string name="chat_tool_summary_thinking">pensando</string>
     <plurals name="chat_tool_summary_execute_running">
         <item quantity="one">executando %1$d comando</item>

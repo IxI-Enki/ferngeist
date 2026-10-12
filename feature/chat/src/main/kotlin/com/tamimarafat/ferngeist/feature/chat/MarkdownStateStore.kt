@@ -28,7 +28,7 @@ internal class MarkdownStateStore {
          * GfmCompat rather than ChatFast: it keeps reference links (ChatFast disables them and
          * agents do emit them) and adds table alignment. Definitions are single-line only.
          */
-        private val DIALECT = MarkdownDialect.GfmCompat
+        internal val DIALECT = MarkdownDialect.GfmCompat
 
         /** Chats whose parsed transcript outlives their screen; covers every switcher target. */
         private const val RETAINED_CHATS = 8
@@ -53,7 +53,7 @@ internal class MarkdownStateStore {
             }
     }
 
-    private val runs = linkedMapOf<String, RunEntry>()
+    private val runs = linkedMapOf<String, IncrementalMarkdown>()
     private var initialHydrated: Boolean = false
 
     /**
@@ -87,7 +87,7 @@ internal class MarkdownStateStore {
     private fun sync(messages: List<ChatMessage>): Map<String, MarkdownRenderedDocument> {
         val required = collectRequiredEntries(messages)
         runs.keys.retainAll(required.keys)
-        required.forEach { (key, text) -> runs.getOrPut(key) { RunEntry(DIALECT) }.update(text) }
+        required.forEach { (key, text) -> runs.getOrPut(key) { IncrementalMarkdown() }.update(text) }
         return required.keys.associateWith { runs.getValue(it).document }
     }
 
@@ -109,32 +109,32 @@ internal class MarkdownStateStore {
         }
         return required
     }
+}
 
-    /** One run's engine and the text it has already been fed. */
-    private class RunEntry(
-        dialect: MarkdownDialect,
-    ) {
-        private val engine = MarkdownEngine(dialect)
-        private var fed: String = ""
+/** One markdown document's engine and the text it has already been fed: a run here, the reasoning sheet's thought. */
+internal class IncrementalMarkdown(
+    dialect: MarkdownDialect = MarkdownStateStore.DIALECT,
+) {
+    private val engine = MarkdownEngine(dialect)
+    private var fed: String = ""
 
-        var document: MarkdownRenderedDocument = MarkdownRenderedDocument(emptyList())
-            private set
+    var document: MarkdownRenderedDocument = MarkdownRenderedDocument(emptyList())
+        private set
 
-        /**
-         * Feeds only the part of [text] the engine has not seen. Feeding the whole text again would
-         * append a second copy of the run. A run that stops being a prefix of what was fed (history
-         * reload, an edited turn) starts over, so block ids and text cannot disagree.
-         */
-        fun update(text: String) {
-            if (text == fed) return
-            if (!text.startsWith(fed)) {
-                engine.reset()
-                fed = ""
-            }
-            val delta = engine.append(text.substring(fed.length))
-            fed = text
-            document = MarkdownRenderedDocument(delta.snapshot.document.blocks)
+    /**
+     * Feeds only the part of [text] the engine has not seen. Feeding the whole text again would
+     * append a second copy of the run. A run that stops being a prefix of what was fed (history
+     * reload, an edited turn) starts over, so block ids and text cannot disagree.
+     */
+    fun update(text: String) {
+        if (text == fed) return
+        if (!text.startsWith(fed)) {
+            engine.reset()
+            fed = ""
         }
+        val delta = engine.append(text.substring(fed.length))
+        fed = text
+        document = MarkdownRenderedDocument(delta.snapshot.document.blocks)
     }
 }
 

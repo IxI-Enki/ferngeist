@@ -29,6 +29,8 @@ import kotlinx.coroutines.sync.withLock
  */
 class SessionRuntime(
     private val sessionId: String,
+    /** Monotonic clock for segment arrival; null leaves live turns unstamped, as in tests. */
+    private val clock: () -> Long? = { null },
 ) {
     companion object {
         private const val TAG = "TSRuntime"
@@ -148,14 +150,14 @@ class SessionRuntime(
                     "summary=${summarizeEvent(event)}"
             }
             if (_snapshot.value.loadState == SessionLoadState.HYDRATING) {
-                buffered = reduce(buffered, event)
+                buffered = reduce(buffered, event, nowMs = null)
                 debug {
                     "event#$seq bufferedApplied messages=${buffered.messages.size} " +
                         "streaming=${buffered.isStreaming}"
                 }
                 return@withLock
             }
-            live = reduce(live, event)
+            live = reduce(live, event, clock())
             debug { "event#$seq liveApplied messages=${live.messages.size} streaming=${live.isStreaming}" }
             publishLive(loadState = SessionLoadState.READY, error = null)
         }
@@ -259,6 +261,7 @@ class SessionRuntime(
     private fun reduce(
         current: RuntimeData,
         event: AppSessionEvent,
+        nowMs: Long?,
     ): RuntimeData {
         // Text arriving after a stop would otherwise land in the stopped reply, and its
         // turn-close fold would glue it onto that reply's last sentence.
@@ -279,7 +282,7 @@ class SessionRuntime(
         val fromReducer =
             when (event) {
                 is AppSessionEvent.SessionLoadComplete -> null
-                else -> SessionMessageReducer.handleEvent(messages, toolCallIndex, event)
+                else -> SessionMessageReducer.handleEvent(messages, toolCallIndex, event, nowMs)
             }
         if (fromReducer != null) {
             messages = fromReducer.messages

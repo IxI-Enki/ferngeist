@@ -36,6 +36,8 @@ data class AssistantSegment(
     val text: String = "",
     val toolCall: ToolCallDisplay? = null,
     val planEntries: List<PlanEntry>? = null,
+    /** `elapsedRealtime` the segment arrived at; null for hydrated history. */
+    val receivedAtMs: Long? = null,
 ) {
     enum class Kind {
         MESSAGE,

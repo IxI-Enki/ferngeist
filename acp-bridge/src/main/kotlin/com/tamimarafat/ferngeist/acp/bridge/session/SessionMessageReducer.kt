@@ -44,6 +44,8 @@ object SessionMessageReducer {
         messages: List<ChatMessage>,
         toolCallIndex: Map<String, ToolCallLocation>,
         event: AppSessionEvent,
+        // Stamps new segments; null while hydrating, since a replay's arrival time means nothing.
+        nowMs: Long? = null,
     ): ReducerResult =
         when (event) {
             is AppSessionEvent.UserMessage ->
@@ -66,6 +68,7 @@ object SessionMessageReducer {
                     event.text,
                     AssistantSegment.Kind.MESSAGE,
                     event.timestampMs,
+                    nowMs,
                 )
             is AppSessionEvent.AgentThought ->
                 appendText(
@@ -74,18 +77,19 @@ object SessionMessageReducer {
                     event.text,
                     AssistantSegment.Kind.THOUGHT,
                     event.timestampMs,
+                    nowMs,
                 )
             is AppSessionEvent.ToolCallStarted ->
-                upsertToolCall(messages, toolCallIndex, event)
+                upsertToolCall(messages, toolCallIndex, event, nowMs)
             is AppSessionEvent.ToolCallUpdated ->
-                updateToolCall(messages, toolCallIndex, event)
+                updateToolCall(messages, toolCallIndex, event, nowMs)
             is AppSessionEvent.ToolPermissionRequested ->
                 updateToolCallPermission(messages, toolCallIndex, event)
             is AppSessionEvent.ToolPermissionResolved ->
                 clearToolCallPermission(messages, toolCallIndex, event.toolCallId)
             is AppSessionEvent.PlanUpdated ->
                 ReducerResult(
-                    messages = updatePlan(messages, event.entries, event.timestampMs),
+                    messages = updatePlan(messages, event.entries, event.timestampMs, nowMs),
                     toolCallIndex = toolCallIndex,
                 )
             is AppSessionEvent.TurnComplete ->
@@ -271,6 +275,7 @@ object SessionMessageReducer {
         text: String,
         kind: AssistantSegment.Kind,
         timestampMs: Long?,
+        nowMs: Long?,
     ): ReducerResult {
         if (text.isEmpty()) return ReducerResult(messages, toolCallIndex)
         val mutableMessages = messages.mutableCopy()
@@ -304,7 +309,14 @@ object SessionMessageReducer {
         // reply a single document again.
         val newSegments: PersistentList<AssistantSegment> =
             message.segments.mutate { segments ->
-                segments.add(AssistantSegment(id = UUID.randomUUID().toString(), kind = kind, text = text))
+                segments.add(
+                    AssistantSegment(
+                        id = UUID.randomUUID().toString(),
+                        kind = kind,
+                        text = text,
+                        receivedAtMs = nowMs,
+                    ),
+                )
             }
 
         mutableMessages[targetIndex] =
@@ -320,6 +332,7 @@ object SessionMessageReducer {
         messages: List<ChatMessage>,
         entries: List<PlanEntry>,
         timestampMs: Long?,
+        nowMs: Long?,
     ): List<ChatMessage> {
         if (entries.isEmpty()) return messages
         val mutableMessages = messages.mutableCopy()
@@ -358,6 +371,7 @@ object SessionMessageReducer {
                             kind = AssistantSegment.Kind.PLAN,
                             text = "",
                             planEntries = entries,
+                            receivedAtMs = nowMs,
                         ),
                     )
                 }
@@ -378,6 +392,7 @@ object SessionMessageReducer {
         messages: List<ChatMessage>,
         toolCallIndex: Map<String, ToolCallLocation>,
         event: AppSessionEvent.ToolCallStarted,
+        nowMs: Long? = null,
     ): ReducerResult {
         val toolCallId = event.toolCallId.ifBlank { "tool_${UUID.randomUUID()}" }
 
@@ -421,6 +436,7 @@ object SessionMessageReducer {
                         rawInput = event.rawInput,
                         locations = event.locations,
                     ),
+                receivedAtMs = nowMs,
             )
         val newSegments = message.segments.adding(newSegment)
         mutableMessages[targetIndex] = message.copy(segments = newSegments)
@@ -433,6 +449,7 @@ object SessionMessageReducer {
         messages: List<ChatMessage>,
         toolCallIndex: Map<String, ToolCallLocation>,
         event: AppSessionEvent.ToolCallUpdated,
+        nowMs: Long?,
     ): ReducerResult {
         val incomingToolCallId = event.toolCallId.ifBlank { "tool_${UUID.randomUUID()}" }
         val located = locateToolCall(messages, toolCallIndex, incomingToolCallId)
@@ -452,11 +469,13 @@ object SessionMessageReducer {
                         rawInput = event.rawInput,
                         locations = event.locations,
                     ),
+                    nowMs,
                 )
             return updateToolCall(
                 bootstrapped.messages,
                 bootstrapped.toolCallIndex,
                 event.copy(toolCallId = incomingToolCallId),
+                nowMs,
             )
         }
 

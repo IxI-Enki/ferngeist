@@ -157,6 +157,18 @@ class MarkdownStateStoreTest {
             assertTrue(first.documents.getValue("message_1") === second.documents.getValue("message_1"))
         }
 
+    @Test
+    fun `incremental markdown feeds a growing text's tail and restarts on a rewrite`() {
+        val markdown = IncrementalMarkdown()
+
+        markdown.update("Thinking")
+        markdown.update("Thinking about it")
+        assertEquals("Thinking about it", markdown.document.plainText())
+
+        markdown.update("Rewritten")
+        assertEquals("Rewritten", markdown.document.plainText())
+    }
+
     private fun MarkdownRenderedDocument.plainText(): String =
         blocks.joinToString("|") { block ->
             (block as BlockNode.Paragraph).children.joinToString("") { (it as InlineNode.Text).literal }

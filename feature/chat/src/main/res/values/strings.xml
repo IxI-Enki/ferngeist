@@ -349,6 +349,8 @@
         <item quantity="other">used %1$d tools</item>
     </plurals>
     <!-- Present-continuous variants, shown while the group still has a running call -->
+    <!-- Joins the group summary's parts, and leads its elapsed time: "read 3 files, for 1m 20s" -->
+    <string name="chat_tool_summary_separator">", "</string>
     <string name="chat_tool_summary_thinking">thinking</string>
     <plurals name="chat_tool_summary_execute_running">
         <item quantity="one">running a command</item>

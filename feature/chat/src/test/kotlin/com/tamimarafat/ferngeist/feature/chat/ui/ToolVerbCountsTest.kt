@@ -75,5 +75,18 @@ class ToolVerbCountsTest {
         )
     }
 
+    @Test
+    fun elapsedReadsAsSecondsThenMinutesThenHoursAndHidesUnderASecond() {
+        assertEquals(null, elapsedOf(999))
+        assertEquals(Elapsed(0, 0, 5), elapsedOf(5_400))
+        assertEquals(Elapsed(0, 1, 20), elapsedOf(80_000))
+        assertEquals(Elapsed(1, 1, 0), elapsedOf(3_665_000))
+    }
+
+    @Test
+    fun summaryJoinsItsPhrasesAndCapitalisesTheFirst() {
+        assertEquals("Read 3 files, reading 2 files", joinSummary(listOf("read 3 files", "reading 2 files"), ", "))
+    }
+
     private fun calls(vararg kinds: ToolKind?) = kinds.map { ToolCallDisplay(kind = it).summaryVerb() }
 }

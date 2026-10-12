@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.acp.bridge.session
 
+import android.os.SystemClock
 import com.agentclientprotocol.model.PlanEntry
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
@@ -53,7 +54,9 @@ class SessionBridge(
     override val sessionId: String,
     private val connectionManager: AcpConnection?,
 ) : SessionPort {
-    internal val runtime: SessionRuntime = SessionRuntime(sessionId = sessionId)
+    // runCatching: JVM unit tests drive bridges against android.jar stubs, as SessionDebug does.
+    internal val runtime: SessionRuntime =
+        SessionRuntime(sessionId = sessionId, clock = { runCatching { SystemClock.elapsedRealtime() }.getOrNull() })
     override val snapshot: StateFlow<SessionSnapshot> = runtime.snapshot
 
     // Raw event stream, for an observer that needs the events as they are emitted. No app

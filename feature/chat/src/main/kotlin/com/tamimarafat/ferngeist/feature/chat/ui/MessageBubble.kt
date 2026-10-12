@@ -503,6 +503,7 @@ private fun AssistantMessageContent(
                                 onToolCallClick = onToolCallClick,
                                 onThoughtClick = onThoughtClick,
                                 foldsInFlight = reveals.foldsInFlight,
+                                startedAtMs = block.firstSegment().receivedAtMs,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                         } else if (block.text.isNotBlank()) {
@@ -529,6 +530,7 @@ private fun AssistantMessageContent(
                             onToolCallClick = onToolCallClick,
                             onThoughtClick = onThoughtClick,
                             foldsInFlight = reveals.foldsInFlight,
+                            startedAtMs = block.firstSegment().receivedAtMs,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -654,7 +656,7 @@ internal class BubbleReveals {
  * an unchanged line count.
  */
 @Composable
-private fun RenderedMarkdown(
+internal fun RenderedMarkdown(
     text: String,
     document: MarkdownRenderedDocument?,
     modifier: Modifier = Modifier,

@@ -60,6 +60,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -104,6 +105,7 @@ import com.tamimarafat.ferngeist.core.model.UsageState
 import com.tamimarafat.ferngeist.feature.chat.ChatState
 import com.tamimarafat.ferngeist.feature.chat.FileAttachmentHelper
 import com.tamimarafat.ferngeist.feature.chat.ImageAttachmentHelper
+import com.tamimarafat.ferngeist.feature.chat.IncrementalMarkdown
 import com.tamimarafat.ferngeist.feature.chat.MarkdownRenderedDocument
 import com.tamimarafat.ferngeist.feature.chat.R
 import com.tamimarafat.ferngeist.feature.chat.RecentSelectionStore
@@ -112,6 +114,9 @@ import com.tamimarafat.ferngeist.feature.chat.localizeChatError
 import com.tamimarafat.ferngeist.feature.chat.thoughtRuns
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentMap
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
@@ -928,6 +933,26 @@ private fun ThoughtDetailsSheet(
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
     val scope = rememberCoroutineScope()
     val escapeFocus = rememberEscapeFocusAnchor()
+    // Its own engine, fed only the tail a live thought grows by, as the transcript's runs are.
+    val markdown = remember { IncrementalMarkdown() }
+    val document = remember(thought) { markdown.update(thought).let { markdown.document } }
+    val scroll = rememberScrollState()
+    // Growing while open means the thought is live, so the sheet follows it down; settled
+    // reasoning never grows and stays at the top. Scrolling up stops the follow, and scrolling
+    // back to the end resumes it.
+    val openedLength = remember { thought.length }
+    var follow by remember { mutableStateOf(false) }
+    var touched by remember { mutableStateOf(false) }
+    LaunchedEffect(thought.length) { if (thought.length > openedLength && !touched) follow = true }
+    LaunchedEffect(scroll) {
+        snapshotFlow { scroll.isScrollInProgress }.drop(1).filter { !it }.collect {
+            touched = true
+            follow = scroll.value >= scroll.maxValue
+        }
+    }
+    LaunchedEffect(scroll) {
+        snapshotFlow { if (follow) scroll.maxValue else null }.filterNotNull().collect { scroll.scrollTo(it) }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -937,7 +962,7 @@ private fun ThoughtDetailsSheet(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 12.dp)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scroll)
                     // Key events reach the active focus target and its ancestors only, and this
                     // sheet's content is text with nothing focusable in it.
                     .focusRequester(escapeFocus)
@@ -952,9 +977,7 @@ private fun ThoughtDetailsSheet(
                 )
             }
 
-            ContentBlockRenderer(
-                block = ContentBlock.Text(thought),
-            )
+            RenderedMarkdown(text = thought, document = document)
         }
     }
 }

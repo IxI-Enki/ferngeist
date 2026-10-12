@@ -15,6 +15,30 @@ import org.junit.Test
 
 class SessionRuntimeTest {
     @Test
+    fun live_segments_are_stamped_but_a_replay_is_not() =
+        runTest {
+            var now = 0L
+            val runtime = SessionRuntime(sessionId = "ses_test", clock = { now })
+            runtime.beginHydration()
+            runtime.onEvent(AppSessionEvent.UserMessage("old", append = true))
+            runtime.onEvent(AppSessionEvent.AgentThought("replayed"))
+            runtime.completeHydration()
+
+            runtime.onLocalPromptStarted("go", emptyList(), emptyList())
+            now = 1_000L
+            runtime.onEvent(AppSessionEvent.AgentThought("live"))
+            now = 2_000L
+            runtime.onEvent(AppSessionEvent.ToolCallStarted("c1", "ls", ToolKind.EXECUTE, ToolCallStatus.COMPLETED))
+            runtime.onEvent(AppSessionEvent.TurnComplete("end_turn"))
+
+            val (replayed, live) =
+                runtime.snapshot.value.messages
+                    .filter { it.role == ChatMessage.Role.ASSISTANT }
+            assertEquals(listOf<Long?>(null), replayed.segments.map { it.receivedAtMs })
+            assertEquals(listOf<Long?>(1_000L, 2_000L), live.segments.map { it.receivedAtMs })
+        }
+
+    @Test
     fun a_turn_cut_short_fails_its_unfinished_tool_calls() =
         runTest {
             val runtime = SessionRuntime(sessionId = "ses_test")

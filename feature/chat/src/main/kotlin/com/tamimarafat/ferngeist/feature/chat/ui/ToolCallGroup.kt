@@ -198,6 +198,12 @@ internal fun ToolCallDisplay.summaryVerb(): ToolVerb =
         }
     }
 
+/** Joins the summary's phrases and capitalises the first, as a sentence. */
+internal fun joinSummary(
+    phrases: List<String>,
+    separator: String,
+): String = phrases.joinToString(separator).replaceFirstChar { it.titlecase() }
+
 /** One row on the rail: a tool call, or a run of reasoning. */
 private class RailRow(
     val id: String,
@@ -208,6 +214,8 @@ private class RailRow(
     val running: Boolean
         get() = thinking || call?.status == ToolCallStatus.PENDING || call?.status == ToolCallStatus.IN_PROGRESS
 }
+
+private val RailRow.verb: ToolVerb get() = call?.summaryVerb() ?: ToolVerb.THOUGHT
 
 // A failed call's diff never landed, so it doesn't count toward the group's total.
 private fun RailRow.landedDiffs(): List<ToolCallContent.Diff> =
@@ -227,6 +235,7 @@ private class RowReveal(
 /**
  * @param liveSegmentId the message's last segment while it streams, so the thought still being
  *   written shows as running.
+ * @param startedAtMs when the group began, timed in its header while it runs.
  */
 @Composable
 internal fun ToolCallGroup(
@@ -238,6 +247,7 @@ internal fun ToolCallGroup(
     onThoughtClick: (String) -> Unit,
     foldsInFlight: MutableIntState,
     modifier: Modifier = Modifier,
+    startedAtMs: Long? = null,
 ) {
     val rows =
         items.mapNotNull { item ->
@@ -271,10 +281,14 @@ internal fun ToolCallGroup(
     // While anything runs, the summary names only what is running: the present tense would
     // misdescribe the calls already finished. The full tally comes back once nothing runs.
     val summaryRows = if (running) rows.filter { it.running } else rows
+    // Only while live: once the group ends, the time is clutter beside the reply.
+    val elapsed = rememberElapsedLabel(startedAtMs, live = !done && isStreaming)
 
     Column(modifier = modifier.fillMaxWidth()) {
         ToolGroupHeader(
-            summary = toolSummary(summaryRows.map { it.call?.summaryVerb() ?: ToolVerb.THOUGHT }, running),
+            summary = toolSummary(summaryRows.map { it.verb }, running),
+            elapsed = elapsed?.text,
+            elapsedDescription = elapsed?.description,
             stats = rememberDiffStats(rows.flatMap { it.landedDiffs() }),
             open = open,
             active = isStreaming && running,
@@ -345,15 +359,19 @@ private fun toolSummary(
     verbs: List<ToolVerb>,
     running: Boolean,
 ): String =
-    summaryParts(verbs, running)
-        .map { part ->
+    joinSummary(
+        summaryParts(verbs, running).map { part ->
             part.label?.let { stringResource(it) }
                 ?: part.twice?.takeIf { part.count == 2 }?.let { stringResource(it) }
                 ?: pluralStringResource(part.phrase, part.count, part.count)
-        }.joinToString(" · ")
-        .replaceFirstChar { it.titlecase() }
+        },
+        stringResource(R.string.chat_tool_summary_separator),
+    )
 
-/** Summary, diff total and a chevron that turns on the fold's spatial spring. */
+/**
+ * Summary, elapsed time, diff total and a chevron that turns on the fold's spatial spring. [elapsed]
+ * stands apart from the summary's transition, so a tick does not replay the slide.
+ */
 @Composable
 internal fun ToolGroupHeader(
     summary: String,
@@ -361,6 +379,8 @@ internal fun ToolGroupHeader(
     open: Boolean,
     active: Boolean,
     onClick: () -> Unit,
+    elapsed: String? = null,
+    elapsedDescription: String? = null,
 ) {
     val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
     val rotation by animateFloatAsState(
@@ -391,6 +411,19 @@ internal fun ToolGroupHeader(
                 text = text,
                 style = MaterialTheme.typography.bodySmall.copy(brush = brush),
                 modifier = Modifier.padding(vertical = 4.dp),
+            )
+        }
+        if (elapsed != null) {
+            Text(
+                text = elapsed,
+                // Tabular digits, so the ticking time does not jostle the stats beside it.
+                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                color = baseColor,
+                maxLines = 1,
+                modifier =
+                    Modifier
+                        .padding(start = 8.dp)
+                        .semantics { elapsedDescription?.let { contentDescription = it } },
             )
         }
         stats?.let { DiffStatsRow(it, modifier = Modifier.padding(start = 8.dp)) }

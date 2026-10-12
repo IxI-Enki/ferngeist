@@ -1,18 +1,25 @@
 package com.tamimarafat.ferngeist.feature.chat.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.core.model.ChatMessage
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** Where the runway under the last sent prompt goes; see [ChatScrollHandle]. */
 internal class Runway(
@@ -40,12 +47,41 @@ internal fun rememberRunway(
         Runway(
             promptKey = prompt?.let(itemKey),
             lastKey = windowed.lastOrNull()?.let(itemKey),
-            bottomPx = with(LocalDensity.current) { bottomPadding.roundToPx() },
+            bottomPx = easedBottomPx(with(LocalDensity.current) { bottomPadding.roundToPx() }),
             hold = hold,
         )
+    SideEffect { scroll.onBottomPadding(runway.bottomPx) }
     // Read lazily: an unconditional layoutInfo read would recompose the list on every scroll frame.
     hold.track(runway.replyKey) { scroll.listState.layoutInfo }
     return runway
+}
+
+/** A bottom padding change bigger than this in one frame is a step to ease, not the keyboard moving. */
+private val BOTTOM_STEP = 48.dp
+
+/**
+ * [targetPx], with a step eased in: the composer reports its resting height the moment it expands
+ * or collapses, and landing that in one frame jumps the transcript (or, shrinking, the list clamps
+ * it down at once). Smaller per-frame changes, the keyboard's inset, pass straight through so the
+ * list keeps pace with it. Eased with the composer's own spec, so both move together.
+ */
+@Composable
+private fun easedBottomPx(targetPx: Int): Int {
+    val stepPx = with(LocalDensity.current) { BOTTOM_STEP.toPx() }
+    val shown = remember { Animatable(targetPx.toFloat()) }
+    // Plain holder: survives the effect being restarted, which cancels the animation mid-way.
+    val easing = remember { booleanArrayOf(false) }
+    val spec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    LaunchedEffect(targetPx) {
+        if (easing[0] || abs(targetPx - shown.value) > stepPx) {
+            easing[0] = true
+            shown.animateTo(targetPx.toFloat(), spec)
+            easing[0] = false
+        } else {
+            shown.snapTo(targetPx.toFloat())
+        }
+    }
+    return if (easing[0] || abs(targetPx - shown.value) > stepPx) shown.value.roundToInt() else targetPx
 }
 
 /**

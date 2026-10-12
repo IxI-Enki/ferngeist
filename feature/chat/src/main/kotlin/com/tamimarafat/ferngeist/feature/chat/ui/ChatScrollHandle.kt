@@ -57,6 +57,14 @@ private const val CHASE_PASSES = 3
 /** Coming to rest this close to the end hands the transcript back to following. */
 private val RELATCH_DISTANCE = 48.dp
 
+/**
+ * A jump in the end this far past it, in [RELATCH_DISTANCE]s (96dp), eases in instead of pinning;
+ * the ease hands back to pinning once within [CATCH_UP_END] (12dp), above the lag an ease keeps
+ * behind a steady stream.
+ */
+private const val CATCH_UP_START = 2f
+private const val CATCH_UP_END = 0.25f
+
 /** Quiet frames the follow keeps pinning after the last growth, for animations still settling. */
 private const val IDLE_FRAMES = 30
 
@@ -109,6 +117,7 @@ internal class ChatScrollHandle(
     private var lastUserId: String? = null
     private var userIdAtSend: String? = null
     private var awaitingTurn = false
+    private var bottomPaddingPx = -1
 
     /** Following, and nothing else owns the scroll. */
     private val inCharge: Boolean get() = following && !easing && !restorePending
@@ -140,6 +149,16 @@ internal class ChatScrollHandle(
         // The first messages, or a reply arriving: pinned in the same frame they are measured, or the
         // list shows its top (or the new row's) for a frame before the loop catches up.
         if (grew && inCharge && !gliding) pin()
+    }
+
+    /**
+     * Called from composition with the list's bottom padding. The keyboard and the composer move it
+     * frame by frame; following, each move is pinned in its own measure. Left to the follow loop it
+     * lands a frame or two late, and the end jumps once the loop catches up.
+     */
+    fun onBottomPadding(px: Int) {
+        if (px != bottomPaddingPx && inCharge && !gliding) pin()
+        bottomPaddingPx = px
     }
 
     fun onSendMessage() {
@@ -217,6 +236,7 @@ internal class ChatScrollHandle(
     private suspend fun chase() {
         var idle = 0
         var jumped = false
+        var catchingUp = false
         var last = withFrameNanos { it }
         while (inCharge && idle < IDLE_FRAMES) {
             val now = withFrameNanos { it }
@@ -227,7 +247,10 @@ internal class ChatScrollHandle(
                 jumped = glide(distance, dt, mayJump = !jumped) || jumped
                 if (!awaitingTurn && distance <= PIN_EPSILON_PX) gliding = false
             } else {
-                pin()
+                // A burst (a tool group unfolding, a block landing at once) eases in instead of
+                // closing in one frame; ordinary streaming growth stays pinned.
+                catchingUp = distance > relatchPx * if (catchingUp) CATCH_UP_END else CATCH_UP_START
+                if (catchingUp) glide(distance, dt, mayJump = false) else pin()
             }
             idle = if (gliding || live || distance > PIN_EPSILON_PX) 0 else idle + 1
         }

@@ -69,8 +69,6 @@ private fun rememberChatScrollAndAnimation(
     renderedMessages: List<ChatMessage>,
     activelyStreaming: Boolean,
     composerExpanded: MutableState<Boolean>,
-    composerContentHeightPx: MutableState<Int>,
-    imeBottomPx: Int,
     onScrollSnapshotChanged: (ChatScrollSnapshot) -> Unit,
 ): ChatScrollAndAnimation {
     // --- Scroll system ---
@@ -78,8 +76,6 @@ private fun rememberChatScrollAndAnimation(
         rememberChatScrollState(
             sessionId = sessionId,
             renderedMessages = renderedMessages,
-            composerContentHeightPx = composerContentHeightPx.value,
-            imeBottomPx = imeBottomPx,
             activelyStreaming = activelyStreaming,
             restoredScrollSnapshot = state.restoredScrollSnapshot,
             restoreReady = renderedMessages.isNotEmpty() && !state.isLoading,
@@ -235,8 +231,6 @@ internal fun rememberChatDerived(
     selectedThoughtSegmentId: MutableState<String?>,
     selectedToolCallSegmentId: MutableState<String?>,
     composerExpanded: MutableState<Boolean>,
-    composerContentHeightPx: MutableState<Int>,
-    imeBottomPx: Int,
     onScrollSnapshotChanged: (ChatScrollSnapshot) -> Unit,
 ): ChatDerivedValues {
     val configDerived =
@@ -252,8 +246,6 @@ internal fun rememberChatDerived(
             renderedMessages = messages.renderedMessages,
             activelyStreaming = configDerived.activelyStreaming,
             composerExpanded = composerExpanded,
-            composerContentHeightPx = composerContentHeightPx,
-            imeBottomPx = imeBottomPx,
             onScrollSnapshotChanged = onScrollSnapshotChanged,
         )
     return buildChatDerivedValues(

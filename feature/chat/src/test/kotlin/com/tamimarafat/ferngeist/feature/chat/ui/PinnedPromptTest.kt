@@ -43,6 +43,11 @@ class PinnedPromptTest {
     }
 
     @Test
+    fun aShortPromptBackAtTheTopUnpinsInsideTheWindow() {
+        assertEquals(emptyList<Int>(), pinnedPromptRows(listOf(4), 4, rows(4 to 0..40), fadePx = 48, fits = long))
+    }
+
+    @Test
     fun promptPastFadeWindowUnpins() {
         assertEquals(emptyList<Int>(), pinnedPromptRows(listOf(4), 4, rows(4 to 50..300), fadePx = 200, fits = long))
     }
@@ -88,15 +93,24 @@ class PinnedPromptTest {
         assertEquals(0f, pinnedPromptFadeAlpha(10, 0), 0.001f)
     }
 
+    private fun exit(
+        nextRowTop: Int?,
+        answerPx: Int,
+        chipHeight: Int = 40,
+    ) = pinnedPromptExitAlpha(nextRowTop, answerPx, chipHeight, fadePx = 100)
+
     @Test
-    fun theChipRestsOnTheDockUntilTheNextPromptArrives() {
-        assertEquals(0, pinnedPromptLift(nextRowTop = null, chipHeight = 40))
-        assertEquals(0, pinnedPromptLift(nextRowTop = 500, chipHeight = 40))
+    fun theChipIsGoneOnce90PercentOfTheAnswerHasPassed() {
+        // 2000px answer: the exit is 200px from the top, faded across the 100px before it.
+        assertEquals(1f, exit(null, 2000), 0.001f)
+        assertEquals(1f, exit(300, 2000), 0.001f)
+        assertEquals(0.5f, exit(250, 2000), 0.001f)
+        assertEquals(0f, exit(200, 2000), 0.001f)
     }
 
     @Test
-    fun theNextPromptPushesTheChipUpAheadOfIt() {
-        assertEquals(-10, pinnedPromptLift(nextRowTop = 30, chipHeight = 40))
-        assertEquals(-140, pinnedPromptLift(nextRowTop = -100, chipHeight = 40))
+    fun theChipIsGoneBeforeTheNextPromptReachesIt() {
+        // A 400px answer's 10% is under the chip's height, so the chip's bottom is the exit.
+        assertEquals(0f, exit(60, 400, chipHeight = 60), 0.001f)
     }
 }

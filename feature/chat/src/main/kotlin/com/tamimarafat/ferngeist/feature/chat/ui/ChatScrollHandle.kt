@@ -8,15 +8,14 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -24,19 +23,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.feature.chat.ChatScrollSnapshot
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlin.math.abs
 import kotlin.math.min
-
-private const val USER_SCROLL_DELTA_THRESHOLD = 0.5f
+import kotlin.math.pow
 
 /** Duration of the shortest jump-button scroll; longer ones scale up to [EASE_MAX_MS]. */
 internal const val EASE_MIN_MS = 650
@@ -50,202 +48,357 @@ private const val EASE_MAX_MS = 1000
  */
 private const val EASE_MAX_VIEWPORTS = 2.5f
 
-/** Duration of a short settle onto the end: a follow resuming, or a jump chasing a stream. */
+/** Duration of a short settle onto the end, for a jump chasing a stream. */
 private const val SETTLE_MS = 220
 
 /** Most chase eases a jump to the bottom runs after its main ease; following takes over after. */
 private const val CHASE_PASSES = 3
 
-// region: Public Handle
+/** Coming to rest this close to the end hands the transcript back to following. */
+private val RELATCH_DISTANCE = 48.dp
+
+/** Quiet frames the follow keeps pinning after the last growth, for animations still settling. */
+private const val IDLE_FRAMES = 30
+
+/** Share of the remaining distance a glide covers per 60 fps frame. */
+private const val GLIDE_PER_FRAME = 0.15f
+
+private const val PIN_EPSILON_PX = 0.5f
+private const val NANOS_PER_SECOND = 1e9f
+private const val MAX_FRAME_SECONDS = 1f / 30f
+private const val FRAMES_PER_SECOND = 60f
 
 /**
- * Public handle for the chat scroll system. ChatScreen receives this and
- * distributes its fields to sub-composables.
+ * The transcript's scroll model: following the end, or holding wherever the reader left it.
+ *
+ * A top-anchored list holds still when content grows, which is already right for a reader
+ * scrolled up. While following, one frame loop pins the list onto its end every frame something
+ * can grow; the pin is a position request, so it lands in the same measure as the growth. A user
+ * scroll stops following; coming to rest near the end resumes it.
+ *
+ * The runway: a sent prompt glides to the top of the viewport, and the rest of the viewport below
+ * it is reserved, so the reply streams into still space instead of moving the view on every line.
+ * The reserve is a minimum height on the reply's row (on the bottom spacer until the reply has a
+ * row), so it is resolved in the same measure as the reply's growth; the end pin then holds the
+ * prompt at the top until the reply outgrows the reserve. The space stays as scroll room until the
+ * next send.
  */
 internal class ChatScrollHandle(
     val listState: LazyListState,
-    val userScrollDetector: NestedScrollConnection,
-    val onStreamLayoutSettled: (Int) -> Unit,
-    val onSendMessage: () -> Unit,
-    val jumpToTop: suspend () -> Unit,
-    val showJumpToBottom: State<Boolean>,
-    val jumpToBottom: suspend () -> Unit,
-)
-// endregion
+) {
+    var following by mutableStateOf(true)
+        private set
 
-// region: Scroll State Composable
+    /** The prompt holding the runway, by message id. */
+    var runwayMessageId by mutableStateOf<String?>(null)
+        private set
+
+    /** Easing onto the end instead of pinning: after a send, or a resume a little short of it. */
+    private var gliding by mutableStateOf(false)
+
+    /** A jump button's ease owns the list; nothing else scrolls meanwhile. */
+    private var easing by mutableStateOf(false)
+    internal var restorePending by mutableStateOf(false)
+
+    /** A reply streaming, or text still revealing: the end can grow on any frame. */
+    internal var live by mutableStateOf(false)
+    internal var relatchPx by mutableStateOf(0f)
+
+    /** At or past the last index; the measure clamps it onto the bottom spacer. */
+    private var endIndexHint = 0
+    private var lastUserId: String? = null
+    private var userIdAtSend: String? = null
+    private var awaitingTurn = false
+
+    /** Following, and nothing else owns the scroll. */
+    private val inCharge: Boolean get() = following && !easing && !restorePending
+
+    val userScrollDetector: NestedScrollConnection =
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                // Programmatic scrolls never come through here, so any user input is the reader's.
+                if (source == NestedScrollSource.UserInput && abs(available.y) > PIN_EPSILON_PX) release()
+                return Offset.Zero
+            }
+        }
+
+    val showJumpToBottom: State<Boolean> = derivedStateOf { !following && distanceToEnd() > relatchPx }
+
+    /** Called from composition, ahead of the measure that lays [messages] out. */
+    fun onMessages(messages: List<ChatMessage>) {
+        val grew = messages.size + 2 > endIndexHint
+        // Rows above the transcript and the bottom spacer add at most three past the messages.
+        endIndexHint = messages.size + 2
+        lastUserId = messages.lastOrNull { it.role == ChatMessage.Role.USER }?.id
+        if (awaitingTurn && lastUserId != userIdAtSend) {
+            awaitingTurn = false
+            runwayMessageId = lastUserId
+        }
+        // The first messages, or a reply arriving: pinned in the same frame they are measured, or the
+        // list shows its top (or the new row's) for a frame before the loop catches up.
+        if (grew && inCharge && !gliding) pin()
+    }
+
+    fun onSendMessage() {
+        userIdAtSend = lastUserId
+        awaitingTurn = true
+        following = true
+        gliding = true
+    }
+
+    suspend fun jumpToTop() {
+        release()
+        ease { listState.easeScrollToTop() }
+    }
+
+    suspend fun jumpToBottom() {
+        ease { listState.easeScrollToBottom() }
+        following = true
+    }
+
+    suspend fun jumpToItem(index: Int) {
+        release()
+        ease { listState.animateScrollToItem(index, 0) }
+    }
+
+    /**
+     * Height [rowKey] needs, with [reservedPx] (and the item spacing, if a row follows) below it, to reach from the runway prompt at the top
+     * to the viewport's end; 0 when either is not laid out. Only what sits above the row is read
+     * from the last layout, and that holds still while the row grows. A row not laid out yet is
+     * about to take the bottom spacer's place, so it is measured from there.
+     */
+    fun runwayPx(
+        promptKey: Any?,
+        rowKey: Any?,
+        reservedPx: Int,
+    ): Int {
+        val info = listState.layoutInfo
+        val items = info.visibleItemsInfo
+        val prompt = promptKey?.let { key -> items.firstOrNull { it.key == key } } ?: return 0
+        val row =
+            items.firstOrNull { it.key == rowKey }
+                ?: items.lastOrNull()?.takeIf { it.index == info.totalItemsCount - 1 }
+                ?: return 0
+        val followed = row.key != rowKey || row.index < info.totalItemsCount - 1
+        val below = reservedPx + if (followed) info.mainAxisItemSpacing else 0
+        return runwayPx(prompt.offset, row.offset, info.viewportEndOffset, below)
+    }
+
+    /** The frame loop: pins (or glides) onto the end while following and anything can grow. */
+    suspend fun follow() {
+        while (true) {
+            snapshotFlow {
+                inCharge && (gliding || live || distanceToEnd() > PIN_EPSILON_PX)
+            }.first { it }
+            chase()
+        }
+    }
+
+    /** Hands the transcript back to following when the reader comes to rest near the end. */
+    suspend fun relatch() {
+        snapshotFlow {
+            !following &&
+                !easing &&
+                !restorePending &&
+                !listState.isScrollInProgress &&
+                distanceToEnd() <= relatchPx
+        }.collect { atRestNearEnd ->
+            if (atRestNearEnd) {
+                following = true
+                // Ease the last few lines in; a pin would close them in one frame.
+                gliding = true
+            }
+        }
+    }
+
+    private suspend fun chase() {
+        var idle = 0
+        var jumped = false
+        var last = withFrameNanos { it }
+        while (inCharge && idle < IDLE_FRAMES) {
+            val now = withFrameNanos { it }
+            val dt = ((now - last) / NANOS_PER_SECOND).coerceAtMost(MAX_FRAME_SECONDS)
+            last = now
+            val distance = distanceToEnd()
+            if (gliding) {
+                jumped = glide(distance, dt, mayJump = !jumped) || jumped
+                if (!awaitingTurn && distance <= PIN_EPSILON_PX) gliding = false
+            } else {
+                pin()
+            }
+            idle = if (gliding || live || distance > PIN_EPSILON_PX) 0 else idle + 1
+        }
+    }
+
+    /**
+     * A position request, not a scroll delta: it is applied in this frame's measure, after the
+     * content grew, so the end never trails a frame behind.
+     */
+    private fun pin() = listState.requestScrollToItem(endIndexHint)
+
+    /** One glide step; true when it jumped instead of easing. */
+    private suspend fun glide(
+        distance: Float,
+        dt: Float,
+        mayJump: Boolean,
+    ): Boolean {
+        if (distance <= PIN_EPSILON_PX) return false
+        try {
+            // A far end would compose everything in between: land a few viewports short of it, once.
+            // Its distance stays an estimate after landing, so jumping again would never arrive.
+            if (mayJump && distance > listState.maxEasePx()) {
+                listState.scrollToItem(endIndexHint)
+                listState.scrollBy(-listState.maxEasePx())
+                return true
+            }
+            // Frame-rate independent ease-out toward a target that may still be moving.
+            listState.scrollBy(distance * (1f - (1f - GLIDE_PER_FRAME).pow(dt * FRAMES_PER_SECOND)))
+        } catch (e: CancellationException) {
+            // A drag took the scroll; following has already stopped. Only our own cancellation ends us.
+            if (!currentCoroutineContext().isActive) throw e
+        }
+        return false
+    }
+
+    private suspend fun ease(animation: suspend () -> Unit) {
+        easing = true
+        try {
+            animation()
+        } finally {
+            easing = false
+        }
+    }
+
+    private fun release() {
+        following = false
+        gliding = false
+    }
+
+    private fun distanceToEnd(): Float = listState.distanceToBottom()
+
+    internal fun markRestored(isFollowing: Boolean) {
+        following = isFollowing
+        restorePending = false
+    }
+}
 
 /**
- * Creates and remembers the chat scroll system: [LazyListState], [ChatScrollPolicy],
- * NestedScrollConnection, and all LaunchedEffect wiring.
+ * Height for a row at [rowOffset] that, with [reservedPx] below it, ends the list exactly at
+ * [viewportEndOffset] while the prompt at [promptOffset] sits at the viewport's top.
+ */
+internal fun runwayPx(
+    promptOffset: Int,
+    rowOffset: Int,
+    viewportEndOffset: Int,
+    reservedPx: Int,
+): Int = maxOf(0, viewportEndOffset - (rowOffset - promptOffset) - reservedPx)
+
+/** [ChatScrollHandle.runwayPx], re-read only when the layout above the row moves. */
+@Composable
+internal fun ChatScrollHandle.rememberRunwayPx(
+    promptKey: Any?,
+    rowKey: Any?,
+    reservedPx: Int,
+): Int {
+    val px by remember(promptKey, rowKey, reservedPx) { derivedStateOf { runwayPx(promptKey, rowKey, reservedPx) } }
+    return px
+}
+
+/**
+ * Creates the transcript's [ChatScrollHandle] and runs its follow loop, restore and persistence.
  *
- * @param sessionId stable identifier for snapshot keying
- * @param renderedMessages current message list (used for snapshot anchor lookups)
- * @param composerContentHeightPx composer bar height in pixels
- * @param imeBottomPx IME inset bottom in pixels
- * @param activelyStreaming true when a streaming response is in progress
  * @param restoredScrollSnapshot snapshot to restore from (null = fresh session)
  * @param restoreReady true when messages are loaded and ready for scroll restoration
- * @param onScrollSnapshotChanged callback to persist snapshots
  */
 @Composable
 internal fun rememberChatScrollState(
     sessionId: String,
     renderedMessages: List<ChatMessage>,
-    composerContentHeightPx: Int,
-    imeBottomPx: Int,
     activelyStreaming: Boolean,
     restoredScrollSnapshot: ChatScrollSnapshot?,
     restoreReady: Boolean,
     onScrollSnapshotChanged: (ChatScrollSnapshot) -> Unit,
 ): ChatScrollHandle {
-    val listState = remember(sessionId) { LazyListState() }
-    val policy = remember(sessionId) { ChatScrollPolicy() }
-    val scope = rememberCoroutineScope()
-    val showJumpToBottom = remember { mutableStateOf(false) }
-    val isFollowingState = remember { mutableStateOf(true) }
-    var restorePending by remember(sessionId, restoredScrollSnapshot?.savedAt) {
-        mutableStateOf(restoredScrollSnapshot != null)
+    val handle = remember(sessionId) { ChatScrollHandle(LazyListState()) }
+    val listState = handle.listState
+    val density = LocalDensity.current
+    val restoreKey = restoredScrollSnapshot?.savedAt
+    // Applied before the SideEffect below, so the first onMessages already sees a pending restore.
+    DisposableEffect(sessionId, restoreKey) {
+        handle.restorePending = restoredScrollSnapshot != null
+        onDispose {}
     }
-    val runner =
-        remember(sessionId, scope, listState, policy, isFollowingState) {
-            ChatScrollDecisionRunner(listState, scope, policy, isFollowingState)
-        }
-    val userScrollDetector = remember(runner) { runner.createUserScrollConnection() }
-    // The keyboard and an expanding composer grow the bottom inset a little every frame, and a sent
-    // or arriving message extends the list below the viewport. Pinning in that same frame —
-    // SideEffect runs before the list measures — keeps the end in view as it happens. The
-    // settle-delayed follows only fire once things stop changing, and on send the collapsing
-    // composer restarts (and cancels) them every frame, so on their own the transcript sat still
-    // and then snapped. A shrinking inset needs no help: the list clamps to its end.
-    val bottomInsetPx = composerContentHeightPx + imeBottomPx
-    val messageCount = renderedMessages.size
-    val lastBottomInsetPx = remember(sessionId) { mutableIntStateOf(bottomInsetPx) }
-    val lastMessageCount = remember(sessionId) { mutableIntStateOf(messageCount) }
     SideEffect {
-        val grew = bottomInsetPx > lastBottomInsetPx.intValue || messageCount > lastMessageCount.intValue
-        lastBottomInsetPx.intValue = bottomInsetPx
-        lastMessageCount.intValue = messageCount
-        if (grew && !restorePending) runner.followGrowth()
+        handle.onMessages(renderedMessages)
+        handle.live = activelyStreaming
+        handle.relatchPx = with(density) { RELATCH_DISTANCE.toPx() }
     }
+    LaunchedEffect(handle) { handle.follow() }
+    LaunchedEffect(handle) { handle.relatch() }
     // The viewport is measured in pixels; snapshots record it in dp so the value stays
     // comparable across a fold or rotate (density can change with the display).
-    val density = LocalDensity.current
     val viewportWidthDp = {
-        val viewportPx = listState.layoutInfo.viewportSize.width
-        with(density) { viewportPx.toDp().value.toInt() }
-    }
-    val observer =
-        remember(sessionId, listState, policy, runner, onScrollSnapshotChanged, density) {
-            ChatScrollSnapshotObserver(
-                listState = listState,
-                policy = policy,
-                runner = runner,
-                isFollowingState = { isFollowingState.value },
-                onScrollSnapshotChanged = onScrollSnapshotChanged,
-                viewportWidthDp = viewportWidthDp,
-            )
-        }
-    LaunchedEffect(policy, listState) { observer.observeIdleTimeout() }
-    LaunchedEffect(policy, activelyStreaming) { observer.observeManualBottomResume(activelyStreaming) }
-    // Not keyed on the following state: every resume already settles onto the end, and a second
-    // settle queued by the state flip made a resume move twice.
-    LaunchedEffect(
-        composerContentHeightPx,
-        imeBottomPx,
-        renderedMessages.size,
-        restorePending,
-    ) {
-        observer.onInsetsChanged(renderedMessages.size, restorePending)
-    }
-    LaunchedEffect(listState, renderedMessages, isFollowingState.value, sessionId) {
-        observer.observePersistence(renderedMessages)
-    }
-    LaunchedEffect(
-        restorePending,
-        restoreReady,
-        renderedMessages,
-        restoredScrollSnapshot?.savedAt,
-        composerContentHeightPx,
-        imeBottomPx,
-    ) {
-        observer.restoreSnapshot(restoredScrollSnapshot, renderedMessages, restorePending, restoreReady) {
-            restorePending =
-                false
+        with(density) {
+            listState.layoutInfo.viewportSize.width
+                .toDp()
+                .value
+                .toInt()
         }
     }
-    LaunchedEffect(policy, renderedMessages.size) {
-        observer.observeJumpToBottom(renderedMessages, showJumpToBottom)
+    LaunchedEffect(handle, renderedMessages) {
+        observePersistence(handle, renderedMessages, viewportWidthDp, onScrollSnapshotChanged)
     }
-    return ChatScrollHandle(
-        listState = listState,
-        userScrollDetector = userScrollDetector,
-        onStreamLayoutSettled = runner::onStreamLayoutSettled,
-        onSendMessage = runner::onSendMessage,
-        jumpToTop = runner::jumpToTop,
-        showJumpToBottom = showJumpToBottom,
-        jumpToBottom = runner::jumpToBottom,
-    )
-}
-// endregion
-
-// region: Scroll Observation
-
-/** Captures scroll state for restoration when navigating back to a chat. */
-private data class ScrollObservation(
-    val anchorMessageId: String?,
-    val firstVisibleItemIndex: Int,
-    val firstVisibleItemScrollOffset: Int,
-    val containerWidthDp: Int,
-    val isFollowing: Boolean,
-)
-// endregion
-
-// region: Scroll Helpers
-
-/**
- * Checks if the list is scrolled to the bottom within a tolerance.
- *
- * @param tolerancePx Pixels of overflow allowed before considering "not at bottom"
- */
-internal fun LazyListState.isAtBottom(tolerancePx: Int = 2): Boolean {
-    val layoutInfo = this.layoutInfo
-    val total = layoutInfo.totalItemsCount
-    if (total == 0) return true
-    val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull() ?: return false
-    if (lastVisible.index != total - 1) return false
-    val itemBottom = lastVisible.offset + lastVisible.size
-    return itemBottom <= layoutInfo.viewportEndOffset + tolerancePx
-}
-
-/**
- * Frame-synced scroll-to-bottom. Waits for next frame, fast-paths if already
- * at bottom, scrolls to last item, waits for layout, then scrolls remaining
- * overflow with a bounded correction loop (capped at
- * [AutoScrollConfig.MAX_SCROLL_BY_PX] per step).
- */
-internal suspend fun LazyListState.scrollToBottom() {
-    withFrameNanos { }
-    val lastIndex = layoutInfo.totalItemsCount - 1
-    if (lastIndex < 0) return
-    // Fast-path: if already within tolerance, skip the scroll entirely.
-    // Avoids unnecessary layout passes during streaming.
-    if (isAtBottom(AutoScrollConfig.FOLLOW_TOLERANCE_PX)) return
-    scrollToItem(lastIndex)
-    withFrameNanos { }
-    // Bounded loop: a single scrollBy capped at MAX_SCROLL_BY_PX may not cover
-    // large composer/IME gaps. Each iteration waits a frame, re-measures the
-    // remaining overflow, and scrolls again if needed.
-    repeat(AutoScrollConfig.SCROLL_CORRECTION_MAX_PASSES) {
-        val info = layoutInfo
-        val lastVisible = info.visibleItemsInfo.lastOrNull { it.index == lastIndex } ?: return
-        val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
-        if (overflow <= AutoScrollConfig.FOLLOW_TOLERANCE_PX) return
-        val delta = overflow.coerceAtMost(AutoScrollConfig.MAX_SCROLL_BY_PX)
-        scrollBy(delta.toFloat())
-        if (it < AutoScrollConfig.SCROLL_CORRECTION_MAX_PASSES - 1) withFrameNanos { }
+    LaunchedEffect(handle, restoreReady, restoreKey) {
+        if (!restoreReady || !handle.restorePending || renderedMessages.isEmpty()) return@LaunchedEffect
+        val snapshot = restoredScrollSnapshot ?: return@LaunchedEffect
+        val restoredIndex =
+            snapshot.anchorMessageId
+                ?.let { anchorId -> renderedMessages.indexOfFirst { it.id == anchorId } }
+                ?.takeIf { it >= 0 }
+                ?: snapshot.firstVisibleItemIndex.coerceIn(0, renderedMessages.lastIndex)
+        // Two-pass: the first scrollToItem positions the index, but layout may not have settled
+        // yet. The offset is re-anchored to the message top when the viewport width changed (fold,
+        // rotate, multi-window), because item heights re-flowed.
+        repeat(2) {
+            withFrameNanos { }
+            listState.scrollToItem(restoredIndex, snapshot.offsetForRestore(viewportWidthDp()).coerceAtLeast(0))
+        }
+        handle.markRestored(snapshot.isFollowing)
     }
+    return handle
 }
+
+@OptIn(kotlinx.coroutines.FlowPreview::class)
+private suspend fun observePersistence(
+    handle: ChatScrollHandle,
+    renderedMessages: List<ChatMessage>,
+    viewportWidthDp: () -> Int,
+    onScrollSnapshotChanged: (ChatScrollSnapshot) -> Unit,
+) {
+    val listState = handle.listState
+    snapshotFlow {
+        if (renderedMessages.isEmpty() || handle.restorePending) return@snapshotFlow null
+        val idx = listState.firstVisibleItemIndex
+        ChatScrollSnapshot(
+            anchorMessageId = renderedMessages.getOrNull(idx)?.id,
+            firstVisibleItemIndex = idx,
+            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+            isFollowing = handle.following,
+            savedAt = 0L,
+            containerWidthDp = viewportWidthDp(),
+        )
+    }.distinctUntilChanged()
+        .debounce(SCROLL_DEBOUNCE_MS)
+        .collect { observation ->
+            observation ?: return@collect
+            onScrollSnapshotChanged(observation.copy(savedAt = System.currentTimeMillis()))
+        }
+}
+
+private const val SCROLL_DEBOUNCE_MS = 1000L
 
 /**
  * Eases to the top of item 0 along an exact, measured distance. See [glideOnto].
@@ -279,19 +432,6 @@ internal suspend fun LazyListState.easeScrollToBottom() {
         if (left < 1f) return
         animateScrollBy(left, tween(SETTLE_MS, easing = EaseOutCubic))
     }
-}
-
-/**
- * Brings the end of the content into view: eases there when it is on screen, snaps otherwise.
- * For the follow resumes, where the list is already near its end; a snap there read as a jolt.
- */
-internal suspend fun LazyListState.settleToBottom() {
-    withFrameNanos { }
-    val info = layoutInfo
-    val last = info.visibleItemsInfo.lastOrNull()
-    if (last == null || last.index != info.totalItemsCount - 1) return scrollToBottom()
-    val distance = (last.offset + last.size - info.viewportEndOffset).toFloat()
-    if (distance >= 1f) animateScrollBy(distance, tween(SETTLE_MS, easing = EaseOutCubic))
 }
 
 /**
@@ -347,340 +487,3 @@ private fun LazyListLayoutInfo.averageItemSpan(): Float {
     if (items.isEmpty()) return 0f
     return items.sumOf { it.size }.toFloat() / items.size + mainAxisItemSpacing
 }
-// endregion
-
-// region: Decision Runner
-
-/**
- * Translates [ScrollDecision] values into concrete scroll actions, with
- * cancel-and-restart Job conflation so only the latest request survives.
- */
-private class ChatScrollDecisionRunner(
-    private val listState: LazyListState,
-    private val scope: CoroutineScope,
-    private val policy: ChatScrollPolicy,
-    private val isFollowingState: MutableState<Boolean>,
-) {
-    /** Read by the NestedScrollConnection to filter programmatic scrolls. */
-    var programmaticScrolling: Boolean = false
-
-    private var scrollJob: Job? = null
-
-    /** True while a jump button's ease is running. See [ease]. */
-    private var easing = false
-
-    /**
-     * Applies a [ScrollDecision] from the policy:
-     * - [ScrollDecision.None]: syncs following state, no scroll.
-     * - [ScrollDecision.CancelPending]: cancels any in-flight job.
-     * - Otherwise: cancels existing job, launches a new scroll coroutine.
-     */
-    fun run(decision: ScrollDecision) {
-        isFollowingState.value = policy.isFollowing
-        if (decision is ScrollDecision.None || easing) return
-        if (decision is ScrollDecision.CancelPending) {
-            scrollJob?.cancel()
-            scrollJob = null
-            return
-        }
-        scrollJob?.cancel()
-        scrollJob = scope.launch { executeScroll(decision) }
-    }
-
-    /** Launches the coroutine for a concrete scroll decision (SnapToBottom/DelayedFollow/SendFollow). */
-    private suspend fun executeScroll(decision: ScrollDecision) {
-        programmaticScrolling = true
-        try {
-            when (decision) {
-                is ScrollDecision.SnapToBottom -> listState.settleToBottom()
-                is ScrollDecision.DelayedFollow -> {
-                    delay(decision.delayMs)
-                    listState.settleToBottom()
-                }
-                is ScrollDecision.SendFollow -> {
-                    repeat(AutoScrollConfig.SEND_FOLLOW_PASSES) {
-                        listState.scrollToBottom()
-                        delay(AutoScrollConfig.SEND_FOLLOW_DELAY_MS)
-                    }
-                }
-                is ScrollDecision.None, is ScrollDecision.CancelPending, is ScrollDecision.FollowGrowth -> Unit
-            }
-        } finally {
-            programmaticScrolling = false
-        }
-    }
-
-    /** Creates the NestedScrollConnection that detects user scroll gestures. */
-    fun createUserScrollConnection(): NestedScrollConnection =
-        object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                // programmaticScrolling guards against viewmodel-initiated
-                // scrolls (scrollToItem, scrollBy) that don't carry
-                // NestedScrollSource.UserInput. Without this flag, every
-                // auto-scroll would be misinterpreted as a user gesture
-                // and would pause following.
-                if (
-                    !programmaticScrolling &&
-                    source == NestedScrollSource.UserInput &&
-                    kotlin.math.abs(available.y) > USER_SCROLL_DELTA_THRESHOLD
-                ) {
-                    run(policy.onUserScrolled())
-                }
-                return Offset.Zero
-            }
-        }
-
-    /**
-     * Keeps the list on its end while the streaming bubble, the bottom inset or the message list
-     * grows. Not routed through [run]: it must land in this frame's measure, so it cannot wait for
-     * a coroutine.
-     *
-     * A position request, not a scroll delta: resting at the end, the list reports it cannot scroll
-     * forward and drops a forward delta before the bigger spacer is even measured. The index comes
-     * from the previous layout, so after an append it names the first new item (or still the
-     * spacer, once the window is full); either way the measure clamps the content end onto the
-     * viewport end. ponytail: a new message taller than the viewport would show its top, not its
-     * end; pass the new item count through if that ever happens.
-     */
-    fun followGrowth() {
-        if (easing || !policy.shouldFollowGrowth()) return
-        val lastIndex = listState.layoutInfo.totalItemsCount - 1
-        if (lastIndex >= 0) listState.requestScrollToItem(lastIndex)
-    }
-
-    /** Streaming resize: delegate to policy and apply the decision. */
-    fun onStreamLayoutSettled(growthPx: Int) {
-        val decision = policy.onStreamingBubbleResized()
-        if (decision is ScrollDecision.FollowGrowth) followStreamGrowth(growthPx) else run(decision)
-    }
-
-    /**
-     * Streaming growth, pixel-pinned: compensates exactly the pixels the live bubble just
-     * grew, so the content end stays glued to the viewport end instead of jumping there
-     * once per chunk. Overshoot clamps at the end, so a stale baseline after a recompose
-     * degrades to a snap rather than flinging past it.
-     */
-    fun followStreamGrowth(deltaPx: Int) {
-        if (easing || !policy.shouldFollowGrowth() || deltaPx <= 0) return
-        scrollJob?.cancel()
-        scrollJob =
-            scope.launch {
-                programmaticScrolling = true
-                try {
-                    listState.scrollBy(deltaPx.toFloat())
-                } finally {
-                    programmaticScrolling = false
-                }
-            }
-    }
-
-    /** Send button: delegate to policy and apply the decision. */
-    fun onSendMessage() {
-        run(policy.requestScrollToBottomForSend())
-    }
-
-    /** Scroll to top: route through policy as a user scroll, then ease there. */
-    suspend fun jumpToTop() {
-        // Tapping "scroll to top" is a deliberate move away from the bottom.
-        // Route it through the same transition as a manual scroll so the policy
-        // leaves Following and cancels any pending follow job. Otherwise the
-        // Following-state mechanisms (streaming-bubble resize, insets follow)
-        // immediately scroll back to the bottom and fight this jump.
-        run(policy.onUserScrolled())
-        ease { listState.easeScrollToTop() }
-    }
-
-    /** Scroll to bottom: resume following without the multi-pass send follow, then ease there. */
-    suspend fun jumpToBottom() {
-        // Resume following without firing the multi-pass send follow.
-        // The user-initiated jump should be a single smooth animation, not
-        // the 3-pass scroll-to-bottom that sending a message uses.
-        run(policy.resumeFollowing())
-        ease { listState.easeScrollToBottom() }
-    }
-
-    /**
-     * Runs a jump animation with every other scroll decision held off. Any of them (a streaming
-     * follow, the bottom-arrival snap as the jump nears the end) takes the list's scroll mutex
-     * and would cut the ease short. Policy state still updates; only the scroll is skipped, and
-     * the jump re-measures its target every frame, so it lands where the follow would have.
-     */
-    private suspend fun ease(animation: suspend () -> Unit) {
-        scrollJob?.cancel()
-        easing = true
-        programmaticScrolling = true
-        try {
-            animation()
-        } finally {
-            easing = false
-            programmaticScrolling = false
-        }
-    }
-}
-// endregion
-
-// region: Snapshot Observer
-
-/**
- * Installs Compose-side observers (idle timeout, manual resume, insets,
- * persistence, jump-to-bottom visibility) and handles snapshot restoration.
- *
- * Captured state accessors are passed as lambdas so the observer reads
- * the latest values on each invocation without re-creating the object.
- *
- * @param viewportWidthDp current list viewport width in dp, read at save/restore time
- */
-private class ChatScrollSnapshotObserver(
-    private val listState: LazyListState,
-    private val policy: ChatScrollPolicy,
-    private val runner: ChatScrollDecisionRunner,
-    private val isFollowingState: () -> Boolean,
-    private val onScrollSnapshotChanged: (ChatScrollSnapshot) -> Unit,
-    private val viewportWidthDp: () -> Int,
-) {
-    /**
-     * 1. Idle timeout. Event-driven: arms when the list comes to rest at the
-     * bottom with following paused, waits out the policy's quiet window, then
-     * re-checks once against fresh state.
-     *
-     * "At rest" includes no scroll in progress. Without it this armed the moment
-     * the list reached the bottom, usually with the finger still down dragging
-     * into the end, so the check saw a fresh user scroll and rejected; nothing
-     * re-armed it, and following stayed paused after any hand scroll to the
-     * bottom. Now lifting the finger is the event, and scrolling again cancels
-     * the pending check (collectLatest) and re-arms on the next rest.
-     *
-     * Every input is snapshot state, and all of it is read on every pass. The
-     * flow re-runs only when state it read last time changes: reading the plain
-     * `policy.isFollowing` first let `&&` short-circuit while following, leaving
-     * no dependencies at all, so the flow never ran again and this resume never
-     * fired. [isFollowingState] is the observable mirror of the policy.
-     */
-    suspend fun observeIdleTimeout() {
-        snapshotFlow {
-            val atRest =
-                !listState.isScrollInProgress &&
-                    listState.isAtBottom(AutoScrollConfig.RESUME_TOLERANCE_PX)
-            val paused = !isFollowingState()
-            atRest && paused
-        }.distinctUntilChanged()
-            .collectLatest { restingAtBottom ->
-                if (!restingAtBottom) return@collectLatest
-                delay(AutoScrollConfig.USER_RESUME_IDLE_MS)
-                runner.run(
-                    policy.onIdleTimeout(
-                        listState.isAtBottom(AutoScrollConfig.RESUME_TOLERANCE_PX),
-                    ),
-                )
-            }
-    }
-
-    /**
-     * 2. Manual bottom resume — fires when the user brings the list to rest at the bottom
-     * mid-stream. At rest, not on arrival: resuming with the finger still down let the stream's
-     * follow pull the list to its end under the drag.
-     */
-    suspend fun observeManualBottomResume(activelyStreaming: Boolean) {
-        snapshotFlow {
-            !listState.isScrollInProgress && listState.isAtBottom(AutoScrollConfig.RESUME_TOLERANCE_PX)
-        }.distinctUntilChanged()
-            .collect { restingAtBottom ->
-                runner.run(policy.checkManualBottomResume(restingAtBottom, activelyStreaming))
-            }
-    }
-
-    /** 3. Composer/IME insets change — deferred to insets follow when not restoring. */
-    fun onInsetsChanged(
-        messageCount: Int,
-        restorePending: Boolean,
-    ) {
-        if (!restorePending) {
-            runner.run(policy.onInsetsChanged(messageCount))
-        }
-    }
-
-    /** 4. Persistence — snapshotFlow + debounce + persist callback. */
-    @OptIn(kotlinx.coroutines.FlowPreview::class)
-    suspend fun observePersistence(renderedMessages: List<ChatMessage>) {
-        snapshotFlow {
-            if (renderedMessages.isEmpty()) {
-                null
-            } else {
-                val idx = listState.firstVisibleItemIndex
-                ScrollObservation(
-                    anchorMessageId = renderedMessages.getOrNull(idx)?.id,
-                    firstVisibleItemIndex = idx,
-                    firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-                    containerWidthDp = viewportWidthDp(),
-                    isFollowing = isFollowingState(),
-                )
-            }
-        }.distinctUntilChanged()
-            .debounce(AutoScrollConfig.SCROLL_DEBOUNCE_MS)
-            .collect { observation ->
-                observation ?: return@collect
-                onScrollSnapshotChanged(
-                    ChatScrollSnapshot(
-                        anchorMessageId = observation.anchorMessageId,
-                        firstVisibleItemIndex = observation.firstVisibleItemIndex,
-                        firstVisibleItemScrollOffset = observation.firstVisibleItemScrollOffset,
-                        isFollowing = observation.isFollowing,
-                        savedAt = System.currentTimeMillis(),
-                        containerWidthDp = observation.containerWidthDp,
-                    ),
-                )
-            }
-    }
-
-    /** 5. Restore scroll position from a persisted snapshot (2-pass). */
-    suspend fun restoreSnapshot(
-        snapshot: ChatScrollSnapshot?,
-        renderedMessages: List<ChatMessage>,
-        restorePending: Boolean,
-        restoreReady: Boolean,
-        onRestoreDone: () -> Unit,
-    ) {
-        if (!restoreReady || !restorePending || renderedMessages.isEmpty()) return
-        val currentSnapshot =
-            snapshot ?: run {
-                onRestoreDone()
-                return
-            }
-        val restoredIndex =
-            currentSnapshot.anchorMessageId
-                ?.let { anchorId -> renderedMessages.indexOfFirst { it.id == anchorId } }
-                ?.takeIf { it >= 0 }
-                ?: currentSnapshot.firstVisibleItemIndex.coerceIn(0, renderedMessages.lastIndex)
-        // Two-pass: the first scrollToItem positions the index, but layout
-        // may not have settled yet. The second pass corrects any offset drift.
-        // The offset is re-anchored to the message top when the viewport width
-        // changed (fold, rotate, multi-window), because item heights re-flowed.
-        repeat(2) {
-            withFrameNanos { }
-            listState.scrollToItem(
-                index = restoredIndex,
-                scrollOffset = currentSnapshot.offsetForRestore(viewportWidthDp()).coerceAtLeast(0),
-            )
-        }
-        val decision = policy.markRestored(currentSnapshot.isFollowing)
-        onRestoreDone()
-        runner.run(decision)
-    }
-
-    /** 6. Show/hide jump-to-bottom FAB: visible when paused AND not at the bottom. */
-    suspend fun observeJumpToBottom(
-        renderedMessages: List<ChatMessage>,
-        showJumpToBottom: MutableState<Boolean>,
-    ) {
-        snapshotFlow {
-            renderedMessages.isNotEmpty() &&
-                !isFollowingState() &&
-                !listState.isAtBottom(AutoScrollConfig.RESUME_TOLERANCE_PX)
-        }.distinctUntilChanged()
-            .collect { show -> showJumpToBottom.value = show }
-    }
-}
-// endregion

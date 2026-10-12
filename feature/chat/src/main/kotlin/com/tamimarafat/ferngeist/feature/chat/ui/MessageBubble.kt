@@ -97,7 +97,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -142,8 +141,6 @@ fun MessageBubble(
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
     modifier: Modifier = Modifier,
-    isLastMessage: Boolean = false,
-    onStreamLayoutSettled: (Int) -> Unit = {},
     onRetryMessage: ((String) -> Unit)? = null,
 ) {
     val isUser = message.role == ChatMessage.Role.USER
@@ -167,25 +164,11 @@ fun MessageBubble(
             MaterialTheme.colorScheme.onSurface
         }
     var fullscreenImage by remember { mutableStateOf<ChatImageData?>(null) }
-    // Baseline for the growth delta reported to the scroll follow. Keyed by message: a new
-    // last message starts at zero, so its first delta is its whole height, which is exactly
-    // what the list grew by.
-    var lastStreamHeightPx by remember(message.id) { mutableIntStateOf(0) }
 
     AnimatedVisibility(
         visibleState = entrance,
         modifier =
-            modifier.fillMaxWidth().then(
-                if (isLastMessage && live) {
-                    Modifier.onSizeChanged { size ->
-                        val growth = size.height - lastStreamHeightPx
-                        lastStreamHeightPx = size.height
-                        onStreamLayoutSettled(growth)
-                    }
-                } else {
-                    Modifier
-                },
-            ),
+            modifier.fillMaxWidth(),
         enter =
             fadeIn(tween(ENTRANCE_FADE_MS)) +
                 expandVertically(spring(stiffness = Spring.StiffnessMediumLow), expandFrom = Alignment.Top),

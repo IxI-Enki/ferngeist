@@ -58,8 +58,8 @@ import kotlinx.coroutines.sync.withLock
  *     - [SnackbarHost]
  *     - Dialogs: thought, tool call, config picker, connection status, commands
  *
- * Auto-scroll is managed by [rememberChatScrollState] which combines a
- * [LazyListState] with an [ChatScrollPolicy] state machine.
+ * Scrolling (following the end, the runway under a sent prompt, jumps, restore) is owned by
+ * [ChatScrollHandle].
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -280,8 +280,6 @@ private fun rememberChatScreenState(
             selectedThoughtSegmentId = mutations.selectedThoughtSegmentId,
             selectedToolCallSegmentId = mutations.selectedToolCallSegmentId,
             composerExpanded = mutations.composerExpanded,
-            composerContentHeightPx = mutations.composerContentHeightPx,
-            imeBottomPx = composerInsets.imeBottomPx,
             onScrollSnapshotChanged = viewModel::persistScrollSnapshot,
         )
     val sendHandlers =

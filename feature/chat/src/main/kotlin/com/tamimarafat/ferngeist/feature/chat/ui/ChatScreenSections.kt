@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -389,8 +388,7 @@ internal fun ChatScreenDialogs(
 @Composable
 internal fun ChatScreenBody(
     state: ChatState,
-    listState: LazyListState,
-    userScrollDetector: NestedScrollConnection,
+    scroll: ChatScrollHandle,
     appBarScrollConnection: NestedScrollConnection,
     renderedLastMessageId: String?,
     listTopPadding: Dp,
@@ -398,7 +396,6 @@ internal fun ChatScreenBody(
     onRetryLoad: () -> Unit,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
-    onStreamLayoutSettled: (Int) -> Unit = {},
     onRetryMessage: ((String) -> Unit)? = null,
 ) {
     when {
@@ -416,15 +413,13 @@ internal fun ChatScreenBody(
         else -> {
             ChatMessageList(
                 state = state,
-                listState = listState,
-                userScrollDetector = userScrollDetector,
+                scroll = scroll,
                 appBarScrollConnection = appBarScrollConnection,
                 renderedLastMessageId = renderedLastMessageId,
                 listTopPadding = listTopPadding,
                 listBottomPadding = listBottomPadding,
                 onThoughtClick = onThoughtClick,
                 onToolCallClick = onToolCallClick,
-                onStreamLayoutSettled = onStreamLayoutSettled,
                 onRetryMessage = onRetryMessage,
             )
         }
@@ -590,17 +585,16 @@ private fun ChatLoadError(
 @Composable
 private fun ChatMessageList(
     state: ChatState,
-    listState: LazyListState,
-    userScrollDetector: NestedScrollConnection,
+    scroll: ChatScrollHandle,
     appBarScrollConnection: NestedScrollConnection,
     renderedLastMessageId: String?,
     listTopPadding: Dp,
     listBottomPadding: Dp,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
-    onStreamLayoutSettled: (Int) -> Unit = {},
     onRetryMessage: ((String) -> Unit)? = null,
 ) {
+    val listState = scroll.listState
     val allMessages = state.messages
     val itemKey: (ChatMessage) -> String = { state.listKeys[it.id] ?: it.id }
     val contentTop = listTopPadding + 8.dp
@@ -616,6 +610,7 @@ private fun ChatMessageList(
                 .map { leadingRows + it }
         }
     val fadePx = with(LocalDensity.current) { pinnedPromptFadeDistance.roundToPx() }
+    val runway = rememberRunway(scroll, windowed, itemKey, listBottomPadding)
     val messageRow: @Composable (ChatMessage) -> Unit = { message ->
         ChatMessageItem(
             message = message,
@@ -623,8 +618,8 @@ private fun ChatMessageList(
             renderedLastMessageId = renderedLastMessageId,
             onThoughtClick = onThoughtClick,
             onToolCallClick = onToolCallClick,
-            onStreamLayoutSettled = onStreamLayoutSettled,
             onRetryMessage = onRetryMessage,
+            modifier = Modifier.runwayRow(scroll, runway, itemKey(message)),
         )
     }
 
@@ -635,7 +630,7 @@ private fun ChatMessageList(
                 Modifier
                     .widthIn(max = 720.dp)
                     .align(Alignment.TopCenter)
-                    .nestedScroll(userScrollDetector)
+                    .nestedScroll(scroll.userScrollDetector)
                     // The app bar is driven by this list alone. Attaching the app bar's
                     // connection at the Scaffold instead would also capture the scroll of any
                     // other Scaffold descendant — notably the composer's text field, which
@@ -680,13 +675,13 @@ private fun ChatMessageList(
             ) { message ->
                 messageRow(message)
             }
-            item(key = "__chat_bottom_spacer") {
-                Spacer(modifier = Modifier.height(listBottomPadding))
+            item(key = BOTTOM_SPACER_KEY) {
+                RunwaySpacer(scroll, runway)
             }
         }
         // Keyed so the pinned chip, once displaced, carries on as the same node instead of being
         // rebuilt mid-push.
-        PinnedPromptOverlays(userRows, leadingRows, windowed, listState, contentTop, fadePx)
+        PinnedPromptOverlays(userRows, leadingRows, windowed, scroll, contentTop, fadePx)
         AnimatedVisibility(
             visible = allMessages.isEmpty() && state.pendingMessages.isEmpty() && !state.resumedSession,
             enter = fadeIn(),
@@ -753,8 +748,8 @@ private fun ChatMessageItem(
     renderedLastMessageId: String?,
     onThoughtClick: (String) -> Unit,
     onToolCallClick: (String) -> Unit,
-    onStreamLayoutSettled: (Int) -> Unit,
     onRetryMessage: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     // Keyed by the same keys the renderer draws from (run keys, not segment ids), so the document
     // looked up here is the one [MessageBubble] will ask for.
@@ -779,11 +774,10 @@ private fun ChatMessageItem(
             message = message,
             markdownDocuments = messageMarkdown,
             showStreamingIndicator = message.isStreaming && isLast,
-            isLastMessage = isLast,
             onThoughtClick = onThoughtClick,
             onToolCallClick = onToolCallClick,
-            onStreamLayoutSettled = onStreamLayoutSettled,
             onRetryMessage = onRetryMessage,
+            modifier = modifier,
         )
     }
 }

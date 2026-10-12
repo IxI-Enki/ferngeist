@@ -253,8 +253,7 @@ private fun BoxScope.ChatScreenContentOverlays(
 
     ChatScreenBody(
         state = screenState.state,
-        listState = screenState.scrollHandle.listState,
-        userScrollDetector = screenState.scrollHandle.userScrollDetector,
+        scroll = screenState.scrollHandle,
         appBarScrollConnection = appBarScrollConnection,
         renderedLastMessageId = screenState.renderedLastMessageId,
         listTopPadding = innerPadding.calculateTopPadding(),
@@ -266,7 +265,6 @@ private fun BoxScope.ChatScreenContentOverlays(
         onToolCallClick = { segmentId ->
             screenState.selectedToolCallSegmentId.value = segmentId
         },
-        onStreamLayoutSettled = screenState.scrollHandle.onStreamLayoutSettled,
         onRetryMessage = { clientId ->
             viewModel.dispatch(ChatIntent.RetryMessage(clientId))
         },

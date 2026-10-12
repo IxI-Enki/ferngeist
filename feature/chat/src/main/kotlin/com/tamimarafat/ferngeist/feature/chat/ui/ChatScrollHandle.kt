@@ -108,6 +108,12 @@ internal class ChatScrollHandle(
     private var easing by mutableStateOf(false)
     internal var restorePending by mutableStateOf(false)
 
+    /**
+     * A restore applies once: every snapshot after it is this handle's own, mirrored back through
+     * the view model, and restoring one would yank the reader to where they were a second ago.
+     */
+    internal var restoreConsumed = false
+
     /** A reply streaming, or text still revealing: the end can grow on any frame. */
     internal var live by mutableStateOf(false)
     internal var relatchPx by mutableStateOf(0f)
@@ -351,7 +357,7 @@ internal fun rememberChatScrollState(
     val restoreKey = restoredScrollSnapshot?.savedAt
     // Applied before the SideEffect below, so the first onMessages already sees a pending restore.
     DisposableEffect(sessionId, restoreKey) {
-        handle.restorePending = restoredScrollSnapshot != null
+        handle.restorePending = restoredScrollSnapshot != null && !handle.restoreConsumed
         onDispose {}
     }
     SideEffect {
@@ -385,11 +391,17 @@ internal fun rememberChatScrollState(
         // Two-pass: the first scrollToItem positions the index, but layout may not have settled
         // yet. The offset is re-anchored to the message top when the viewport width changed (fold,
         // rotate, multi-window), because item heights re-flowed.
-        repeat(2) {
-            withFrameNanos { }
-            listState.scrollToItem(restoredIndex, snapshot.offsetForRestore(viewportWidthDp()).coerceAtLeast(0))
+        try {
+            repeat(2) {
+                withFrameNanos { }
+                listState.scrollToItem(restoredIndex, snapshot.offsetForRestore(viewportWidthDp()).coerceAtLeast(0))
+            }
+            handle.markRestored(snapshot.isFollowing)
+        } finally {
+            // A drag can cancel the restore's scroll; left pending, following could never resume.
+            handle.restorePending = false
+            handle.restoreConsumed = true
         }
-        handle.markRestored(snapshot.isFollowing)
     }
     return handle
 }
@@ -417,6 +429,7 @@ private suspend fun observePersistence(
         .debounce(SCROLL_DEBOUNCE_MS)
         .collect { observation ->
             observation ?: return@collect
+            handle.restoreConsumed = true
             onScrollSnapshotChanged(observation.copy(savedAt = System.currentTimeMillis()))
         }
 }

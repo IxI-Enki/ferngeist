@@ -45,6 +45,22 @@ class SessionRuntimeTest {
         }
 
     @Test
+    fun a_reply_closed_by_a_reattach_gets_no_time() =
+        runTest {
+            val runtime = SessionRuntime(sessionId = "ses_test", wallClock = { 9_000L })
+            runtime.onLocalPromptStarted("go", emptyList(), emptyList())
+            runtime.onEvent(AppSessionEvent.AgentMessage("partial"))
+            // session/resume replays nothing and closes the open reply on SessionLoadComplete.
+            runtime.onEvent(AppSessionEvent.SessionLoadComplete)
+
+            val reply =
+                runtime.snapshot.value.messages
+                    .last()
+            assertFalse(reply.isStreaming)
+            assertEquals(null, reply.turn)
+        }
+
+    @Test
     fun a_turn_cut_short_fails_its_unfinished_tool_calls() =
         runTest {
             val runtime = SessionRuntime(sessionId = "ses_test")

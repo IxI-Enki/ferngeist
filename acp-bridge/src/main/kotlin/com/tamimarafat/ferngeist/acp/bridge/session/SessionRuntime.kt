@@ -164,6 +164,9 @@ class SessionRuntime(
                 return@withLock
             }
             live = reduce(live, event, clock())
+            // A reply closed by a reattach ended while this client was away; stamping it now would
+            // time the outage, not the turn, so it gets no time at all.
+            if (event is AppSessionEvent.SessionLoadComplete) openReplyId = null
             debug { "event#$seq liveApplied messages=${live.messages.size} streaming=${live.isStreaming}" }
             publishLive(loadState = SessionLoadState.READY, error = null)
         }

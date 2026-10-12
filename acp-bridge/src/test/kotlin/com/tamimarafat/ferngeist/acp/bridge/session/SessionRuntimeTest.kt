@@ -7,6 +7,7 @@ import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatMessage
+import com.tamimarafat.ferngeist.core.model.TurnTiming
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,10 +16,10 @@ import org.junit.Test
 
 class SessionRuntimeTest {
     @Test
-    fun live_segments_are_stamped_but_a_replay_is_not() =
+    fun live_segments_and_the_turns_close_are_stamped_but_a_replay_is_not() =
         runTest {
             var now = 0L
-            val runtime = SessionRuntime(sessionId = "ses_test", clock = { now })
+            val runtime = SessionRuntime(sessionId = "ses_test", clock = { now }, wallClock = { 9_000L })
             runtime.beginHydration()
             runtime.onEvent(AppSessionEvent.UserMessage("old", append = true))
             runtime.onEvent(AppSessionEvent.AgentThought("replayed"))
@@ -36,6 +37,11 @@ class SessionRuntimeTest {
                     .filter { it.role == ChatMessage.Role.ASSISTANT }
             assertEquals(listOf<Long?>(null), replayed.segments.map { it.receivedAtMs })
             assertEquals(listOf<Long?>(1_000L, 2_000L), live.segments.map { it.receivedAtMs })
+            assertEquals(null, replayed.turn)
+            val prompt =
+                runtime.snapshot.value.messages
+                    .last { it.role == ChatMessage.Role.USER }
+            assertEquals(TurnTiming(prompt.createdAt, 9_000L), live.turn)
         }
 
     @Test

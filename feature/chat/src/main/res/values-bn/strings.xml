@@ -223,6 +223,11 @@
     </plurals>
     <!-- Present-continuous variants, shown while the group still has a running call -->
     <string name="chat_tool_summary_separator">", "</string>
+    <string name="chat_turn_took">%2$s ধরে %1$s</string>
+    <string name="chat_turn_done">শেষ %1$s</string>
+    <string-array name="chat_turn_verbs">
+        <item>কাজ করেছে</item>
+    </string-array>
     <string name="chat_tool_summary_thinking">ভাবছে</string>
     <plurals name="chat_tool_summary_execute_running">
         <item quantity="one">%1$dটি কমান্ড চালাচ্ছে</item>

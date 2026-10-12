@@ -22,6 +22,8 @@ data class ChatMessage(
     val createdAt: Long = System.currentTimeMillis(),
     val status: MessageDeliveryStatus = MessageDeliveryStatus.SENT,
     val clientId: String? = null,
+    /** When the turn this reply answers was sent and finished; on a reply once it closes. */
+    val turn: TurnTiming? = null,
 ) {
     enum class Role {
         USER,
@@ -29,6 +31,22 @@ data class ChatMessage(
         SYSTEM,
     }
 }
+
+/** Wall-clock times a turn ran between: its prompt sent, its reply closed. */
+data class TurnTiming(
+    val startedAt: Long,
+    val finishedAt: Long,
+)
+
+/**
+ * A turn's place in its session: the nth prompt, and a hash of that prompt's text. Replayed
+ * history carries new message ids, so a turn is found again by position, and the hash keeps a
+ * replay that numbers its prompts differently from claiming another turn's time.
+ */
+data class TurnKey(
+    val index: Int,
+    val promptHash: Int,
+)
 
 data class AssistantSegment(
     val id: String = UUID.randomUUID().toString(),

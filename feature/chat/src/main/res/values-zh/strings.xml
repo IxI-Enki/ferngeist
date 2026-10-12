@@ -212,6 +212,11 @@
     </plurals>
     <!-- Present-continuous variants, shown while the group still has a running call -->
     <string name="chat_tool_summary_separator">"，"</string>
+    <string name="chat_turn_took">%1$s %2$s</string>
+    <string name="chat_turn_done">完成于 %1$s</string>
+    <string-array name="chat_turn_verbs">
+        <item>用时</item>
+    </string-array>
     <string name="chat_tool_summary_thinking">正在思考</string>
     <plurals name="chat_tool_summary_execute_running">
         <item quantity="other">正在运行 %1$d 条命令</item>

@@ -202,7 +202,7 @@ internal fun ToolCallDisplay.summaryVerb(): ToolVerb =
 internal fun joinSummary(
     phrases: List<String>,
     separator: String,
-): String = phrases.joinToString(separator).replaceFirstChar { it.titlecase() }
+): String = joinPhrases(phrases, separator).replaceFirstChar { it.titlecase() }
 
 /** One row on the rail: a tool call, or a run of reasoning. */
 private class RailRow(
@@ -381,6 +381,7 @@ internal fun ToolGroupHeader(
     onClick: () -> Unit,
     elapsed: String? = null,
     elapsedDescription: String? = null,
+    separator: String? = null,
 ) {
     val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
     val rotation by animateFloatAsState(
@@ -407,11 +408,12 @@ internal fun ToolGroupHeader(
             label = "toolGroupSummary",
             modifier = Modifier.weight(1f),
         ) { text ->
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall.copy(brush = brush),
-                modifier = Modifier.padding(vertical = 4.dp),
-            )
+            val style = MaterialTheme.typography.bodySmall.copy(brush = brush)
+            if (separator == null) {
+                Text(text = text, style = style, modifier = Modifier.padding(vertical = 4.dp))
+            } else {
+                PhrasesText(text, separator, style, modifier = Modifier.padding(vertical = 4.dp))
+            }
         }
         if (elapsed != null) {
             Text(

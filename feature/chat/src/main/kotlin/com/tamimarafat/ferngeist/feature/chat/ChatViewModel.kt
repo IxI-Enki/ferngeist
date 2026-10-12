@@ -16,9 +16,12 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.MessageDeliveryStatus
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
 import com.tamimarafat.ferngeist.core.model.SessionSummary
+import com.tamimarafat.ferngeist.core.model.TurnKey
+import com.tamimarafat.ferngeist.core.model.TurnTiming
 import com.tamimarafat.ferngeist.core.model.iconUrl
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
+import com.tamimarafat.ferngeist.core.model.repository.TurnTimingRepository
 import com.tamimarafat.ferngeist.core.model.sessionTitleOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +51,7 @@ class ChatViewModel
         val recentSelectionStore: RecentSelectionStore,
         private val presence: ChatSessionPresence,
         private val launchableTargetRepository: LaunchableTargetRepository,
+        private val turnTimingRepository: TurnTimingRepository,
         private val savedStateHandle: SavedStateHandle,
     ) : MviViewModel<ChatState, ChatIntent, ChatEffect>(initialChatState()) {
         companion object {
@@ -127,6 +131,10 @@ class ChatViewModel
          * new turn starts, so a name the agent assigns at any point still reaches the bar.
          */
         private var titleFetchDone = false
+
+        /** Recorded turn times for [storedTurnsSession], loaded once a reply needs them. */
+        private var storedTurns: MutableMap<TurnKey, TurnTiming>? = null
+        private var storedTurnsSession: String? = null
 
         private val sessionFacade: ChatSessionFacade =
             sessionFacadeFactory.create(
@@ -409,6 +417,32 @@ class ChatViewModel
         }
 
         /**
+         * A replay carries no times, so turns are recorded as they finish here and put back on
+         * the replayed replies that match them.
+         */
+        private suspend fun withTurnTimings(messages: List<ChatMessage>): List<ChatMessage> {
+            val sessionId = durableSessionId ?: return messages
+            val keys = messages.turnKeys()
+            if (keys.isEmpty()) return messages
+            val stored =
+                storedTurns?.takeIf { storedTurnsSession == sessionId }
+                    ?: withContext(Dispatchers.IO) { turnTimingRepository.getTimings(sessionId) }
+                        .toMutableMap()
+                        .also {
+                            storedTurns = it
+                            storedTurnsSession = sessionId
+                        }
+            val fresh = messages.unstoredTurns(keys, stored)
+            if (fresh.isNotEmpty()) {
+                stored.putAll(fresh)
+                viewModelScope.launch(Dispatchers.IO) {
+                    fresh.forEach { (key, timing) -> turnTimingRepository.record(sessionId, key, timing) }
+                }
+            }
+            return messages.withStoredTurns(keys, stored)
+        }
+
+        /**
          * Applies a snapshot from the facade to UI state, keeping markdown hydration in sync.
          *
          * When the snapshot carries a USER message whose content+images match a
@@ -436,9 +470,10 @@ class ChatViewModel
             // prompt is delivered, so its durable copy goes now rather than when the turn
             // ends: a screen closed mid-turn would otherwise restore and re-send it.
             if (echoKeys.isNotEmpty()) offlineQueue.persistQueue()
+            val messages = withTurnTimings(snapshot.messages)
             updateState {
                 copy(
-                    messages = snapshot.messages,
+                    messages = messages,
                     pendingMessages = reconciledPending,
                     listKeys = if (echoKeys.isEmpty()) listKeys else listKeys + echoKeys,
                     markdownDocuments = markdownProjection.documents,

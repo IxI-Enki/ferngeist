@@ -85,7 +85,16 @@ class ToolVerbCountsTest {
 
     @Test
     fun summaryJoinsItsPhrasesAndCapitalisesTheFirst() {
-        assertEquals("Read 3 files, reading 2 files", joinSummary(listOf("read 3 files", "reading 2 files"), ", "))
+        assertEquals(
+            "Read\u00A03\u00A0files, reading\u00A02\u00A0files",
+            joinSummary(listOf("read 3 files", "reading 2 files"), ", "),
+        )
+        // Only the separator's trailing space may break, so "·" never starts a line.
+        assertEquals("1\u00A0min\u00A0· done", joinPhrases(listOf("1 min", "done"), " · "))
+        // A wrap right after a separator drops it; a wrap anywhere else is left alone.
+        val joined = joinPhrases(listOf("a", "b", "c"), " · ")
+        assertEquals("a\nb\u00A0· c", breakAtSeparators(joined, " · ", listOf(4)))
+        assertEquals(joined, breakAtSeparators(joined, " · ", listOf(2)))
     }
 
     private fun calls(vararg kinds: ToolKind?) = kinds.map { ToolCallDisplay(kind = it).summaryVerb() }

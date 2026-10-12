@@ -15,9 +15,11 @@ import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepositor
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetSessionSettingsRepository
 import com.tamimarafat.ferngeist.core.model.repository.ServerRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
+import com.tamimarafat.ferngeist.core.model.repository.TurnTimingRepository
 import com.tamimarafat.ferngeist.data.database.FerngeistDatabase
 import com.tamimarafat.ferngeist.data.database.MIGRATION_14_15
 import com.tamimarafat.ferngeist.data.database.MIGRATION_15_16
+import com.tamimarafat.ferngeist.data.database.MIGRATION_16_17
 import com.tamimarafat.ferngeist.data.database.crypto.CredentialEncryptor
 import com.tamimarafat.ferngeist.data.database.repository.GatewayAgentBindingRepositoryImpl
 import com.tamimarafat.ferngeist.data.database.repository.GatewaySourceRepositoryImpl
@@ -25,6 +27,7 @@ import com.tamimarafat.ferngeist.data.database.repository.LaunchableTargetReposi
 import com.tamimarafat.ferngeist.data.database.repository.LaunchableTargetSessionSettingsRepositoryImpl
 import com.tamimarafat.ferngeist.data.database.repository.ServerRepositoryImpl
 import com.tamimarafat.ferngeist.data.database.repository.SessionRepositoryImpl
+import com.tamimarafat.ferngeist.data.database.repository.TurnTimingRepositoryImpl
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.push.AndroidUnifiedPushClient
 import com.tamimarafat.ferngeist.push.PushRegistrar
@@ -81,6 +84,7 @@ object AppModule {
                 MIGRATION_13_14,
                 MIGRATION_14_15,
                 MIGRATION_15_16,
+                MIGRATION_16_17,
             ).fallbackToDestructiveMigration(false)
             .build()
 
@@ -131,6 +135,11 @@ object AppModule {
     @Singleton
     fun provideSessionRepository(database: FerngeistDatabase): SessionRepository =
         SessionRepositoryImpl(database.sessionDao())
+
+    @Provides
+    @Singleton
+    fun provideTurnTimingRepository(database: FerngeistDatabase): TurnTimingRepository =
+        TurnTimingRepositoryImpl(database.turnTimingDao())
 
     /** Persists per-target session settings (cwd, etc.). */
     @Provides

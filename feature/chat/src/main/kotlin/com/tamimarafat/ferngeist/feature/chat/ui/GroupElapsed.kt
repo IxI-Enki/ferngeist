@@ -44,7 +44,7 @@ internal fun elapsedOf(ms: Long): Elapsed? {
     return Elapsed(hours, minutes, seconds)
 }
 
-private const val MS_PER_SECOND = 1000L
+internal const val MS_PER_SECOND = 1000L
 private const val SECONDS_PER_MINUTE = 60L
 private const val SECONDS_PER_HOUR = 3600L
 
@@ -66,7 +66,7 @@ private fun rememberElapsedMs(startMs: Long?): Long? {
 }
 
 @Composable
-private fun formatElapsed(
+internal fun formatElapsed(
     elapsed: Elapsed,
     width: MeasureFormat.FormatWidth,
 ): String {

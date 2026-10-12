@@ -1,5 +1,7 @@
 package com.tamimarafat.ferngeist.feature.chat.ui
 
+import android.icu.text.MeasureFormat
+import android.text.format.DateUtils
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +20,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.agentclientprotocol.model.ToolCallContent
@@ -28,10 +33,12 @@ import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
+import com.tamimarafat.ferngeist.core.model.TurnTiming
 import com.tamimarafat.ferngeist.feature.chat.R
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.random.Random
 
 private val PATH_KEYS = listOf("file_path", "filePath", "path", "filename")
 private val CONTENT_KEYS = listOf("content", "contents", "text", "file_text")
@@ -144,19 +151,32 @@ internal fun List<AssistantSegment>.fileChanges(): List<FileChange> {
 }
 
 /**
- * The turn's edits at its end: "3 files changed" with the total diff, folding open into one row per
- * file. A file whose calls reported no diff takes git's counts while it is the newest turn, and
- * otherwise shows none.
+ * The turn's close: how long it ran and when it finished, then its edits, "3 files changed" with the
+ * total diff, folding open into one row per file. A file whose calls reported no diff takes git's
+ * counts while it is the newest turn, and otherwise shows none. With no edits, only the time.
  */
 @Composable
 internal fun TurnChanges(
     segments: List<AssistantSegment>,
+    turn: TurnTiming?,
     onToolCallClick: (String) -> Unit,
     foldsInFlight: MutableIntState,
     modifier: Modifier = Modifier,
 ) {
     val files = remember(segments) { segments.fileChanges() }
-    if (files.isEmpty()) return
+    val timing = turn?.let { turnSummary(it) }
+    val separator = stringResource(R.string.chat_turn_separator)
+    if (files.isEmpty()) {
+        timing?.let {
+            PhrasesText(
+                text = it,
+                separator = separator,
+                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                modifier = modifier.padding(vertical = 4.dp),
+            )
+        }
+        return
+    }
     val tree = LocalWorkingTreeChanges.current
     val stats =
         remember(files, tree) {
@@ -170,7 +190,15 @@ internal fun TurnChanges(
     Column(modifier = modifier.fillMaxWidth()) {
         ToolGroupHeader(
             // "3 files changed", not "Edited 3 files": an outcome, so it doesn't read as one more call.
-            summary = pluralStringResource(R.plurals.chat_git_files_changed, files.size, files.size),
+            summary =
+                joinPhrases(
+                    listOfNotNull(
+                        timing,
+                        pluralStringResource(R.plurals.chat_git_files_changed, files.size, files.size),
+                    ),
+                    separator,
+                ),
+            separator = separator,
             stats = total,
             open = open,
             active = false,
@@ -204,4 +232,29 @@ internal fun TurnChanges(
             }
         }
     }
+}
+
+/** "Brewed for 1m 20s · done 2:24 AM": the verb is seeded by the turn, so it stays put across reloads. */
+@Composable
+private fun turnSummary(turn: TurnTiming): String {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val verb =
+        remember(turn.startedAt, resources) {
+            val verbs = resources.getStringArray(R.array.chat_turn_verbs)
+            verbs[Random(turn.startedAt).nextInt(verbs.size)]
+        }
+    val elapsed = elapsedOf((turn.finishedAt - turn.startedAt).coerceAtLeast(MS_PER_SECOND)) ?: Elapsed(0, 0, 1)
+    // Today reads as a time of day; anything older needs its date too.
+    val flags =
+        DateUtils.FORMAT_SHOW_TIME or
+            if (DateUtils.isToday(turn.finishedAt)) 0 else DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH
+    val done = remember(turn.finishedAt, flags) { DateUtils.formatDateTime(context, turn.finishedAt, flags) }
+    return joinPhrases(
+        listOf(
+            stringResource(R.string.chat_turn_took, verb, formatElapsed(elapsed, MeasureFormat.FormatWidth.NARROW)),
+            stringResource(R.string.chat_turn_done, done),
+        ),
+        stringResource(R.string.chat_turn_separator),
+    )
 }

@@ -13,9 +13,12 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionPresence
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.MessageDeliveryStatus
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
+import com.tamimarafat.ferngeist.core.model.TurnKey
+import com.tamimarafat.ferngeist.core.model.TurnTiming
 import com.tamimarafat.ferngeist.core.model.UsageState
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
+import com.tamimarafat.ferngeist.core.model.repository.TurnTimingRepository
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -75,8 +78,23 @@ open class ChatViewModelTestBase {
             recentSelectionStore = FakeRecentSelectionStore(),
             presence = presence,
             launchableTargetRepository = launchableTargetRepository,
+            turnTimingRepository = InMemoryTurnTimingRepository(),
             savedStateHandle = savedStateHandle,
         )
+}
+
+internal class InMemoryTurnTimingRepository : TurnTimingRepository {
+    val timings = HashMap<String, MutableMap<TurnKey, TurnTiming>>()
+
+    override suspend fun getTimings(sessionId: String): Map<TurnKey, TurnTiming> = timings[sessionId].orEmpty()
+
+    override suspend fun record(
+        sessionId: String,
+        key: TurnKey,
+        timing: TurnTiming,
+    ) {
+        timings.getOrPut(sessionId) { HashMap() }[key] = timing
+    }
 }
 
 /**

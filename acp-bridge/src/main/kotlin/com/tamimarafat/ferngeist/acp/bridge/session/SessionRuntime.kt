@@ -4,6 +4,7 @@ import com.tamimarafat.ferngeist.core.model.ChatElicitationRequest
 import com.tamimarafat.ferngeist.core.model.ChatFileData
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatMessage
+import com.tamimarafat.ferngeist.core.model.TurnTiming
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +32,8 @@ class SessionRuntime(
     private val sessionId: String,
     /** Monotonic clock for segment arrival; null leaves live turns unstamped, as in tests. */
     private val clock: () -> Long? = { null },
+    /** Wall clock for when a turn finished, shown to the reader as a time of day. */
+    private val wallClock: () -> Long = System::currentTimeMillis,
 ) {
     companion object {
         private const val TAG = "TSRuntime"
@@ -61,6 +64,9 @@ class SessionRuntime(
     private var live = RuntimeData()
     private var buffered = RuntimeData()
     private var eventSeq = 0L
+
+    /** The reply still streaming at the last publish, so its close can be stamped. */
+    private var openReplyId: String? = null
 
     private val _snapshot =
         MutableStateFlow(
@@ -459,6 +465,7 @@ class SessionRuntime(
         loadState: SessionLoadState,
         error: String?,
     ) {
+        stampClosedReply()
         val effectiveConfigOptions =
             SessionConfigPolicy.resolveEffectiveOptions(
                 nativeOptions = live.nativeConfigOptions,
@@ -524,6 +531,29 @@ class SessionRuntime(
             is AppSessionEvent.TurnComplete -> "stopReason=${event.stopReason}"
             is AppSessionEvent.Unknown -> "unknownRawLen=${event.raw.length}"
         }
+
+    /**
+     * Every path that closes a reply (turn end, cancel, a failed send, a steer, a new prompt)
+     * publishes, so stamping here catches them all without each one knowing about time. The turn
+     * runs from its prompt's send; replayed history never streams here, so it is never stamped.
+     */
+    private fun stampClosedReply() {
+        val messages = live.messages
+        val index = openReplyId?.let { id -> messages.indexOfLast { it.id == id } } ?: -1
+        val reply = messages.getOrNull(index)?.takeIf { !it.isStreaming && it.turn == null }
+        val prompt = messages.subList(0, index.coerceAtLeast(0)).lastOrNull { it.role == ChatMessage.Role.USER }
+        if (reply != null && prompt != null) {
+            live =
+                live.copy(
+                    messages =
+                        messages.toMutableList().apply {
+                            this[index] = reply.copy(turn = TurnTiming(prompt.createdAt, wallClock()))
+                        },
+                )
+        }
+        val last = live.messages.lastOrNull()
+        openReplyId = if (last?.isStreaming == true) last.id else null
+    }
 
     private fun debug(message: () -> String) {
         SessionDebug.d(TAG, sessionId, message)

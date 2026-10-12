@@ -586,6 +586,7 @@ private fun ColumnScope.TurnFooter(
     AnimatedVisibility(visible = !message.isStreaming && settled, enter = fadeIn(), exit = fadeOut()) {
         TurnChanges(
             segments = message.segments,
+            turn = message.turn,
             onToolCallClick = onToolCallClick,
             foldsInFlight = reveals.foldsInFlight,
         )

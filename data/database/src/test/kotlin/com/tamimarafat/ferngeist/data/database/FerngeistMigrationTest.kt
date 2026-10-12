@@ -92,6 +92,18 @@ class FerngeistMigrationTest {
         }
     }
 
+    @Test
+    fun migrate16To17_addsAnEmptyTurnTimingsTable() {
+        helper.createDatabase(TEST_DB, 16).close()
+
+        helper.runMigrationsAndValidate(TEST_DB, 17, true, MIGRATION_16_17).use { db ->
+            db.query("SELECT COUNT(*) FROM turn_timings").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        }
+    }
+
     private companion object {
         /**
          * Absolute path on purpose: Room 2.8 resolves the database file through

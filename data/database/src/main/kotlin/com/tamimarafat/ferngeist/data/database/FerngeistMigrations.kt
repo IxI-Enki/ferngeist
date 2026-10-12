@@ -28,3 +28,17 @@ val MIGRATION_15_16: Migration =
             db.execSQL("ALTER TABLE gateway_agent_bindings ADD COLUMN icon TEXT")
         }
     }
+
+/** Keeps each turn's start and finish for a week, since a replay carries no times (v16 → v17). */
+val MIGRATION_16_17: Migration =
+    object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `turn_timings` (`sessionId` TEXT NOT NULL, " +
+                    "`turnIndex` INTEGER NOT NULL, `promptHash` INTEGER NOT NULL, " +
+                    "`startedAt` INTEGER NOT NULL, `finishedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`sessionId`, `turnIndex`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_turn_timings_finishedAt` ON `turn_timings` (`finishedAt`)")
+        }
+    }

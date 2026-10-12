@@ -6,6 +6,8 @@ import com.tamimarafat.ferngeist.core.model.LaunchableTarget
 import com.tamimarafat.ferngeist.core.model.LaunchableTargetSessionSettings
 import com.tamimarafat.ferngeist.core.model.ServerConfig
 import com.tamimarafat.ferngeist.core.model.SessionSummary
+import com.tamimarafat.ferngeist.core.model.TurnKey
+import com.tamimarafat.ferngeist.core.model.TurnTiming
 import kotlinx.coroutines.flow.Flow
 
 interface ServerRepository {
@@ -126,6 +128,18 @@ interface SessionRepository {
     suspend fun replaceSessions(
         serverId: String,
         sessions: List<SessionSummary>,
+    )
+}
+
+/** Turn times kept for a while, since a session's replay carries none. */
+interface TurnTimingRepository {
+    /** The session's recorded turns; also drops turns older than the retention window. */
+    suspend fun getTimings(sessionId: String): Map<TurnKey, TurnTiming>
+
+    suspend fun record(
+        sessionId: String,
+        key: TurnKey,
+        timing: TurnTiming,
     )
 }
 

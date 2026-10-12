@@ -5,6 +5,7 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionFacadeFactory
 import com.tamimarafat.ferngeist.core.model.ChatSessionPresence
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
+import com.tamimarafat.ferngeist.core.model.repository.TurnTimingRepository
 import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import com.tamimarafat.ferngeist.feature.chat.ChatScrollStateStore
 import com.tamimarafat.ferngeist.feature.chat.ChatViewModel
@@ -32,6 +33,7 @@ class ChatViewModelFactory
         private val recentSelectionStore: RecentSelectionStore,
         private val presence: ChatSessionPresence,
         private val launchableTargetRepository: LaunchableTargetRepository,
+        private val turnTimingRepository: TurnTimingRepository,
     ) {
         /**
          * A [ChatViewModel] reads every id out of its handle, so blank ids would build a
@@ -56,6 +58,7 @@ class ChatViewModelFactory
                 recentSelectionStore = recentSelectionStore,
                 presence = presence,
                 launchableTargetRepository = launchableTargetRepository,
+                turnTimingRepository = turnTimingRepository,
                 // `SavedStateHandle` is public API; lint's VisibleForTests check calls the
                 // constructor test-only here, so this one function suppresses it.
                 savedStateHandle =

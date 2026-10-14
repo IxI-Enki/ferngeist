@@ -13,6 +13,8 @@ Or grab the APK from [GitHub Releases](https://github.com/arafatamim/ferngeist/r
 
 <img height="500" alt="A chat with a coding agent, showing its tool calls and code changes" src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" />
 
+https://github.com/user-attachments/assets/9af837d6-a901-493b-827e-93a3fdb1aa24
+
 ## Why Ferngeist
 
 - **Leave your desk.** Your agent keeps working on your computer, and Ferngeist notifies you when it finishes or needs an answer.

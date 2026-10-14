@@ -2,6 +2,7 @@ package com.tamimarafat.ferngeist.feature.chat.ui
 
 import android.text.format.DateUtils
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GitHistoryFormatTest {
@@ -28,5 +29,22 @@ class GitHistoryFormatTest {
         assertEquals("C", initialsOf("Claude", "c@x"))
         assertEquals("X", initialsOf(" ", "x@y"))
         assertEquals("?", initialsOf("", ""))
+    }
+
+    @Test
+    fun avatarUrl_hashesTheNormalizedEmailForGravatar() {
+        assertEquals(
+            "https://gravatar.com/avatar/eb2b6c0d061bbd5caa545b6d1184a1887b11dba0b1d7fd8ca5b42ebf0ad7d3a8?s=72&d=404",
+            avatarUrl(" Dev@Example.com ", 72),
+        )
+    }
+
+    @Test
+    fun avatarUrl_usesGitHubsAvatarForNoreplyAddressesAndNothingForNoEmail() {
+        assertEquals(
+            "https://avatars.githubusercontent.com/u/123?s=72",
+            avatarUrl("123+octo@users.noreply.github.com", 72),
+        )
+        assertNull(avatarUrl(" ", 72))
     }
 }

@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -57,7 +58,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -69,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.tamimarafat.ferngeist.core.common.ui.DarkGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
@@ -81,6 +85,7 @@ import com.tamimarafat.ferngeist.feature.chat.layoutGraph
 import com.tamimarafat.ferngeist.feature.chat.strokesFor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import java.security.MessageDigest
 
 // Fixed so graph segments in neighbouring rows meet exactly at the row boundary.
 private val CommitRowHeight = 48.dp
@@ -457,7 +462,10 @@ private fun MoreRefsBadge(count: Int) {
     }
 }
 
-/** Initials on a color picked from the email, so one author keeps one color everywhere. */
+/**
+ * Initials on a color picked from the email, so one author keeps one color everywhere. The
+ * author's picture covers them once it loads; a miss or no network leaves the initials.
+ */
 @Composable
 internal fun AuthorAvatar(
     name: String,
@@ -483,7 +491,38 @@ internal fun AuthorAvatar(
             color = content,
             maxLines = 1,
         )
+        val pixels = with(LocalDensity.current) { size.roundToPx() }
+        avatarUrl(email, pixels)?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(size).clip(CircleShape),
+            )
+        }
     }
+}
+
+private val GitHubNoReply = Regex("^(\\d+)\\+[^@]+@users\\.noreply\\.github\\.com$")
+
+/**
+ * GitHub's own avatar for its noreply addresses, Gravatar for the rest. Gravatar's `d=404` makes
+ * an address without a picture fail, so the initials stay rather than a generated pattern.
+ */
+internal fun avatarUrl(
+    email: String,
+    pixels: Int,
+): String? {
+    val normalized = email.trim().lowercase()
+    if (normalized.isEmpty()) return null
+    val gitHubId = GitHubNoReply.find(normalized)?.groupValues?.get(1)
+    if (gitHubId != null) return "https://avatars.githubusercontent.com/u/$gitHubId?s=$pixels"
+    val hash =
+        MessageDigest
+            .getInstance("SHA-256")
+            .digest(normalized.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    return "https://gravatar.com/avatar/$hash?s=$pixels&d=404"
 }
 
 internal fun initialsOf(

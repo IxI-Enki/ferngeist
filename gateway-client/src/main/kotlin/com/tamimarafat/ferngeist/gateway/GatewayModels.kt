@@ -247,6 +247,8 @@ data class GatewayGitCommit(
     val authorName: String = "",
     val authorEmail: String = "",
     val authorTime: Long = 0,
+    /** 0 from a gateway that predates it. */
+    val commitTime: Long = 0,
     val pushed: Boolean = false,
     val refs: List<GatewayGitRef> = emptyList(),
 )

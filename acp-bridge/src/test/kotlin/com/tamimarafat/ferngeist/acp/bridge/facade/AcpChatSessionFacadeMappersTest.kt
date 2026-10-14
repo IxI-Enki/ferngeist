@@ -60,6 +60,14 @@ class AcpChatSessionFacadeMappersTest {
     }
 
     @Test
+    fun `a rebased commit keeps its own commit time`() {
+        val commit = GatewayGitCommit(sha = "abc", authorTime = 2, commitTime = 5).toChatGitCommit()
+
+        assertEquals(2000L, commit.authorTimeMillis)
+        assertEquals(5000L, commit.commitTimeMillis)
+    }
+
+    @Test
     fun `a log page maps seconds to millis, ref kinds, and blank head or remote to null`() {
         val page =
             GatewayGitLog(
@@ -85,6 +93,8 @@ class AcpChatSessionFacadeMappersTest {
         assertNull(page.remoteUrl)
         val commit = page.commits.single()
         assertEquals(2000L, commit.authorTimeMillis)
+        // An older gateway sends no commit time, so it falls back to the author's.
+        assertEquals(2000L, commit.commitTimeMillis)
         assertTrue(commit.isPushed)
         assertEquals(
             listOf(

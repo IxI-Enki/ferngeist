@@ -329,7 +329,7 @@ private fun GitCommitRow(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = compactCommitDate(nowMillis, commit.authorTimeMillis),
+                    text = compactCommitDate(nowMillis, commit.commitTimeMillis),
                     style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.End,
@@ -623,7 +623,7 @@ private fun commitDescription(
             }
         }
     val ago =
-        DateUtils.getRelativeTimeSpanString(commit.authorTimeMillis, nowMillis, DateUtils.MINUTE_IN_MILLIS).toString()
+        DateUtils.getRelativeTimeSpanString(commit.commitTimeMillis, nowMillis, DateUtils.MINUTE_IN_MILLIS).toString()
     return (listOf(commit.subject) + refs + listOf(commit.authorName, ago)).joinToString(", ")
 }
 

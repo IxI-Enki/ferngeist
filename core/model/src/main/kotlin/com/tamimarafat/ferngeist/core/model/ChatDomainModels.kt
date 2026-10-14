@@ -240,6 +240,8 @@ data class ChatGitCommit(
     val refs: List<ChatGitRef> = emptyList(),
     /** Reachable from a branch on `origin`, so a link to it on origin's forge resolves. */
     val isPushed: Boolean = false,
+    /** When it landed on the branch; later than [authorTimeMillis] after a rebase, amend or cherry-pick. */
+    val commitTimeMillis: Long = authorTimeMillis,
 )
 
 /**

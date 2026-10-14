@@ -280,6 +280,7 @@ internal fun GatewayGitCommit.toChatGitCommit(): ChatGitCommit =
         authorTimeMillis = authorTime * MILLIS_PER_SECOND,
         refs = refs.map { it.toChatGitRef() },
         isPushed = pushed,
+        commitTimeMillis = (commitTime.takeIf { it > 0 } ?: authorTime) * MILLIS_PER_SECOND,
     )
 
 /** An unknown kind from a newer gateway reads as a branch rather than failing the page. */

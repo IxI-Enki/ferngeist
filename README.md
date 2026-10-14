@@ -1,37 +1,32 @@
 # Ferngeist
 
+**Your coding agents, in your pocket.**
+
+Run Claude Code, Codex, Gemini CLI or another coding agent on your computer and drive it from your Android phone or tablet. Start a task from the couch, and Ferngeist notifies you when the agent finishes.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?color=4DB6AC&style=flat-square)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/github/v/release/arafatamim/ferngeist?color=4DB6AC&style=flat-square)](https://github.com/arafatamim/ferngeist/releases/latest)
 
-Ferngeist is an Android client for [ACP](https://agentclientprotocol.com/)-compatible coding agents, paired with an optional [Ferngeist ACP Gateway](https://github.com/arafatamim/ferngeist-acp-gateway) that auto-detects local agents and exposes a single authenticated endpoint to the app.
+<a href="https://play.google.com/store/apps/details?id=com.tamimarafat.ferngeist"><img alt="Get it on Google Play" src="https://github.com/pioug/google-play-badges/raw/refs/heads/main/svg/en.svg" width="200" /></a>
 
-## Download
+Or grab the APK from [GitHub Releases](https://github.com/arafatamim/ferngeist/releases/latest) (no auto-updates). Requires Android 11 or later.
 
-Ferngeist is available on Google Play.
+<img height="500" alt="A chat with a coding agent, showing its tool calls and code changes" src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" />
 
-<a href="https://play.google.com/store/apps/details?id=com.tamimarafat.ferngeist"><img alt="Google Play" src="https://github.com/pioug/google-play-badges/raw/refs/heads/main/svg/en.svg" width="200" /></a>
+## Why Ferngeist
 
-Alternatively, download the APK from [GitHub Releases](https://github.com/arafatamim/ferngeist/releases/latest) (manual updates only — Play Store is recommended for auto-updates).
+- **Leave your desk.** Your agent keeps working on your computer, and Ferngeist notifies you when it finishes or needs an answer.
+- **Review the work on your phone.** You read the agent's messages, reasoning, tool calls and code diffs in a layout sized for a small screen.
+- **Keep going on a bad connection.** Lose signal on the train and Ferngeist reconnects the session where it left off.
+- **Bring the agent you already use.** Works with any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com/), including Claude Code, Codex CLI, Gemini CLI, GitHub Copilot CLI and OpenCode ([full list](https://agentclientprotocol.com/get-started/agents)).
+- **Phones, foldables and tablets.** Ferngeist shows one pane on a phone, two on a small tablet and three on a large one.
+- **Free and open source.** Ferngeist is MIT licensed, needs no account and runs no servers of its own. The app talks to the machines you connect it to and nothing else. Details are in the [Privacy Policy](docs/privacy_policy.md).
 
-## Screenshots
-#### Phone — agents & chat
-<img height="500" alt="Agents list" src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" />
-<img height="500" alt="Chat" src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" />
+## Get started in 3 steps
 
-#### 10" tablet — three-pane workspace
-<img height="500" alt="Tablet workspace" src="fastlane/metadata/android/en-US/images/tenInchScreenshots/1.png" />
+You'll need the free [Ferngeist Gateway](https://github.com/arafatamim/ferngeist-acp-gateway) on your computer (Windows, macOS or Linux). It finds the agents you have installed and gives your phone one secure address to reach them.
 
-#### 7" tablet — two-pane
-<img height="500" alt="7-inch two-pane" src="fastlane/metadata/android/en-US/images/sevenInchScreenshots/1.png" />
-
-## Usage
-There are two ways to connect Ferngeist to an ACP agent. The gateway is the easiest if your agents run on your PC.
-
-### Option 1: Ferngeist Gateway (recommended for agents on your PC)
-
-The gateway is a small background service for Windows, macOS and Linux. It finds the ACP agents installed on your computer and gives the app one secure address to connect to.
-
-**1. Install the gateway.** Run the installer for your system:
+**1. Install the gateway**
 
 ```powershell
 # Windows (PowerShell)
@@ -43,90 +38,109 @@ irm https://arafatamim.github.io/ferngeist-acp-gateway/install.ps1 | iex
 curl -fsSL https://arafatamim.github.io/ferngeist-acp-gateway/install.sh | sh
 ```
 
-Prefer a manual install? Grab a package from the [releases page](https://github.com/arafatamim/ferngeist-acp-gateway/releases/latest).
+Packages for a manual install are on the [gateway releases page](https://github.com/arafatamim/ferngeist-acp-gateway/releases/latest).
 
-**2. Make it reachable from your phone.** The gateway only listens on your PC (`127.0.0.1:5788`), so your phone needs a public address. The simplest option is built in (Windows: run as Administrator):
+**2. Make it reachable from your phone** (on Windows, run as Administrator)
 
 ```bash
 ferngeist-gateway daemon install --remote
 ```
 
-This sets up a Tailscale Funnel and gives you a stable HTTPS URL. Prefer your own tunnel? Pass its URL with `--public-url`:
+The installer sets up a Tailscale Funnel and prints a stable HTTPS address.
 
-<details>
-<summary><b>ngrok</b></summary>
-
-```bash
-ngrok http 5788
-# Copy the HTTPS URL it prints, e.g. https://xxxx.ngrok.io
-ferngeist-gateway daemon install --public-url https://xxxx.ngrok.io
-```
-</details>
-
-<details>
-<summary><b>Cloudflare Tunnel</b></summary>
-
-```bash
-cloudflared tunnel --url http://localhost:5788
-# Copy the URL it prints, e.g. https://xxxx.trycloudflare.com
-ferngeist-gateway daemon install --public-url https://xxxx.trycloudflare.com
-```
-</details>
-
-A custom domain works the same way: `--public-url https://your.domain.example`.
-
-**3. Pair your phone.** Generate a pairing code:
+**3. Pair your phone**
 
 ```bash
 ferngeist-gateway pair
 ```
 
-Then in Ferngeist tap **Add server**, enter your tunnel URL, and enter the pairing code. Your agents will show up in the app.
+In Ferngeist, tap **Add server**, then enter the address from step 2 and the pairing code. Your agents appear in the app.
 
-More options are in the [Ferngeist Gateway docs](https://github.com/arafatamim/ferngeist-acp-gateway).
+<details>
+<summary><b>Use your own tunnel instead of Tailscale</b></summary>
 
-### Option 2: Add an ACP server manually
+The gateway listens on `127.0.0.1:5788`, which your phone can't reach. Point a tunnel at that port and pass its URL with `--public-url`.
 
-Use this if you already run an ACP agent over WebSocket. Most agents only speak `stdio`, so wrap them with a WebSocket bridge first. Check the agent's docs for the flags that start it in ACP mode.
+**ngrok**
 
-Example:
+```bash
+ngrok http 5788
+ferngeist-gateway daemon install --public-url https://xxxx.ngrok.io
+```
+
+**Cloudflare Tunnel**
+
+```bash
+cloudflared tunnel --url http://localhost:5788
+ferngeist-gateway daemon install --public-url https://xxxx.trycloudflare.com
+```
+
+A custom domain works the same way: `--public-url https://your.domain.example`.
+</details>
+
+<details>
+<summary><b>Connect to an ACP server without the gateway</b></summary>
+
+If you already run an ACP agent over WebSocket, add it directly. Most agents talk over `stdio`, so wrap yours in a WebSocket bridge first. The agent's docs list the flag that starts it in ACP mode:
+
 ```powershell
 npx -y stdio-to-ws "npx @qwen-code/qwen-code@latest --acp" --port 8769
 ```
 
 Then add `ws://<your-pc-ip>:8769` in Ferngeist as the server host.
+</details>
 
-## Supported Agents
+More options are in the [gateway docs](https://github.com/arafatamim/ferngeist-acp-gateway).
 
-Any agent implementing [ACP](https://agentclientprotocol.com/), including Codex CLI, Claude Code, Gemini CLI, GitHub Copilot CLI, and OpenCode. See the [full list](https://agentclientprotocol.com/get-started/agents).
+## Screenshots
 
-## Tech Stack
+<img height="500" alt="All your agents in one list" src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" /> <img height="500" alt="Every session with an agent, grouped by day" src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" />
+
+*Your agents, and the sessions you've had with each one.*
+
+<img height="500" alt="Three-pane tablet workspace" src="fastlane/metadata/android/en-US/images/tenInchScreenshots/1.png" />
+
+*On a tablet, agents, sessions and chat sit side by side.*
+
+<img height="500" alt="Two-pane layout on a 7-inch tablet" src="fastlane/metadata/android/en-US/images/sevenInchScreenshots/1.png" />
+
+## FAQ
+
+**Does my code leave my computer?** Ferngeist sends your prompts to the agent on your computer and shows its replies. Your agent still sends code to its model provider, as it does when you sit at your desk.
+
+**Do I need Tailscale?** No. Tailscale is the quickest option, and any HTTPS tunnel or your own domain works too.
+
+**Is there a build without Google services?** Yes. The `foss` build drops ML Kit and Play Services; push notifications then need a [UnifiedPush](https://unifiedpush.org) app such as ntfy.
+
+**Found a bug or want a feature?** Open an issue on [GitHub](https://github.com/arafatamim/ferngeist/issues).
+
+## For developers
+
+### Tech Stack
 
 - Kotlin 2.4 / Jetpack Compose + Material 3
 - Hilt / Room / Kotlin Coroutines and Flow / KSP
 - ACP Kotlin SDK
 
-Requires Android 11+ (`minSdk = 30`).
-
-## Build
+### Build
 
 The app has two product flavours under the `distribution` dimension:
 
-- `google` — the full build with ML Kit QR scanning. This is what ships to Google
+- `google`: the full build with ML Kit QR scanning. It ships to Google
   Play and GitHub releases. Push notifications arrive through a
   [UnifiedPush](https://unifiedpush.org) distributor if you have one (e.g. ntfy),
-  otherwise through Google Play Services — no Firebase project involved.
-- `foss` — a Fully Open-Source Software build for F-Droid. It omits ML Kit, so QR
-  scanning is replaced by the manual pairing-code field, and it has no Play Services
+  otherwise through Google Play Services. No Firebase project is involved.
+- `foss`: a Fully Open-Source Software build for F-Droid. It omits ML Kit, so you
+  type the pairing code instead of scanning a QR code, and it has no Play Services
   fallback: **push notifications need a UnifiedPush distributor app** such as ntfy.
-  Without one the agent keeps running on your gateway; you just don't get tapped when
-  it finishes.
+  Without one the agent keeps running on your gateway, but you get no notification
+  when it finishes.
 
 ```powershell
 cmd /c gradlew.bat :app:assembleGoogleDebug
 ```
 
-## Architecture
+### Architecture
 
 ```mermaid
 flowchart LR
@@ -176,7 +190,7 @@ flowchart LR
 5. `gateway-client` handles pairing and gateway REST calls; the bridge uses it when a chat starts from a gateway-backed agent.
 6. Manual servers connect directly to an ACP agent through the SDK, while gateway-backed agents go through the optional Ferngeist ACP Gateway first.
 
-## Project Structure
+### Project Structure
 
 ```
 app/                  Android entry point, navigation, theme, DI
@@ -191,17 +205,6 @@ gateway-client/       Ferngeist ACP Gateway HTTP client
 gradle/               Version catalog
 ```
 
-## Reporting Issues
-Bug reports and feature requests welcome on [GitHub Issues](https://github.com/arafatamim/ferngeist/issues).
-
-## Further Reading
-- [Introduction to Agent Client Protocol](https://agentclientprotocol.com/get-started/introduction)
-- [Jetpack Compose](https://developer.android.com/compose)
-
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Privacy Policy
-
-See [Privacy Policy](docs/privacy_policy.md).

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -54,12 +53,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -88,6 +87,7 @@ import java.security.MessageDigest
 // Fixed so graph segments in neighbouring rows meet exactly at the row boundary.
 private val CommitRowHeight = 48.dp
 private val LaneWidth = 10.dp
+private val DayHeaderHeight = 32.dp
 private const val MAX_LANES = 6
 private const val MAX_REF_CHARS = 12
 private const val LOADING_MORE_ROWS = 3
@@ -156,8 +156,18 @@ internal fun GitHistoryList(
             .collect { currentOnLoadMore() }
     }
     val rows = remember(commits) { layoutGraph(commits) }
+    val days = remember(commits) { commits.map { localDay(it.commitTimeMillis) } }
+    // A date header sits between days, so bends never cross it.
     val strokes =
-        remember(rows) { rows.indices.map { strokesFor(rows[it], rows.getOrNull(it - 1), rows.getOrNull(it + 1)) } }
+        remember(rows, days) {
+            rows.indices.map { i ->
+                strokesFor(
+                    rows[i],
+                    rows.getOrNull(i - 1)?.takeIf { days[i - 1] == days[i] },
+                    rows.getOrNull(i + 1)?.takeIf { days[i + 1] == days[i] },
+                )
+            }
+        }
     val reach = remember(strokes) { graphReach(strokes) }
     // Width follows the widest loaded row, capped, so the text column holds still.
     val laneCount =
@@ -167,16 +177,29 @@ internal fun GitHistoryList(
         }
     Box(modifier = modifier.fillMaxWidth()) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
-            itemsIndexed(commits, key = { _, commit -> commit.sha }) { index, commit ->
-                GitCommitRow(
-                    commit = commit,
-                    row = rows[index],
-                    strokes = strokes[index],
-                    reach = reach[index],
-                    laneCount = laneCount,
-                    nowMillis = nowMillis,
-                    onClick = { onCommitClick(commit) },
-                )
+            commits.forEachIndexed { index, commit ->
+                if (index == 0 || days[index - 1] != days[index]) {
+                    item(key = "day-${commit.sha}") {
+                        GitDayHeader(
+                            dayMillis = commit.commitTimeMillis,
+                            nowMillis = nowMillis,
+                            // The lines running from the day above into this one.
+                            through = rows.getOrNull(index - 1)?.down.orEmpty(),
+                            laneCount = laneCount,
+                        )
+                    }
+                }
+                item(key = commit.sha) {
+                    GitCommitRow(
+                        commit = commit,
+                        row = rows[index],
+                        strokes = strokes[index],
+                        reach = reach[index],
+                        laneCount = laneCount,
+                        nowMillis = nowMillis,
+                        onClick = { onCommitClick(commit) },
+                    )
+                }
             }
             if (isLoadingMore) {
                 item(key = "loadingMore") {
@@ -415,6 +438,48 @@ private fun GitGraphCell(
     )
 }
 
+/** The day's label beside the graph; [through] lines carry on beside it so the graph stays whole. */
+@Composable
+private fun GitDayHeader(
+    dayMillis: Long,
+    nowMillis: Long,
+    through: List<GraphEdge>,
+    laneCount: Int,
+) {
+    val palette = graphPalette()
+    val lanes = through.map { it.to }
+    Row(
+        modifier = Modifier.fillMaxWidth().height(DayHeaderHeight).padding(end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(
+            modifier =
+                Modifier
+                    .width(LaneWidth * ((lanes.maxOrNull() ?: 0) + 1).coerceAtMost(laneCount) + 6.dp)
+                    .fillMaxHeight()
+                    .drawBehind {
+                        through.forEach { e ->
+                            val x = (6.dp + LaneWidth * e.to.coerceAtMost(laneCount - 1) + LaneWidth / 2).toPx()
+                            drawLine(
+                                color = palette[e.color % palette.size],
+                                start = Offset(x, 0f),
+                                end = Offset(x, size.height),
+                                strokeWidth = 2.dp.toPx(),
+                            )
+                        }
+                    },
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = dayLabel(dayMillis, nowMillis),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.weight(1f).semantics { heading() },
+        )
+    }
+}
+
 @Composable
 internal fun RefBadge(
     ref: ChatGitRef,
@@ -552,60 +617,6 @@ internal fun initialsOf(
             else -> email.firstOrNull()?.toString() ?: "?"
         }
     return letters.uppercase()
-}
-
-/** How a commit's age is shown in the narrow date column. */
-internal sealed interface CommitAge {
-    data object Now : CommitAge
-
-    data class Minutes(
-        val count: Int,
-    ) : CommitAge
-
-    data class Hours(
-        val count: Int,
-    ) : CommitAge
-
-    /** Within the last week: show the weekday. */
-    data object ThisWeek : CommitAge
-
-    data object Older : CommitAge
-}
-
-internal fun commitAge(
-    nowMillis: Long,
-    thenMillis: Long,
-): CommitAge {
-    // Future timestamps (clock skew between gateway and phone) read as "now".
-    val elapsed = (nowMillis - thenMillis).coerceAtLeast(0)
-    return when {
-        elapsed < DateUtils.MINUTE_IN_MILLIS -> CommitAge.Now
-        elapsed < DateUtils.HOUR_IN_MILLIS -> CommitAge.Minutes((elapsed / DateUtils.MINUTE_IN_MILLIS).toInt())
-        elapsed < DateUtils.DAY_IN_MILLIS -> CommitAge.Hours((elapsed / DateUtils.HOUR_IN_MILLIS).toInt())
-        elapsed < DateUtils.WEEK_IN_MILLIS -> CommitAge.ThisWeek
-        else -> CommitAge.Older
-    }
-}
-
-@Composable
-private fun compactCommitDate(
-    nowMillis: Long,
-    thenMillis: Long,
-): String {
-    val context = LocalContext.current
-    return when (val age = commitAge(nowMillis, thenMillis)) {
-        CommitAge.Now -> stringResource(R.string.chat_git_date_now)
-        is CommitAge.Minutes -> stringResource(R.string.chat_git_date_minutes, age.count)
-        is CommitAge.Hours -> stringResource(R.string.chat_git_date_hours, age.count)
-        CommitAge.ThisWeek ->
-            DateUtils.formatDateTime(
-                context,
-                thenMillis,
-                DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY,
-            )
-        // Without a year flag DateUtils adds the year only when it is not the current one.
-        CommitAge.Older -> DateUtils.formatDateTime(context, thenMillis, DateUtils.FORMAT_ABBREV_MONTH)
-    }
 }
 
 @Composable

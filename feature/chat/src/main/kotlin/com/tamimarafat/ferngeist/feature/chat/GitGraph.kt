@@ -111,7 +111,8 @@ internal data class GraphStroke(
 /**
  * The strokes [row] draws. A lane change bends over a full row height, node to node, rather
  * than inside one half row, so it spills into the neighbour and that neighbour drops the
- * straight half it would otherwise draw in the same lane.
+ * straight half it would otherwise draw in the same lane. With no neighbour on that side (the
+ * list's end, or a date header between them) the bend stays inside its own half row.
  */
 internal fun strokesFor(
     row: GraphRow,
@@ -123,7 +124,7 @@ internal fun strokesFor(
     val up =
         row.up.mapNotNull { e ->
             when {
-                e.from != e.to -> GraphStroke(e.from, e.to, e.color, -HALF, HALF)
+                e.from != e.to -> GraphStroke(e.from, e.to, e.color, if (prev != null) -HALF else 0f, HALF)
                 e.from in bentIn -> null
                 else -> GraphStroke(e.from, e.to, e.color, 0f, HALF)
             }
@@ -131,7 +132,7 @@ internal fun strokesFor(
     val down =
         row.down.mapNotNull { e ->
             when {
-                e.from != e.to -> GraphStroke(e.from, e.to, e.color, HALF, 1 + HALF)
+                e.from != e.to -> GraphStroke(e.from, e.to, e.color, HALF, if (next != null) 1 + HALF else 1f)
                 e.from in bentOut -> null
                 else -> GraphStroke(e.from, e.to, e.color, HALF, 1f)
             }

@@ -129,4 +129,22 @@ class GitGraphTest {
         // m and a only see the half of a bend that leaves or lands on their own node.
         assertEquals(listOf(0.5f, 1f, 1f, 1f, 0.5f), graphReach(strokes))
     }
+
+    @Test
+    fun bends_withNoNeighbour_stayInsideTheirHalfRow() {
+        val rows =
+            layoutGraph(
+                listOf(
+                    commit("m", "b", "s1"),
+                    commit("b", "a"),
+                    commit("s1", "a"),
+                    commit("a"),
+                ),
+            )
+
+        // A date header below m: its fork bends inside m's bottom half instead of reaching b.
+        assertTrue(GraphStroke(0, 1, 1, 0.5f, 1f) in strokesFor(rows[0], prev = null, next = null))
+        // A header above a: the join from lane 1 bends inside a's top half.
+        assertTrue(GraphStroke(1, 0, 1, 0f, 0.5f) in strokesFor(rows[3], prev = null, next = null))
+    }
 }

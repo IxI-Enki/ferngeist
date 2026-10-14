@@ -104,6 +104,7 @@ private val ROW_HEIGHT = 36.dp
 internal val RAIL_ROW_HEIGHT get() = ROW_HEIGHT
 internal val RAIL_TEXT_START get() = ICON_LEFT
 private val RAIL_STROKE = 1.5.dp
+private val CHEVRON_SIZE = 16.dp
 
 private const val CONNECTOR_MS = 480
 private const val ROW_REVEAL_MS = 360
@@ -416,7 +417,19 @@ internal fun ToolGroupHeader(
         modifier = Modifier.fillMaxWidth().handCursor().clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The summary wraps freely; the diff total and chevron hold the end. A new summary rises
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = stringResource(R.string.chat_tool_call_details_desc),
+            tint = baseColor,
+            // Centred on the trunk, so the open chevron points straight down the rail.
+            modifier =
+                Modifier
+                    .padding(start = TRUNK_X - CHEVRON_SIZE / 2)
+                    .size(CHEVRON_SIZE)
+                    .graphicsLayer { rotationZ = rotation },
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        // The summary wraps freely; the diff total holds the end. A new summary rises
         // in as the old one rises out, so a change of state reads as the next step.
         val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
         val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
@@ -451,13 +464,6 @@ internal fun ToolGroupHeader(
             )
         }
         stats?.let { DiffStatsRow(it, modifier = Modifier.padding(start = 8.dp)) }
-        Spacer(modifier = Modifier.width(4.dp))
-        Icon(
-            imageVector = Icons.Rounded.ChevronRight,
-            contentDescription = stringResource(R.string.chat_tool_call_details_desc),
-            tint = baseColor,
-            modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = rotation },
-        )
     }
 }
 

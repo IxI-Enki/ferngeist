@@ -712,8 +712,7 @@ class ChatViewModel
                 is ChatIntent.DenyPermission -> sessionCoordinator.denyPermission(intent.toolCallId)
                 is ChatIntent.RetryLoad -> sessionCoordinator.loadSession()
                 is ChatIntent.RetryMessage -> offlineQueue.retryMessage(intent.clientId)
-                is ChatIntent.RefreshGitStatus ->
-                    state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
+                is ChatIntent.RefreshGitStatus -> refreshGit()
                 is ChatIntent.RemoveQueuedMessage,
                 is ChatIntent.ForceSendMessage,
                 is ChatIntent.LoadGitDiff,
@@ -726,6 +725,12 @@ class ChatViewModel
                 is ChatIntent.CancelElicitation,
                 -> handleAuxIntent(intent)
             }
+        }
+
+        private fun refreshGit() {
+            state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
+            // A turn may have committed, so history once opened follows along.
+            if (state.value.gitHistory.isLoaded) gitHistoryLoader.loadLog(more = false)
         }
 
         /** One-shot intents outside the send/streaming core: diff fetch, hint flag, session close. */

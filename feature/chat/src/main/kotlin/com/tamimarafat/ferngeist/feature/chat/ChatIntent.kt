@@ -59,7 +59,7 @@ sealed interface ChatIntent {
         val clientId: String,
     ) : ChatIntent
 
-    /** Re-fetch the git status for the gateway-backed working tree (e.g. after a send). */
+    /** Re-fetch the git status, and history once it is loaded, for the gateway-backed working tree (e.g. after a turn). */
     data object RefreshGitStatus : ChatIntent
 
     /**

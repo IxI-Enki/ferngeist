@@ -72,6 +72,22 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
         }
 
     @Test
+    fun `a git refresh reloads history only once it has been opened`() =
+        runTest {
+            val (viewModel, facade) = gatewayViewModel { gitLog = { _, _ -> page("h", false, "a") } }
+
+            viewModel.dispatch(ChatIntent.RefreshGitStatus)
+            advanceUntilIdle()
+            assertEquals(0, facade.gitLogRequests.size)
+
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
+            advanceUntilIdle()
+            viewModel.dispatch(ChatIntent.RefreshGitStatus)
+            advanceUntilIdle()
+            assertEquals(listOf(null to 0, null to 0), facade.gitLogRequests)
+        }
+
+    @Test
     fun `a vanished head on a later page reloads page one instead of failing`() =
         runTest {
             val (viewModel, facade) =

@@ -416,7 +416,11 @@ private fun GitGraphCell(
 }
 
 @Composable
-internal fun RefBadge(ref: ChatGitRef) {
+internal fun RefBadge(
+    ref: ChatGitRef,
+    /** Cut long names short, for rows with no room to spare. */
+    truncate: Boolean = true,
+) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(percent = 50)
     val (container, content) =
@@ -447,9 +451,10 @@ internal fun RefBadge(ref: ChatGitRef) {
                 Icon(Icons.Outlined.Sell, contentDescription = null, modifier = Modifier.size(12.dp))
             }
             Text(
-                text = ref.name.ellipsize(MAX_REF_CHARS),
+                text = if (truncate) ref.name.ellipsize(MAX_REF_CHARS) else ref.name,
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

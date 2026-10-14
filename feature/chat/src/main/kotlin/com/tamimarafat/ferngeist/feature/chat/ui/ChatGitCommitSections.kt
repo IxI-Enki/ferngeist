@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,20 +33,14 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -58,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +62,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -85,6 +82,7 @@ import java.net.URI
 
 private const val SHORT_SHA = 7
 private const val BODY_COLLAPSED_LINES = 4
+private const val SUBJECT_COLLAPSED_LINES = 3
 private const val COPIED_MILLIS = 1_500L
 
 /**
@@ -153,11 +151,10 @@ private fun GitCommitHeader(
                 )
             }
         }
-        Text(
+        ExpandableText(
             text = commit.subject,
+            collapsedLines = SUBJECT_COLLAPSED_LINES,
             style = MaterialTheme.typography.titleMedium,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
             // Centres a one-line subject on the 48dp back button; longer ones grow downward.
             modifier = Modifier.weight(1f).padding(top = 12.dp),
         )
@@ -310,50 +307,68 @@ private fun ShaChip(sha: String) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GitCommitRefs(refs: List<ChatGitRef>) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        refs.sortedBy { it.order() }.forEach { ref ->
-            // Badges cut long names short; a long press shows the whole one.
-            TooltipBox(
-                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-                tooltip = { PlainTooltip { Text(ref.name) } },
-                state = rememberTooltipState(),
-            ) {
-                RefBadge(ref)
-            }
-        }
+        refs.sortedBy { it.order() }.forEach { RefBadge(it, truncate = false) }
     }
 }
 
 @Composable
 private fun GitCommitBody(body: String) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    val label =
-        stringResource(if (expanded) R.string.chat_git_commit_body_collapse else R.string.chat_git_commit_body_expand)
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(
+        ExpandableText(
             text = body,
+            collapsedLines = BODY_COLLAPSED_LINES,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = if (expanded) Int.MAX_VALUE else BODY_COLLAPSED_LINES,
-            overflow = TextOverflow.Ellipsis,
-            modifier =
-                Modifier
-                    .handCursor()
-                    .clickable(onClickLabel = label, role = Role.Button) { expanded = !expanded }
-                    .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
         )
     }
+}
+
+/** Text cut at [collapsedLines] that a tap opens in full; text that fits is not tappable. */
+@Composable
+private fun ExpandableText(
+    text: String,
+    collapsedLines: Int,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    contentPadding: PaddingValues = PaddingValues(),
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var overflows by remember { mutableStateOf(false) }
+    val label =
+        stringResource(if (expanded) R.string.chat_git_commit_body_collapse else R.string.chat_git_commit_body_expand)
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
+        modifier =
+            modifier
+                .then(
+                    if (overflows) {
+                        Modifier
+                            .handCursor()
+                            .clickable(onClickLabel = label, role = Role.Button) { expanded = !expanded }
+                    } else {
+                        Modifier
+                    },
+                ).animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
+                .padding(contentPadding),
+    )
 }
 
 @Composable

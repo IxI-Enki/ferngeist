@@ -348,10 +348,14 @@ class GatewayRepositoryImpl
             runtimeId: String,
             path: String?,
             acpSessionId: String?,
+            commit: String?,
+            oldPath: String?,
         ): List<ToolCallContent.Diff> {
             val segments = arrayOf("v1", "runtimes", runtimeId, "git", "diff")
             val pathQuery = path?.takeIf { it.isNotBlank() }?.let { mapOf("path" to it) } ?: emptyMap()
-            val query = pathQuery + acpSessionQuery(acpSessionId)
+            val commitQuery =
+                listOfNotNull(commit?.let { "commit" to it }, oldPath?.let { "oldPath" to it }).toMap()
+            val query = pathQuery + commitQuery + acpSessionQuery(acpSessionId)
             return if (pathQuery.isEmpty()) {
                 // Whole-tree: gateway returns a JSON array of ToolCallContentDiff objects.
                 httpClient.getJson(
@@ -376,6 +380,47 @@ class GatewayRepositoryImpl
                 listOf(single)
             }
         }
+
+        override suspend fun fetchGitLog(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            head: String?,
+            skip: Int,
+            limit: Int,
+            acpSessionId: String?,
+        ): GatewayGitLog =
+            httpClient.getJson(
+                json = json,
+                scheme = scheme,
+                host = host,
+                credential = gatewayCredential,
+                segments = arrayOf("v1", "runtimes", runtimeId, "git", "log"),
+                query =
+                    listOfNotNull(
+                        head?.let { "head" to it },
+                        "skip" to skip.toString(),
+                        "limit" to limit.toString(),
+                    ).toMap() + acpSessionQuery(acpSessionId),
+            )
+
+        override suspend fun fetchGitCommit(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            sha: String,
+            acpSessionId: String?,
+        ): GatewayGitCommitFiles =
+            httpClient.getJson(
+                json = json,
+                scheme = scheme,
+                host = host,
+                credential = gatewayCredential,
+                segments = arrayOf("v1", "runtimes", runtimeId, "git", "commits", sha),
+                query = acpSessionQuery(acpSessionId),
+            )
 
         override suspend fun completePairing(
             scheme: String,

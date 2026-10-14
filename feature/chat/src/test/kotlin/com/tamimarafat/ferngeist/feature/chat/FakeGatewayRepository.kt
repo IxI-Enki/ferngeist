@@ -1,6 +1,8 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import com.tamimarafat.ferngeist.gateway.GatewayAgent
+import com.tamimarafat.ferngeist.gateway.GatewayGitCommitFiles
+import com.tamimarafat.ferngeist.gateway.GatewayGitLog
 import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 
@@ -139,7 +141,29 @@ class FakeGatewayRepository : GatewayRepository {
         runtimeId: String,
         path: String?,
         acpSessionId: String?,
+        commit: String?,
+        oldPath: String?,
     ) = TODO()
+
+    override suspend fun fetchGitLog(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        head: String?,
+        skip: Int,
+        limit: Int,
+        acpSessionId: String?,
+    ): GatewayGitLog = TODO()
+
+    override suspend fun fetchGitCommit(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        sha: String,
+        acpSessionId: String?,
+    ): GatewayGitCommitFiles = TODO()
 
     override suspend fun createCustomAgent(
         scheme: String,

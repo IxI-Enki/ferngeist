@@ -216,6 +216,8 @@ data class GatewayChangedFile(
      * must not call the diff endpoint (which 422s on a gitlink).
      */
     val isDir: Boolean = false,
+    /** The pre-rename path, set for renames and copies in a commit's file list. */
+    val oldPath: String? = null,
 )
 
 @Serializable
@@ -223,6 +225,44 @@ data class GatewayGitStatus(
     val branch: String = "",
     val ahead: Int = 0,
     val behind: Int = 0,
+    val changed: List<GatewayChangedFile> = emptyList(),
+)
+
+/** One page of `GET /git/log`. [head] is `""` for an empty repository; [remoteUrl] is `""` without `origin`. */
+@Serializable
+data class GatewayGitLog(
+    val head: String = "",
+    val hasMore: Boolean = false,
+    val remoteUrl: String = "",
+    val commits: List<GatewayGitCommit> = emptyList(),
+)
+
+/** A commit of `GET /git/log`; times are Unix seconds. */
+@Serializable
+data class GatewayGitCommit(
+    val sha: String,
+    val parents: List<String> = emptyList(),
+    val subject: String = "",
+    val body: String = "",
+    val authorName: String = "",
+    val authorEmail: String = "",
+    val authorTime: Long = 0,
+    val pushed: Boolean = false,
+    val refs: List<GatewayGitRef> = emptyList(),
+)
+
+/** [kind] is `branch`, `remote`, `tag`, or `head` (detached). */
+@Serializable
+data class GatewayGitRef(
+    val name: String,
+    val kind: String,
+    val isHead: Boolean = false,
+)
+
+/** `GET /git/commits/{sha}`: what the commit changed, against its first parent. */
+@Serializable
+data class GatewayGitCommitFiles(
+    val sha: String,
     val changed: List<GatewayChangedFile> = emptyList(),
 )
 

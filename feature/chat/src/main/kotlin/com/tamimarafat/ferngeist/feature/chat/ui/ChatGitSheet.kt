@@ -31,7 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,6 +52,9 @@ import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.feature.chat.GitHistoryState
 import com.tamimarafat.ferngeist.feature.chat.R
+import kotlinx.coroutines.delay
+
+private const val DATE_TICK_MILLIS = 60_000L
 
 /**
  * Modal bottom sheet for the chat's git working tree: a Changes tab (branch, totals, changed
@@ -310,7 +313,13 @@ private fun GitHistoryBody(
     onCommitClick: (String) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
 ) {
-    val nowMillis = remember { System.currentTimeMillis() }
+    // Ticks so relative dates like "2m" keep up while the sheet stays open.
+    val nowMillis by produceState(System.currentTimeMillis()) {
+        while (true) {
+            delay(DATE_TICK_MILLIS)
+            value = System.currentTimeMillis()
+        }
+    }
     when {
         history.commits.isEmpty() && history.error != null ->
             ErrorStateCard(

@@ -60,6 +60,9 @@ platform :android do
       skip_upload_aab: true,
       skip_upload_apk: true,
       skip_upload_metadata: true,
+      # Notes are separate from metadata, and with no binary there is no version code to pick
+      # them by; the promoted release keeps the notes it was uploaded with.
+      skip_upload_changelogs: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
     )

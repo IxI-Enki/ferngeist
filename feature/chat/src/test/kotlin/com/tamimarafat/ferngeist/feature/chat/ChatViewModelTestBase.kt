@@ -79,6 +79,7 @@ open class ChatViewModelTestBase {
             presence = presence,
             launchableTargetRepository = launchableTargetRepository,
             turnTimingRepository = InMemoryTurnTimingRepository(),
+            ioDispatcher = mainDispatcherRule.dispatcher,
             savedStateHandle = savedStateHandle,
         )
 }
@@ -112,7 +113,7 @@ internal fun newTestHub(gatewayRepository: GatewayRepository = FakeGatewayReposi
 /** JUnit rule that swaps the main dispatcher for tests. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainDispatcherRule(
-    private val dispatcher: TestDispatcher = StandardTestDispatcher(),
+    val dispatcher: TestDispatcher = StandardTestDispatcher(),
 ) : TestWatcher() {
     override fun starting(description: Description) {
         Dispatchers.setMain(dispatcher)

@@ -56,6 +56,7 @@ class ChatViewModelFactoryTest {
             presence = presence,
             launchableTargetRepository = mockk<LaunchableTargetRepository>(relaxed = true),
             turnTimingRepository = mockk<TurnTimingRepository>(relaxed = true),
+            ioDispatcher = Dispatchers.Unconfined,
         )
 
     @Before

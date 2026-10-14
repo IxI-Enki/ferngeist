@@ -24,7 +24,7 @@ import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
 import com.tamimarafat.ferngeist.core.model.repository.TurnTimingRepository
 import com.tamimarafat.ferngeist.core.model.sessionTitleOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +52,7 @@ class ChatViewModel
         private val presence: ChatSessionPresence,
         private val launchableTargetRepository: LaunchableTargetRepository,
         private val turnTimingRepository: TurnTimingRepository,
+        @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
         private val savedStateHandle: SavedStateHandle,
     ) : MviViewModel<ChatState, ChatIntent, ChatEffect>(initialChatState()) {
         companion object {
@@ -332,7 +333,7 @@ class ChatViewModel
                             // gateway id below is an UPDATE that also needs the row to exist.
                             val minted =
                                 SessionSummary(id = trackedSessionId, cwd = cwd, updatedAt = System.currentTimeMillis())
-                            withContext(Dispatchers.IO) { sessionRepository.upsertSession(serverId, minted) }
+                            withContext(ioDispatcher) { sessionRepository.upsertSession(serverId, minted) }
                         }
                         // chatId is "$serverId/$sessionId" and carries the REAL
                         // session id even for create-on-arrival chats, where the
@@ -342,7 +343,7 @@ class ChatViewModel
                         val gatewaySessionId = presence.gatewaySessionIdFor(chatId)
                         if (gatewaySessionId != null) {
                             val realSessionId = chatId.substringAfter('/')
-                            withContext(Dispatchers.IO) {
+                            withContext(ioDispatcher) {
                                 sessionRepository.setGatewaySessionId(serverId, realSessionId, gatewaySessionId)
                             }
                         }
@@ -435,7 +436,7 @@ class ChatViewModel
             if (keys.isEmpty()) return messages
             val stored =
                 storedTurns?.takeIf { storedTurnsSession == sessionId }
-                    ?: withContext(Dispatchers.IO) { turnTimingRepository.getTimings(sessionId) }
+                    ?: withContext(ioDispatcher) { turnTimingRepository.getTimings(sessionId) }
                         .toMutableMap()
                         .also {
                             storedTurns = it
@@ -444,7 +445,7 @@ class ChatViewModel
             val fresh = messages.unstoredTurns(keys, stored)
             if (fresh.isNotEmpty()) {
                 stored.putAll(fresh)
-                viewModelScope.launch(Dispatchers.IO) {
+                viewModelScope.launch(ioDispatcher) {
                     fresh.forEach { (key, timing) -> turnTimingRepository.record(sessionId, key, timing) }
                 }
             }
@@ -534,7 +535,7 @@ class ChatViewModel
          */
         private suspend fun touchSessionAfterTurn() {
             val id = durableSessionId ?: return
-            withContext(Dispatchers.IO) { sessionRepository.touchSession(serverId, id, System.currentTimeMillis()) }
+            withContext(ioDispatcher) { sessionRepository.touchSession(serverId, id, System.currentTimeMillis()) }
         }
 
         /**

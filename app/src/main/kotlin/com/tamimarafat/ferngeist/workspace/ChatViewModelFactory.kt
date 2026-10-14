@@ -9,8 +9,10 @@ import com.tamimarafat.ferngeist.core.model.repository.TurnTimingRepository
 import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import com.tamimarafat.ferngeist.feature.chat.ChatScrollStateStore
 import com.tamimarafat.ferngeist.feature.chat.ChatViewModel
+import com.tamimarafat.ferngeist.feature.chat.IoDispatcher
 import com.tamimarafat.ferngeist.feature.chat.PendingPromptStore
 import com.tamimarafat.ferngeist.feature.chat.SwitcherHintStore
+import kotlinx.coroutines.CoroutineDispatcher
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,6 +36,7 @@ class ChatViewModelFactory
         private val presence: ChatSessionPresence,
         private val launchableTargetRepository: LaunchableTargetRepository,
         private val turnTimingRepository: TurnTimingRepository,
+        @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         /**
          * A [ChatViewModel] reads every id out of its handle, so blank ids would build a
@@ -59,6 +62,7 @@ class ChatViewModelFactory
                 presence = presence,
                 launchableTargetRepository = launchableTargetRepository,
                 turnTimingRepository = turnTimingRepository,
+                ioDispatcher = ioDispatcher,
                 // `SavedStateHandle` is public API; lint's VisibleForTests check calls the
                 // constructor test-only here, so this one function suppresses it.
                 savedStateHandle =

@@ -5,7 +5,7 @@ layout: page
 
 # Privacy Policy for Ferngeist
 
-**Last Updated: 2026-04-13**
+**Last Updated: 2026-10-15**
 
 Ferngeist ("we", "us", or "our") operates the Ferngeist Android application (the "App"). We also maintain the separately-distributed [Ferngeist ACP Gateway](https://github.com/arafatamim/ferngeist-acp-gateway) (the "Gateway"). This page informs you of our policies regarding the collection, use, and disclosure of personal data when you use our software and the choices you have associated with that data.
 
@@ -45,6 +45,13 @@ When the Gateway is in use, it contacts the following external service:
 
 This contact does not occur if the Gateway is not installed.
 
+#### Commit Author Avatars (App)
+When you open the git history of a working tree, the App shows each commit author's picture. To fetch it, the App sends:
+- **GitHub** (`avatars.githubusercontent.com`) — the numeric account ID, for authors using a GitHub no-reply email address.
+- **Gravatar** (`gravatar.com`) — a SHA-256 hash of the author's email address, for everyone else.
+
+The email address itself is never sent, but a hash of a known address can be matched to it. Gravatar and GitHub also see your IP address and standard request metadata. If no picture exists, the App shows the author's initials.
+
 ### Tunnel Services (Gateway Only)
 If you configure the Gateway with a public base URL (e.g., via ngrok or Cloudflare Tunnel), your App-to-Gateway traffic passes through that tunnel provider's infrastructure. We do not control these services and recommend reviewing their privacy policies before use. By default, the Gateway binds to `127.0.0.1` only and does not expose traffic externally.
 
@@ -56,7 +63,7 @@ The information stored locally on your devices is used solely to:
 - Generate local logs for troubleshooting and diagnostics.
 
 ## 3. Disclosure of Data
-We do not sell, trade, or otherwise transfer your personal data to outside parties. Your data remains on your devices or is transmitted only to the servers and services you explicitly configure.
+We do not sell, trade, or otherwise transfer your personal data to outside parties. Your data remains on your devices or is transmitted only to the servers and services you explicitly configure, apart from the avatar requests described above.
 
 ## 4. Security of Data
 

@@ -40,9 +40,7 @@ internal fun rememberRunway(
     bottomPadding: Dp,
 ): Runway {
     val hold = remember { RunwayHold() }
-    // The latest prompt, from the frame it appears: runwayMessageId is only set after that frame, and
-    // for that frame the old prompt would hand its reserve to the new one.
-    val prompt = scroll.runwayMessageId?.let { windowed.lastOrNull { it.role == ChatMessage.Role.USER } }
+    val prompt = scroll.runwayPrompt(windowed)
     val runway =
         Runway(
             promptKey = prompt?.let(itemKey),

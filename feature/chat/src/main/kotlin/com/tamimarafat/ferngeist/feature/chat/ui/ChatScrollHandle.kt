@@ -168,6 +168,16 @@ internal class ChatScrollHandle(
         bottomPaddingPx = px
     }
 
+    /**
+     * The prompt the runway sits under, from the frame it appears: [runwayMessageId] is only set after
+     * that frame, and on a chat's first send it is still null then, so the glide would find nothing to
+     * do and the reserve would land a frame later, below the viewport.
+     */
+    fun runwayPrompt(messages: List<ChatMessage>): ChatMessage? {
+        val latest = messages.lastOrNull { it.role == ChatMessage.Role.USER } ?: return null
+        return latest.takeIf { runwayMessageId != null || (awaitingTurn && it.id != userIdAtSend) }
+    }
+
     fun onSendMessage() {
         userIdAtSend = lastUserId
         awaitingTurn = true

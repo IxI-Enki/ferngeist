@@ -14,6 +14,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -30,6 +31,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlin.math.abs
@@ -51,22 +53,11 @@ private const val EASE_MAX_VIEWPORTS = 2.5f
 /** Duration of a short settle onto the end, for a jump chasing a stream. */
 private const val SETTLE_MS = 220
 
-/** Most chase eases a jump to the bottom runs after its main ease; following takes over after. */
+/** Most chase eases a jump to the bottom runs after its main ease. */
 private const val CHASE_PASSES = 3
 
-/** Coming to rest this close to the end hands the transcript back to following. */
+/** Within this of the end counts as at the end: following, and no jump button. */
 private val RELATCH_DISTANCE = 48.dp
-
-/**
- * A jump in the end this far past it, in [RELATCH_DISTANCE]s (96dp), eases in instead of pinning;
- * the ease hands back to pinning once within [CATCH_UP_END] (12dp), above the lag an ease keeps
- * behind a steady stream.
- */
-private const val CATCH_UP_START = 2f
-private const val CATCH_UP_END = 0.25f
-
-/** Quiet frames the follow keeps pinning after the last growth, for animations still settling. */
-private const val IDLE_FRAMES = 30
 
 /** Share of the remaining distance a glide covers per 60 fps frame. */
 private const val GLIDE_PER_FRAME = 0.15f
@@ -77,19 +68,19 @@ private const val MAX_FRAME_SECONDS = 1f / 30f
 private const val FRAMES_PER_SECOND = 60f
 
 /**
- * The transcript's scroll model: following the end, or holding wherever the reader left it.
- *
- * A top-anchored list holds still when content grows, which is already right for a reader
- * scrolled up. While following, one frame loop pins the list onto its end every frame something
- * can grow; the pin is a position request, so it lands in the same measure as the growth. A user
- * scroll stops following; coming to rest near the end resumes it.
+ * The transcript's scroll model. Streaming text never moves the list: a top-anchored list holds
+ * still while content grows, and a reply that runs past the viewport goes on below it, behind the
+ * jump button. The list moves only to open a chat at its end, to glide a sent prompt up, to keep
+ * the end in view while the keyboard or composer moves (if the reader is at the end), for the jump
+ * buttons, and for a live tool rail: while one is open the end is followed, and once the last one
+ * closes the list springs back to where the follow began. A reader's scroll ends that follow
+ * without the spring back. "Following" just means sitting at the end.
  *
  * The runway: a sent prompt glides to the top of the viewport, and the rest of the viewport below
- * it is reserved, so the reply streams into still space instead of moving the view on every line.
- * The reserve is a minimum height on the reply's row (on the bottom spacer until the reply has a
- * row), so it is resolved in the same measure as the reply's growth; the end pin then holds the
- * prompt at the top until the reply outgrows the reserve. The space stays as scroll room until the
- * next send.
+ * it is reserved, so the reply streams into still space. The reserve is a minimum height on the
+ * reply's row (on the bottom spacer until the reply has a row), so it is resolved in the same
+ * measure as the reply's growth. The glide stops with the prompt at the top however far the reply
+ * has grown. The space stays as scroll room until the next send.
  */
 internal class ChatScrollHandle(
     val listState: LazyListState,
@@ -101,8 +92,17 @@ internal class ChatScrollHandle(
     var runwayMessageId by mutableStateOf<String?>(null)
         private set
 
-    /** Easing onto the end instead of pinning: after a send, or a resume a little short of it. */
+    /** Easing a sent prompt up to the top. */
     private var gliding by mutableStateOf(false)
+
+    /** Open, live tool rails; see [LocalActiveRails]. */
+    val activeRails = mutableIntStateOf(0)
+
+    /** The reader scrolled since the last send; the turn's rails are then theirs to watch. */
+    private var readerScrolled by mutableStateOf(false)
+
+    /** The runway prompt's list key, set from composition; see [rememberRunway]. */
+    internal var runwayPromptKey: Any? = null
 
     /** A jump button's ease owns the list; nothing else scrolls meanwhile. */
     private var easing by mutableStateOf(false)
@@ -114,7 +114,7 @@ internal class ChatScrollHandle(
      */
     internal var restoreConsumed = false
 
-    /** A reply streaming, or text still revealing: the end can grow on any frame. */
+    /** A reply streaming, or text still revealing: its new rows are not followed either. */
     internal var live by mutableStateOf(false)
     internal var relatchPx by mutableStateOf(0f)
 
@@ -140,7 +140,7 @@ internal class ChatScrollHandle(
             }
         }
 
-    val showJumpToBottom: State<Boolean> = derivedStateOf { !following && distanceToEnd() > relatchPx }
+    val showJumpToBottom: State<Boolean> = derivedStateOf { !gliding && !easing && distanceToEnd() > relatchPx }
 
     /** Called from composition, ahead of the measure that lays [messages] out. */
     fun onMessages(messages: List<ChatMessage>) {
@@ -152,15 +152,16 @@ internal class ChatScrollHandle(
             awaitingTurn = false
             runwayMessageId = lastUserId
         }
-        // The first messages, or a reply arriving: pinned in the same frame they are measured, or the
-        // list shows its top (or the new row's) for a frame before the loop catches up.
-        if (grew && inCharge && !gliding) pin()
+        // The first messages: pinned in the same frame they are measured, or the list shows its top
+        // for a frame first. A streaming reply's rows are left to grow below.
+        val settled = !gliding && !live
+        if (grew && inCharge && settled) pin()
     }
 
     /**
      * Called from composition with the list's bottom padding. The keyboard and the composer move it
-     * frame by frame; following, each move is pinned in its own measure. Left to the follow loop it
-     * lands a frame or two late, and the end jumps once the loop catches up.
+     * frame by frame; at the end, each move is pinned in its own measure so the last line stays above
+     * them.
      */
     fun onBottomPadding(px: Int) {
         if (px != bottomPaddingPx && inCharge && !gliding) pin()
@@ -170,6 +171,7 @@ internal class ChatScrollHandle(
     fun onSendMessage() {
         userIdAtSend = lastUserId
         awaitingTurn = true
+        readerScrolled = false
         following = true
         gliding = true
     }
@@ -212,54 +214,72 @@ internal class ChatScrollHandle(
         return runwayPx(prompt.offset, row.offset, info.viewportEndOffset, below)
     }
 
-    /** The frame loop: pins (or glides) onto the end while following and anything can grow. */
+    /** Runs the glide after each send, and follows live tool rails. */
     suspend fun follow() {
         while (true) {
-            snapshotFlow {
-                inCharge && (gliding || live || distanceToEnd() > PIN_EPSILON_PX)
-            }.first { it }
-            chase()
+            snapshotFlow { inCharge && gliding || followsRail }.first { it }
+            if (gliding) glideUp() else followRail()
         }
     }
 
-    /** Hands the transcript back to following when the reader comes to rest near the end. */
-    suspend fun relatch() {
-        snapshotFlow {
-            !following &&
-                !easing &&
-                !restorePending &&
-                !listState.isScrollInProgress &&
-                distanceToEnd() <= relatchPx
-        }.collect { atRestNearEnd ->
-            if (atRestNearEnd) {
-                following = true
-                // Ease the last few lines in; a pin would close them in one frame.
-                gliding = true
-            }
-        }
-    }
+    private val followsRail: Boolean
+        get() = activeRails.intValue > 0 && !readerScrolled && !easing && !restorePending
 
-    private suspend fun chase() {
-        var idle = 0
-        var jumped = false
-        var catchingUp = false
+    /** Follows the end while a rail runs, then springs back to where it started once the last one closes. */
+    private suspend fun followRail() {
+        val startIndex = listState.firstVisibleItemIndex
+        val startOffset = listState.firstVisibleItemScrollOffset
         var last = withFrameNanos { it }
-        while (inCharge && idle < IDLE_FRAMES) {
+        while (followsRail && !gliding) {
             val now = withFrameNanos { it }
             val dt = ((now - last) / NANOS_PER_SECOND).coerceAtMost(MAX_FRAME_SECONDS)
             last = now
             val distance = distanceToEnd()
-            if (gliding) {
-                jumped = glide(distance, dt, mayJump = !jumped) || jumped
-                if (!awaitingTurn && distance <= PIN_EPSILON_PX) gliding = false
-            } else {
-                // A burst (a tool group unfolding, a block landing at once) eases in instead of
-                // closing in one frame; ordinary streaming growth stays pinned.
-                catchingUp = distance > relatchPx * if (catchingUp) CATCH_UP_END else CATCH_UP_START
-                if (catchingUp) glide(distance, dt, mayJump = false) else pin()
+            // A row landing at once eases in; ordinary growth is pinned in its own measure.
+            when {
+                distance > relatchPx -> glide(distance, dt, mayJump = false)
+                distance > PIN_EPSILON_PX -> pin()
             }
-            idle = if (gliding || live || distance > PIN_EPSILON_PX) 0 else idle + 1
         }
+        if (activeRails.intValue == 0 && !readerScrolled && !gliding) {
+            ease { listState.animateScrollToItem(startIndex, startOffset) }
+        }
+    }
+
+    /** Keeps [following] true exactly while the reader rests at the end, so content growing away ends it. */
+    suspend fun relatch() {
+        snapshotFlow {
+            val ours = gliding || easing || restorePending || followsRail
+            if (ours || listState.isScrollInProgress) {
+                null
+            } else {
+                distanceToEnd() <= relatchPx
+            }
+        }.filterNotNull().collect { following = it }
+    }
+
+    private suspend fun glideUp() {
+        var jumped = false
+        var last = withFrameNanos { it }
+        while (inCharge && gliding) {
+            val now = withFrameNanos { it }
+            val dt = ((now - last) / NANOS_PER_SECOND).coerceAtMost(MAX_FRAME_SECONDS)
+            last = now
+            val distance = glideDistance()
+            jumped = glide(distance, dt, mayJump = !jumped) || jumped
+            if (!awaitingTurn && distance <= PIN_EPSILON_PX) gliding = false
+        }
+    }
+
+    /**
+     * To the end, but no further than the runway prompt reaching the top: a reply already past the
+     * viewport stays below it. Until the prompt is in the list the old one still holds the key.
+     */
+    private fun glideDistance(): Float {
+        val end = distanceToEnd()
+        val key = runwayPromptKey?.takeIf { !awaitingTurn } ?: return end
+        val prompt = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return end
+        return minOf(end, prompt.offset.toFloat())
     }
 
     /**
@@ -302,6 +322,7 @@ internal class ChatScrollHandle(
     }
 
     private fun release() {
+        readerScrolled = true
         following = false
         gliding = false
     }

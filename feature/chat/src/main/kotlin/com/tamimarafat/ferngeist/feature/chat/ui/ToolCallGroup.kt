@@ -42,6 +42,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -277,12 +278,15 @@ internal fun ToolCallGroup(
     val open = expanded || rows.any { !it.call?.permissionOptions.isNullOrEmpty() }
     // Held here, outside the fold, so collapsing does not reset a row's reveal.
     val reveals = remember { HashMap<String, RowReveal>() }
+    val live = !done && isStreaming
+    // Open and still live: the transcript follows it down until it closes.
+    TrackActiveRail(open = open, live = live)
 
     // While anything runs, the summary names only what is running: the present tense would
     // misdescribe the calls already finished. The full tally comes back once nothing runs.
     val summaryRows = if (running) rows.filter { it.running } else rows
     // Only while live: once the group ends, the time is clutter beside the reply.
-    val elapsed = rememberElapsedLabel(startedAtMs, live = !done && isStreaming)
+    val elapsed = rememberElapsedLabel(startedAtMs, live = live)
 
     Column(modifier = modifier.fillMaxWidth()) {
         ToolGroupHeader(
@@ -300,6 +304,24 @@ internal fun ToolCallGroup(
                 val thought = row.thought
                 if (thought != null) onThoughtClick(thought.segments.last().id) else onToolCallClick(row.id)
             }
+        }
+    }
+}
+
+/** Open, live rails in the transcript, counted for [ChatScrollHandle]; null outside it. */
+internal val LocalActiveRails = compositionLocalOf<MutableIntState?> { null }
+
+/** Counts this rail into [LocalActiveRails] while it is [open] and [live]. */
+@Composable
+private fun TrackActiveRail(
+    open: Boolean,
+    live: Boolean,
+) {
+    val rails = LocalActiveRails.current ?: return
+    if (open && live) {
+        DisposableEffect(rails) {
+            rails.intValue++
+            onDispose { rails.intValue-- }
         }
     }
 }

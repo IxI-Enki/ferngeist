@@ -50,7 +50,10 @@ internal fun rememberRunway(
             bottomPx = easedBottomPx(with(LocalDensity.current) { bottomPadding.roundToPx() }),
             hold = hold,
         )
-    SideEffect { scroll.onBottomPadding(runway.bottomPx) }
+    SideEffect {
+        scroll.runwayPromptKey = runway.promptKey
+        scroll.onBottomPadding(runway.bottomPx)
+    }
     // Read lazily: an unconditional layoutInfo read would recompose the list on every scroll frame.
     hold.track(runway.replyKey) { scroll.listState.layoutInfo }
     return runway

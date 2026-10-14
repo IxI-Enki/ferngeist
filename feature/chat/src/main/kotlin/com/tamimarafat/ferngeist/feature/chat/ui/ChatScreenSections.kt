@@ -626,59 +626,61 @@ private fun ChatMessageList(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier =
-                Modifier
-                    .widthIn(max = 720.dp)
-                    .align(Alignment.TopCenter)
-                    .nestedScroll(scroll.userScrollDetector)
-                    // The app bar is driven by this list alone. Attaching the app bar's
-                    // connection at the Scaffold instead would also capture the scroll of any
-                    // other Scaffold descendant — notably the composer's text field, which
-                    // floats over this list as a sibling — and collapse the bar instead of
-                    // scrolling the text.
-                    .nestedScroll(appBarScrollConnection),
-            contentPadding = PaddingValues(start = 16.dp, top = contentTop, end = 16.dp, bottom = 0.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (state.resumedSession) {
-                item(key = "__resumed_session_notice") {
-                    ResumedSessionNotice()
-                }
-            }
-            if (window.hasOlder) {
-                item(key = "__load_older") {
-                    OutlinedButton(
-                        onClick = window.loadOlder,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                    ) {
-                        Text(text = stringResource(R.string.chat_load_earlier))
+        CompositionLocalProvider(LocalActiveRails provides scroll.activeRails) {
+            LazyColumn(
+                state = listState,
+                modifier =
+                    Modifier
+                        .widthIn(max = 720.dp)
+                        .align(Alignment.TopCenter)
+                        .nestedScroll(scroll.userScrollDetector)
+                        // The app bar is driven by this list alone. Attaching the app bar's
+                        // connection at the Scaffold instead would also capture the scroll of any
+                        // other Scaffold descendant — notably the composer's text field, which
+                        // floats over this list as a sibling — and collapse the bar instead of
+                        // scrolling the text.
+                        .nestedScroll(appBarScrollConnection),
+                contentPadding = PaddingValues(start = 16.dp, top = contentTop, end = 16.dp, bottom = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (state.resumedSession) {
+                    item(key = "__resumed_session_notice") {
+                        ResumedSessionNotice()
                     }
                 }
-            }
-            // Rows differ in structure (user, plain assistant, segmented assistant), so each
-            // carries a contentType: without one Compose cannot tell a like-for-like slot from a
-            // different one and re-does the work on every markdown emit. Coarse on purpose — the
-            // value only has to match for rows that can share a slot.
-            items(
-                items = windowed,
-                key = itemKey,
-                contentType = {
-                    when {
-                        it.role == ChatMessage.Role.USER -> 0
-                        it.segments.isEmpty() -> 1
-                        else -> 2
+                if (window.hasOlder) {
+                    item(key = "__load_older") {
+                        OutlinedButton(
+                            onClick = window.loadOlder,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                        ) {
+                            Text(text = stringResource(R.string.chat_load_earlier))
+                        }
                     }
-                },
-            ) { message ->
-                messageRow(message)
-            }
-            item(key = BOTTOM_SPACER_KEY) {
-                RunwaySpacer(scroll, runway)
+                }
+                // Rows differ in structure (user, plain assistant, segmented assistant), so each
+                // carries a contentType: without one Compose cannot tell a like-for-like slot from a
+                // different one and re-does the work on every markdown emit. Coarse on purpose — the
+                // value only has to match for rows that can share a slot.
+                items(
+                    items = windowed,
+                    key = itemKey,
+                    contentType = {
+                        when {
+                            it.role == ChatMessage.Role.USER -> 0
+                            it.segments.isEmpty() -> 1
+                            else -> 2
+                        }
+                    },
+                ) { message ->
+                    messageRow(message)
+                }
+                item(key = BOTTOM_SPACER_KEY) {
+                    RunwaySpacer(scroll, runway)
+                }
             }
         }
         // Keyed so the pinned chip, once displaced, carries on as the same node instead of being

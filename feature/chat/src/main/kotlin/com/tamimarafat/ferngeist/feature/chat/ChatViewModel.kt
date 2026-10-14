@@ -258,6 +258,15 @@ class ChatViewModel
                 acpSessionId = { trackedSessionId.takeIf { it != NEW_SESSION_ARG } },
             )
 
+        /** Commit history and a commit's files for the git sheet's History tab. */
+        private val gitHistoryLoader =
+            ChatGitHistoryLoader(
+                scope = viewModelScope,
+                facade = sessionFacade,
+                history = { state.value.gitHistory },
+                update = { reducer -> updateState { copy(gitHistory = gitHistory.reducer()) } },
+            )
+
         /** Chat switcher rows and the close-session action behind them. */
         private val switcherController =
             ChatSwitcherController(
@@ -443,6 +452,15 @@ class ChatViewModel
         }
 
         /**
+         * A session/load announces no sessionReady, and the status asked for when the workspace
+         * appeared ran before the gateway knew this session's directory, so ask again once ready.
+         */
+        private fun refreshGitStatusOnceReady(wasReady: Boolean) {
+            if (wasReady || !state.value.isSessionReady) return
+            state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
+        }
+
+        /**
          * Applies a snapshot from the facade to UI state, keeping markdown hydration in sync.
          *
          * When the snapshot carries a USER message whose content+images match a
@@ -458,6 +476,7 @@ class ChatViewModel
             val (reconciledPending, echoKeys) = reconcileSendingPendingBubbles(snapshot.messages)
             val failed = snapshot.loadState == ChatLoadState.FAILED
             val wasStreaming = state.value.isStreaming
+            val wasReady = state.value.isSessionReady
             // A HYDRATING snapshot is an in-flight marker: it asserts that a load is
             // running, not that a reported failure is over. Letting it rewrite the error
             // to null and `isLoading` back to true replaces a visible load error with a
@@ -503,6 +522,7 @@ class ChatViewModel
                 )
             }
             if (wasStreaming && !snapshot.isStreaming) touchSessionAfterTurn()
+            refreshGitStatusOnceReady(wasReady)
             dropTitleThatIsThePrompt()
             applyServerTitle(snapshot.title)
             fetchGeneratedTitleIfNeeded(snapshot)
@@ -696,6 +716,8 @@ class ChatViewModel
                 is ChatIntent.RemoveQueuedMessage,
                 is ChatIntent.ForceSendMessage,
                 is ChatIntent.LoadGitDiff,
+                is ChatIntent.LoadGitLog,
+                is ChatIntent.LoadGitCommit,
                 is ChatIntent.MarkSwitcherHintSeen,
                 is ChatIntent.CloseSession,
                 is ChatIntent.SubmitElicitation,
@@ -710,7 +732,9 @@ class ChatViewModel
             when (intent) {
                 is ChatIntent.RemoveQueuedMessage -> offlineQueue.removeQueuedMessage(intent.clientId)
                 is ChatIntent.ForceSendMessage -> offlineQueue.forceSend(intent.clientId)
-                is ChatIntent.LoadGitDiff -> gitDiffLoader.load(intent.path)
+                is ChatIntent.LoadGitDiff -> gitDiffLoader.load(intent.path, intent.commit, intent.oldPath)
+                is ChatIntent.LoadGitLog -> gitHistoryLoader.loadLog(intent.more)
+                is ChatIntent.LoadGitCommit -> gitHistoryLoader.loadCommit(intent.sha)
                 is ChatIntent.MarkSwitcherHintSeen -> switcherHintStore.markSeen()
                 is ChatIntent.CloseSession -> switcherController.close(intent.serverId, intent.sessionId)
                 is ChatIntent.SubmitElicitation -> sessionCoordinator.submitElicitation(intent.key, intent.values)

@@ -160,6 +160,66 @@ class GatewayWorkspaceTest {
         }
 
     @Test
+    fun `fetchGitDiff in commit mode sends the commit and the rename's old path`() =
+        runTest {
+            var captured: HttpRequestData? = null
+            val repo =
+                repoCapturing(responseBody = """{"path":"b.kt","newText":"","type":"diff"}""") { captured = it }
+
+            repo.fetchGitDiff("http", "h", "plain-token", "rt-1", path = "b.kt", commit = "abc1234", oldPath = "a.kt")
+
+            assertEquals("path=b.kt&commit=abc1234&oldPath=a.kt", requireNotNull(captured).url.encodedQuery)
+        }
+
+    @Test
+    fun `fetchGitLog pins the head and decodes a page`() =
+        runTest {
+            var captured: HttpRequestData? = null
+            val repo =
+                repoCapturing(
+                    responseBody =
+                        """
+                        {
+                            "head": "0901beff", "hasMore": true, "remoteUrl": "git@github.com:o/r.git",
+                            "baseCommit": "feabf553",
+                            "commits": [{
+                                "sha": "0901beff", "parents": ["feabf553"], "subject": "fix: x", "body": "",
+                                "authorName": "A", "authorEmail": "a@x", "authorTime": 1792000000,
+                                "commitTime": 1792000500, "pushed": true,
+                                "refs": [{"name": "main", "kind": "branch", "isHead": true}]
+                            }]
+                        }
+                        """.trimIndent(),
+                ) { captured = it }
+
+            val log =
+                repo.fetchGitLog("http", "h", "plain-token", "rt-1", head = "0901beff", skip = 50, limit = 50)
+
+            val request = requireNotNull(captured)
+            assertEquals("/v1/runtimes/rt-1/git/log", request.url.encodedPath)
+            assertEquals("head=0901beff&skip=50&limit=50", request.url.encodedQuery)
+            assertTrue(log.hasMore)
+            assertEquals(1792000000L, log.commits[0].authorTime)
+            assertTrue(log.commits[0].pushed)
+            assertEquals("branch", log.commits[0].refs[0].kind)
+        }
+
+    @Test
+    fun `fetchGitCommit puts the sha in the path and decodes renamed files`() =
+        runTest {
+            var captured: HttpRequestData? = null
+            val repo =
+                repoCapturing(
+                    responseBody = """{"sha":"abc","changed":[{"path":"b.kt","status":"R","oldPath":"a.kt"}]}""",
+                ) { captured = it }
+
+            val files = repo.fetchGitCommit("http", "h", "plain-token", "rt-1", sha = "abc")
+
+            assertEquals("/v1/runtimes/rt-1/git/commits/abc", requireNotNull(captured).url.encodedPath)
+            assertEquals("a.kt", files.changed[0].oldPath)
+        }
+
+    @Test
     fun `workspace endpoints sign requests when the credential carries a proof key`() =
         runTest {
             val proof = GatewayProofAuth.generateProofKey()

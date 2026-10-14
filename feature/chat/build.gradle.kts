@@ -78,6 +78,9 @@ dependencies {
     // Diff
     implementation(libs.diff.kotlin)
 
+    // Commit author avatars; core/common supplies the network fetcher.
+    implementation(libs.coil.compose)
+
     // Hilt Setup
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

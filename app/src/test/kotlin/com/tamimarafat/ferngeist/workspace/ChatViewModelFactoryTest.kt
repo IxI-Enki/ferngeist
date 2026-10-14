@@ -8,6 +8,7 @@ import com.tamimarafat.ferngeist.core.model.ChatSessionPresence
 import com.tamimarafat.ferngeist.core.model.NEW_SESSION_ARG
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.core.model.repository.SessionRepository
+import com.tamimarafat.ferngeist.core.model.repository.TurnTimingRepository
 import com.tamimarafat.ferngeist.core.model.store.RecentSelectionStore
 import com.tamimarafat.ferngeist.feature.chat.ChatScrollStateStore
 import com.tamimarafat.ferngeist.feature.chat.PendingPromptStore
@@ -54,6 +55,7 @@ class ChatViewModelFactoryTest {
             recentSelectionStore = mockk<RecentSelectionStore>(relaxed = true),
             presence = presence,
             launchableTargetRepository = mockk<LaunchableTargetRepository>(relaxed = true),
+            turnTimingRepository = mockk<TurnTimingRepository>(relaxed = true),
         )
 
     @Before

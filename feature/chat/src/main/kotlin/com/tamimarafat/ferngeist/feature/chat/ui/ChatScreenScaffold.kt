@@ -224,13 +224,17 @@ private fun BoxScope.ChatScreenContentOverlays(
         screenState.state.gitStatus?.let { status ->
             GitStatusSheet(
                 status = status,
+                history = screenState.state.gitHistory,
                 gitFileDiff = screenState.state.gitFileDiff,
                 gitFileDiffPath = screenState.state.gitFileDiffPath,
+                gitFileDiffCommit = screenState.state.gitFileDiffCommit,
                 isGitFileDiffLoading = screenState.state.isGitFileDiffLoading,
                 gitFileDiffError = screenState.state.gitFileDiffError,
-                onLoadGitDiff = { path ->
-                    viewModel.dispatch(ChatIntent.LoadGitDiff(path))
+                onLoadGitDiff = { path, commit, oldPath ->
+                    viewModel.dispatch(ChatIntent.LoadGitDiff(path, commit, oldPath))
                 },
+                onLoadGitLog = { more -> viewModel.dispatch(ChatIntent.LoadGitLog(more)) },
+                onLoadGitCommit = { sha -> viewModel.dispatch(ChatIntent.LoadGitCommit(sha)) },
                 onDismiss = { screenState.showGitStatusSheet.value = false },
             )
         }

@@ -1,8 +1,17 @@
 package com.tamimarafat.ferngeist.acp.bridge.facade
 
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
+import com.tamimarafat.ferngeist.core.model.GitHistoryHeadGoneException
+import com.tamimarafat.ferngeist.core.model.GitHistoryUnsupportedException
 import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
+import com.tamimarafat.ferngeist.gateway.GatewayGitCommit
+import com.tamimarafat.ferngeist.gateway.GatewayGitLog
+import com.tamimarafat.ferngeist.gateway.GatewayGitRef
 import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
+import com.tamimarafat.ferngeist.gateway.GatewayRequestException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -48,5 +57,57 @@ class AcpChatSessionFacadeMappersTest {
         assertEquals(0, mapped.ahead)
         assertEquals(0, mapped.behind)
         assertTrue(mapped.changed.isEmpty())
+    }
+
+    @Test
+    fun `a log page maps seconds to millis, ref kinds, and blank head or remote to null`() {
+        val page =
+            GatewayGitLog(
+                commits =
+                    listOf(
+                        GatewayGitCommit(
+                            sha = "abc",
+                            authorTime = 2,
+                            pushed = true,
+                            refs =
+                                listOf(
+                                    GatewayGitRef("HEAD", "head"),
+                                    GatewayGitRef("origin/main", "remote"),
+                                    GatewayGitRef("v1", "tag"),
+                                    GatewayGitRef("main", "branch", isHead = true),
+                                    GatewayGitRef("x", "stash"),
+                                ),
+                        ),
+                    ),
+            ).toChatGitLogPage()
+
+        assertNull(page.head)
+        assertNull(page.remoteUrl)
+        val commit = page.commits.single()
+        assertEquals(2000L, commit.authorTimeMillis)
+        assertTrue(commit.isPushed)
+        assertEquals(
+            listOf(
+                ChatGitRef.Kind.HEAD,
+                ChatGitRef.Kind.REMOTE,
+                ChatGitRef.Kind.TAG,
+                ChatGitRef.Kind.BRANCH,
+                ChatGitRef.Kind.BRANCH,
+            ),
+            commit.refs.map { it.kind },
+        )
+        assertTrue(commit.refs[3].isHead)
+    }
+
+    @Test
+    fun `a log failure tells an old gateway and a vanished head from other errors`() {
+        val unknownRoute = GatewayRequestException(404, "404", responseBody = "404 page not found\n")
+        val noSession = GatewayRequestException(404, "404", responseBody = """{"error":"no session"}""")
+        val badRequest = GatewayRequestException(400, "400", responseBody = """{"error":"unknown head"}""")
+
+        assertTrue(gitLogFailure(unknownRoute, pinnedHead = false) is GitHistoryUnsupportedException)
+        assertSame(noSession, gitLogFailure(noSession, pinnedHead = false))
+        assertTrue(gitLogFailure(badRequest, pinnedHead = true) is GitHistoryHeadGoneException)
+        assertSame(badRequest, gitLogFailure(badRequest, pinnedHead = false))
     }
 }

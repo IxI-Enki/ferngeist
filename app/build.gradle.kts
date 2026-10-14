@@ -51,7 +51,7 @@ android {
         applicationId = "com.tamimarafat.ferngeist"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1606
+        versionCode = 1607
         versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

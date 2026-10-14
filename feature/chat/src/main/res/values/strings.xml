@@ -218,7 +218,7 @@
     <string name="chat_elicitation_invalid">Check this field</string>
     <string name="chat_elicitation_no_browser">No app can open this link</string>
     <string name="chat_no_tool_output">No tool output.</string>
-    <string name="chat_git_status_title">Git status</string>
+    <string name="chat_git_status_title">Git</string>
     <string name="chat_git_no_branch">(no branch)</string>
     <plurals name="chat_git_files_changed">
         <item quantity="one">%1$d file changed</item>
@@ -229,6 +229,27 @@
     <string name="chat_git_status_desc">Git status details</string>
     <string name="chat_git_directory">Directory</string>
     <string name="chat_git_file_deleted">File is no longer in the working tree: %1$s</string>
+    <string name="chat_git_tab_changes">Changes</string>
+    <string name="chat_git_tab_history">History</string>
+    <string name="chat_git_date_now">now</string>
+    <string name="chat_git_date_minutes">%1$dm</string>
+    <string name="chat_git_date_hours">%1$dh</string>
+    <string name="chat_git_ref_branch">branch %1$s</string>
+    <string name="chat_git_ref_remote">remote branch %1$s</string>
+    <string name="chat_git_ref_tag">tag %1$s</string>
+    <string name="chat_git_ref_detached">detached HEAD</string>
+    <string name="chat_git_copy_sha">Copy commit hash %1$s</string>
+    <string name="chat_git_sha_copied">Commit hash copied</string>
+    <string name="chat_git_commit_body_expand">Show full message</string>
+    <string name="chat_git_commit_body_collapse">Show less</string>
+    <string name="chat_git_commit_no_files">No changes in this directory</string>
+    <string name="chat_git_loading">Loading</string>
+    <string name="chat_git_open_on_github">Open on GitHub</string>
+    <string name="chat_git_open_in_browser">Open in browser</string>
+    <string name="chat_git_commit_error_title">Couldn\'t load this commit</string>
+    <string name="chat_git_history_empty">No commits yet</string>
+    <string name="chat_git_history_error_title">Couldn\'t load history</string>
+    <string name="chat_git_history_more_failed">Couldn\'t load more commits</string>
     <string name="chat_load_earlier">Load earlier messages</string>
     <string-array name="chat_empty_titles">
         <item>What do you want to build today?</item>

@@ -160,7 +160,29 @@ class GatewaySessionModelsTest {
                     runtimeId: String,
                     path: String?,
                     acpSessionId: String?,
+                    commit: String?,
+                    oldPath: String?,
                 ): List<com.agentclientprotocol.model.ToolCallContent.Diff> = TODO()
+
+                override suspend fun fetchGitLog(
+                    scheme: String,
+                    host: String,
+                    gatewayCredential: String,
+                    runtimeId: String,
+                    head: String?,
+                    skip: Int,
+                    limit: Int,
+                    acpSessionId: String?,
+                ): GatewayGitLog = TODO()
+
+                override suspend fun fetchGitCommit(
+                    scheme: String,
+                    host: String,
+                    gatewayCredential: String,
+                    runtimeId: String,
+                    sha: String,
+                    acpSessionId: String?,
+                ): GatewayGitCommitFiles = TODO()
 
                 override suspend fun createCustomAgent(
                     scheme: String,

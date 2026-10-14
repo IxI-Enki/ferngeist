@@ -12,6 +12,8 @@ import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.gateway.GatewayAgent
 import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
+import com.tamimarafat.ferngeist.gateway.GatewayGitCommitFiles
+import com.tamimarafat.ferngeist.gateway.GatewayGitLog
 import com.tamimarafat.ferngeist.gateway.GatewayProtocol
 import com.tamimarafat.ferngeist.gateway.GatewayRemoteStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
@@ -253,7 +255,29 @@ class AcpChatSessionFacadeTest {
             runtimeId: String,
             path: String?,
             acpSessionId: String?,
+            commit: String?,
+            oldPath: String?,
         ) = TODO("unused in facade tests")
+
+        override suspend fun fetchGitLog(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            head: String?,
+            skip: Int,
+            limit: Int,
+            acpSessionId: String?,
+        ): GatewayGitLog = TODO("unused in facade tests")
+
+        override suspend fun fetchGitCommit(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            sha: String,
+            acpSessionId: String?,
+        ): GatewayGitCommitFiles = TODO("unused in facade tests")
 
         override suspend fun createCustomAgent(
             scheme: String,

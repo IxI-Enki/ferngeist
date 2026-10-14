@@ -206,6 +206,8 @@ data class ChatChangedFile(
      * --porcelain=v2`, since the client cannot tell a submodule from a file by path.
      */
     val isDir: Boolean = false,
+    /** The pre-rename path, for renames and copies in a commit's file list. */
+    val oldPath: String? = null,
 )
 
 /** Branch, ahead/behind counts, and changed entries of a gateway working tree. */
@@ -215,6 +217,49 @@ data class ChatGitStatus(
     val behind: Int = 0,
     val changed: List<ChatChangedFile> = emptyList(),
 )
+
+/** A branch, remote branch, tag, or detached HEAD pointing at a commit. */
+data class ChatGitRef(
+    val name: String,
+    val kind: Kind,
+    /** True for the branch HEAD points at. */
+    val isHead: Boolean = false,
+) {
+    enum class Kind { HEAD, BRANCH, REMOTE, TAG }
+}
+
+/** One commit of a gateway working tree's history, as `git log` reports it. */
+data class ChatGitCommit(
+    val sha: String,
+    val parents: List<String>,
+    val subject: String,
+    val body: String = "",
+    val authorName: String,
+    val authorEmail: String,
+    val authorTimeMillis: Long,
+    val refs: List<ChatGitRef> = emptyList(),
+    /** Reachable from a branch on `origin`, so a link to it on origin's forge resolves. */
+    val isPushed: Boolean = false,
+)
+
+/**
+ * One page of history. [head] is the sha the page was read from, sent back for later pages;
+ * null for an empty repository. [remoteUrl] is `origin`'s URL with credentials removed.
+ */
+data class ChatGitLogPage(
+    val head: String?,
+    val commits: List<ChatGitCommit>,
+    val hasMore: Boolean,
+    val remoteUrl: String?,
+)
+
+/** The gateway predates commit history, so the history view has nothing to read. */
+class GitHistoryUnsupportedException : IllegalStateException("This gateway does not support commit history")
+
+/** The pinned history head no longer names a commit (rewritten and collected); reload from page 1. */
+class GitHistoryHeadGoneException(
+    cause: Throwable,
+) : IllegalStateException("History changed on the gateway", cause)
 
 data class ChatSessionSnapshot(
     val loadState: ChatLoadState,
@@ -387,10 +432,27 @@ interface ChatSessionFacade {
     suspend fun fetchGitStatus(): ChatGitStatus? = null
 
     /**
-     * Unified diff of one file in the chat's gateway working tree, or null when it has no
-     * gateway workspace. Transport failures propagate to the caller.
+     * Diff of one file in the chat's gateway working tree, or in [commit] against its first
+     * parent, or null when it has no gateway workspace. Transport failures propagate.
      */
-    suspend fun fetchGitDiff(path: String): List<ToolCallContent.Diff>? = null
+    suspend fun fetchGitDiff(
+        path: String,
+        commit: String? = null,
+        oldPath: String? = null,
+    ): List<ToolCallContent.Diff>? = null
+
+    /**
+     * One page of history from [head] (`HEAD` when null), or null when the chat has no gateway
+     * workspace. Throws [GitHistoryUnsupportedException] on a gateway without history and
+     * [GitHistoryHeadGoneException] when [head] no longer resolves.
+     */
+    suspend fun fetchGitLog(
+        head: String?,
+        skip: Int,
+    ): ChatGitLogPage? = null
+
+    /** Files [sha] changed against its first parent, or null when the chat has no gateway workspace. */
+    suspend fun fetchGitCommitFiles(sha: String): List<ChatChangedFile>? = null
 }
 
 /**

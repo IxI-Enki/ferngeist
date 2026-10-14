@@ -132,6 +132,9 @@ interface GatewayWorkspaceRepository {
      * [com.agentclientprotocol.model.ToolCallContent.Diff] shape. With [path] set the gateway
      * returns a single object (wrapped here as a one-element list); with [path] null it returns
      * the whole-tree array. [oldText] is null for new/untracked files.
+     *
+     * With [commit] set, [path] is diffed in that commit against its first parent; pass
+     * [oldPath] for a rename or the old side is missing.
      */
     suspend fun fetchGitDiff(
         scheme: String,
@@ -140,7 +143,37 @@ interface GatewayWorkspaceRepository {
         runtimeId: String,
         path: String? = null,
         acpSessionId: String? = null,
+        commit: String? = null,
+        oldPath: String? = null,
     ): List<ToolCallContent.Diff>
+
+    /**
+     * One page of history reachable from [head] (`HEAD` when null), newest first. Send the
+     * returned head back on later pages so new commits do not shift [skip].
+     *
+     * Throws [GatewayRequestException] with a 404 status and no `{"error"}` envelope on gateways
+     * that predate history, and 400 when a pinned [head] no longer names a commit.
+     */
+    suspend fun fetchGitLog(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        head: String?,
+        skip: Int,
+        limit: Int,
+        acpSessionId: String? = null,
+    ): GatewayGitLog
+
+    /** The files [sha] changed under the project directory, against its first parent. */
+    suspend fun fetchGitCommit(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        sha: String,
+        acpSessionId: String? = null,
+    ): GatewayGitCommitFiles
 }
 
 /** Client-registered custom agent operations. */

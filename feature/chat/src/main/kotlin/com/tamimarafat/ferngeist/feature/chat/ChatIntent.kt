@@ -62,9 +62,24 @@ sealed interface ChatIntent {
     /** Re-fetch the git status for the gateway-backed working tree (e.g. after a send). */
     data object RefreshGitStatus : ChatIntent
 
-    /** Load the unified diff for a single changed file from the gateway-backed working tree. */
+    /**
+     * Load the diff for a single changed file from the gateway-backed working tree, or from
+     * [commit] against its first parent. [oldPath] names a renamed file's old side.
+     */
     data class LoadGitDiff(
         val path: String,
+        val commit: String? = null,
+        val oldPath: String? = null,
+    ) : ChatIntent
+
+    /** Reload history from `HEAD`, keeping the current list until it lands, or append the next page ([more]). */
+    data class LoadGitLog(
+        val more: Boolean,
+    ) : ChatIntent
+
+    /** Load the files a commit changed. */
+    data class LoadGitCommit(
+        val sha: String,
     ) : ChatIntent
 
     /** Consumes the switcher bubble's first-run swipe hint so it never shows again. */

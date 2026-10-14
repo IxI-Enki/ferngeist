@@ -15,10 +15,12 @@ import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigCategory
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionConfigValue
 import com.tamimarafat.ferngeist.acp.bridge.session.SessionPort
 import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatFileData
+import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatOperationError
@@ -32,6 +34,7 @@ import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import com.tamimarafat.ferngeist.core.model.repository.LaunchableTargetRepository
 import com.tamimarafat.ferngeist.gateway.GatewayCredentialExpiredException
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
+import com.tamimarafat.ferngeist.gateway.GatewayRequestException
 import com.tamimarafat.ferngeist.gateway.launchGatewayRuntime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -300,7 +303,11 @@ class AcpChatSessionFacade(
      * Unified diff for one file of this chat's gateway working tree, or null when the chat
      * has no gateway workspace. Transport failures propagate to the caller.
      */
-    override suspend fun fetchGitDiff(path: String): List<ToolCallContent.Diff>? {
+    override suspend fun fetchGitDiff(
+        path: String,
+        commit: String?,
+        oldPath: String?,
+    ): List<ToolCallContent.Diff>? {
         val connection = _gatewayWorkspaceConnection.value ?: return null
         return gatewayRepository.fetchGitDiff(
             scheme = connection.scheme,
@@ -309,7 +316,46 @@ class AcpChatSessionFacade(
             runtimeId = connection.runtimeId,
             path = path,
             acpSessionId = liveSessionIdOrNull(),
+            commit = commit,
+            oldPath = oldPath,
         )
+    }
+
+    override suspend fun fetchGitLog(
+        head: String?,
+        skip: Int,
+    ): ChatGitLogPage? {
+        val connection = _gatewayWorkspaceConnection.value ?: return null
+        val acpSessionId = liveSessionIdOrNull() ?: return null
+        return try {
+            gatewayRepository
+                .fetchGitLog(
+                    scheme = connection.scheme,
+                    host = connection.host,
+                    gatewayCredential = connection.gatewayCredential,
+                    runtimeId = connection.runtimeId,
+                    head = head,
+                    skip = skip,
+                    limit = GIT_LOG_PAGE_SIZE,
+                    acpSessionId = acpSessionId,
+                ).toChatGitLogPage()
+        } catch (error: GatewayRequestException) {
+            throw gitLogFailure(error, pinnedHead = head != null)
+        }
+    }
+
+    override suspend fun fetchGitCommitFiles(sha: String): List<ChatChangedFile>? {
+        val connection = _gatewayWorkspaceConnection.value ?: return null
+        return gatewayRepository
+            .fetchGitCommit(
+                scheme = connection.scheme,
+                host = connection.host,
+                gatewayCredential = connection.gatewayCredential,
+                runtimeId = connection.runtimeId,
+                sha = sha,
+                acpSessionId = liveSessionIdOrNull(),
+            ).changed
+            .map { it.toChatChangedFile() }
     }
 
     /**
@@ -847,3 +893,6 @@ class AcpChatSessionFacade(
         }
     }
 }
+
+/** Rows per history page; the gateway clamps to 1..200. */
+private const val GIT_LOG_PAGE_SIZE = 50

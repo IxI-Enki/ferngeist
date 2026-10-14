@@ -3,10 +3,12 @@ package com.tamimarafat.ferngeist.feature.chat
 import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.acp.bridge.connection.ConnectivityObserver
 import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatFileData
+import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatOperationError
@@ -244,9 +246,38 @@ open class FakeChatSessionFacade : ChatSessionFacade {
     override suspend fun fetchGitStatus(): ChatGitStatus? =
         gitStatus.takeIf { gatewayWorkspaceConnectionFlow.value != null }
 
-    override suspend fun fetchGitDiff(path: String): List<ToolCallContent.Diff>? {
+    /** Commit and old path of each [fetchGitDiff] request, alongside [gitDiffRequests]. */
+    val gitDiffCommitRequests: MutableList<Pair<String?, String?>> = mutableListOf()
+
+    /** Answers [fetchGitLog] by (head, skip); throw from it to fail the page. */
+    var gitLog: suspend (head: String?, skip: Int) -> ChatGitLogPage? = { _, _ -> null }
+
+    /** (head, skip) of each [fetchGitLog] request, in order. */
+    val gitLogRequests: MutableList<Pair<String?, Int>> = mutableListOf()
+
+    /** Answers [fetchGitCommitFiles]; throw from it to fail the commit. */
+    var gitCommitFiles: suspend (sha: String) -> List<ChatChangedFile>? = { null }
+
+    override suspend fun fetchGitLog(
+        head: String?,
+        skip: Int,
+    ): ChatGitLogPage? {
+        if (gatewayWorkspaceConnectionFlow.value == null) return null
+        gitLogRequests += head to skip
+        return gitLog(head, skip)
+    }
+
+    override suspend fun fetchGitCommitFiles(sha: String): List<ChatChangedFile>? =
+        if (gatewayWorkspaceConnectionFlow.value == null) null else gitCommitFiles(sha)
+
+    override suspend fun fetchGitDiff(
+        path: String,
+        commit: String?,
+        oldPath: String?,
+    ): List<ToolCallContent.Diff>? {
         if (gatewayWorkspaceConnectionFlow.value == null) return null
         gitDiffRequests.add(path)
+        gitDiffCommitRequests.add(commit to oldPath)
         fetchGitDiffGates[path]?.await()
         fetchGitDiffGate?.await()
         fetchGitDiffError?.let { throw it }

@@ -25,12 +25,22 @@ import com.tamimarafat.ferngeist.core.model.ChatConfigOption
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
+import com.tamimarafat.ferngeist.core.model.ChatGitCommit
+import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
+import com.tamimarafat.ferngeist.core.model.GitHistoryHeadGoneException
+import com.tamimarafat.ferngeist.core.model.GitHistoryUnsupportedException
 import com.tamimarafat.ferngeist.core.model.UsageState
 import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
+import com.tamimarafat.ferngeist.gateway.GatewayGitCommit
+import com.tamimarafat.ferngeist.gateway.GatewayGitLog
+import com.tamimarafat.ferngeist.gateway.GatewayGitRef
 import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
+import com.tamimarafat.ferngeist.gateway.GatewayRequestException
+import com.tamimarafat.ferngeist.gateway.gatewayErrorMessage
 import kotlinx.coroutines.TimeoutCancellationException
 import java.net.SocketTimeoutException
 
@@ -247,4 +257,61 @@ internal fun GatewayChangedFile.toChatChangedFile(): ChatChangedFile =
         removed = removed,
         binary = binary,
         isDir = isDir,
+        oldPath = oldPath,
     )
+
+/** A history page; the gateway's `""` for an empty repository or no `origin` becomes null. */
+internal fun GatewayGitLog.toChatGitLogPage(): ChatGitLogPage =
+    ChatGitLogPage(
+        head = head.ifBlank { null },
+        commits = commits.map { it.toChatGitCommit() },
+        hasMore = hasMore,
+        remoteUrl = remoteUrl.ifBlank { null },
+    )
+
+internal fun GatewayGitCommit.toChatGitCommit(): ChatGitCommit =
+    ChatGitCommit(
+        sha = sha,
+        parents = parents,
+        subject = subject,
+        body = body,
+        authorName = authorName,
+        authorEmail = authorEmail,
+        authorTimeMillis = authorTime * MILLIS_PER_SECOND,
+        refs = refs.map { it.toChatGitRef() },
+        isPushed = pushed,
+    )
+
+/** An unknown kind from a newer gateway reads as a branch rather than failing the page. */
+internal fun GatewayGitRef.toChatGitRef(): ChatGitRef =
+    ChatGitRef(
+        name = name,
+        kind =
+            when (kind) {
+                "head" -> ChatGitRef.Kind.HEAD
+                "remote" -> ChatGitRef.Kind.REMOTE
+                "tag" -> ChatGitRef.Kind.TAG
+                else -> ChatGitRef.Kind.BRANCH
+            },
+        isHead = isHead,
+    )
+
+/**
+ * What a failed `/git/log` means to the history view. An unknown route is Go's plain-text 404,
+ * while the gateway's own 404s (no session yet) carry an `{"error"}` envelope; a 400 for a
+ * pinned head means a rewrite collected it.
+ */
+internal fun gitLogFailure(
+    error: GatewayRequestException,
+    pinnedHead: Boolean,
+): Throwable =
+    when {
+        error.statusCode == HTTP_NOT_FOUND && gatewayErrorMessage(error.responseBody) == null ->
+            GitHistoryUnsupportedException()
+        error.statusCode == HTTP_BAD_REQUEST && pinnedHead -> GitHistoryHeadGoneException(error)
+        else -> error
+    }
+
+private const val MILLIS_PER_SECOND = 1000L
+private const val HTTP_BAD_REQUEST = 400
+private const val HTTP_NOT_FOUND = 404

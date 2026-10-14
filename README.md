@@ -40,13 +40,15 @@ curl -fsSL https://arafatamim.github.io/ferngeist-acp-gateway/install.sh | sh
 
 Packages for a manual install are on the [gateway releases page](https://github.com/arafatamim/ferngeist-acp-gateway/releases/latest).
 
-**2. Make it reachable from your phone** (on Windows, run as Administrator)
+**2. Reach it from anywhere** (optional)
+
+The installer starts the gateway on your local network, so a phone on the same Wi-Fi can already connect. To reach it from outside your home, switch it to remote access:
 
 ```bash
-ferngeist-gateway daemon install --remote
+ferngeist-gateway daemon install --remote # run as Administrator on Windows
 ```
 
-The installer sets up a Tailscale Funnel and prints a stable HTTPS address.
+This command sets up a Tailscale Funnel and prints a stable HTTPS address. The first run also prints a Tailscale login link (a free account is enough).
 
 **3. Pair your phone**
 
@@ -54,12 +56,12 @@ The installer sets up a Tailscale Funnel and prints a stable HTTPS address.
 ferngeist-gateway pair
 ```
 
-In Ferngeist, tap **Add server**, then enter the address from step 2 and the pairing code. Your agents appear in the app.
+In Ferngeist, tap **Add server**, then enter the gateway address (the HTTPS address from step 2, or your computer's address on Wi-Fi) and the pairing code. Your agents appear in the app.
 
 <details>
 <summary><b>Use your own tunnel instead of Tailscale</b></summary>
 
-The gateway listens on `127.0.0.1:5788`, which your phone can't reach. Point a tunnel at that port and pass its URL with `--public-url`.
+The gateway listens on port `5788`. Point a tunnel at that port and pass its URL with `--public-url`.
 
 **ngrok**
 

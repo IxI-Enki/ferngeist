@@ -1,3 +1,64 @@
+## [1.3.0] - 2026-10-15
+
+### Documentation
+
+- *(readme)* Lead with what the app does for users ([1a70dcb](https://github.com/arafatamim/Ferngeist/commit/1a70dcb874f2be29be14f84297ab2dd94f1fc350))
+- *(readme)* Note the installer already starts the gateway ([0d17cc7](https://github.com/arafatamim/Ferngeist/commit/0d17cc7f74153335c0239562a07e64c2533d890c))
+- *(readme)* Add demonstration video ([a9d3cda](https://github.com/arafatamim/Ferngeist/commit/a9d3cda4a1b2224f1498a5ac49f8a1dea4941f26))
+- *(privacy)* Note the avatar lookups for commit authors ([96c3865](https://github.com/arafatamim/Ferngeist/commit/96c3865466ae6454996781d24cb91cf472c53eb0))
+
+### Features
+
+- *(chat)* Live one-line reasoning tail in the tool rail ([146fbe6](https://github.com/arafatamim/Ferngeist/commit/146fbe6eb0761af3ee03c95fdfddeece3951563b))
+- *(chat)* Rework transcript scroll around a prompt runway ([e0c1adb](https://github.com/arafatamim/Ferngeist/commit/e0c1adb7a2879ed6cf5f696d3b3eee80f579e615))
+- *(chat)* Time live tool groups and render reasoning as markdown ([1563b3d](https://github.com/arafatamim/Ferngeist/commit/1563b3dc11ae6bd6952ace4534332924046ea46d))
+- *(chat)* Show each turn's time and finish in its footer ([7cd84f8](https://github.com/arafatamim/Ferngeist/commit/7cd84f8f45e42240bd811f62ebe2256adb0eccd7))
+- *(gateway)* Read git history and commit files from the gateway ([604056b](https://github.com/arafatamim/Ferngeist/commit/604056bfc04ebd1e824019402da47e6b0431b798))
+- *(acp-bridge)* Expose git history through the chat facade ([2ae220b](https://github.com/arafatamim/Ferngeist/commit/2ae220bdba8ccbdcafce8e0b59fdd95ac297d1b4))
+- *(chat)* Browse commit history in the git sheet ([b41c74f](https://github.com/arafatamim/Ferngeist/commit/b41c74fca1a31cee87a9813d869ce0671b02533e))
+- *(chat)* Show commit authors' pictures ([7266e60](https://github.com/arafatamim/Ferngeist/commit/7266e60fedd8dfd4e3f3d2aa68b5ef77665d64f3))
+- *(chat)* Translate the git history strings ([3bad0bb](https://github.com/arafatamim/Ferngeist/commit/3bad0bb615d7766985a53e7eca27339f0cffb1e5))
+- *(chat)* Follow live tool rails instead of streaming text ([4da6dec](https://github.com/arafatamim/Ferngeist/commit/4da6dec4227eb16b780df9f6357918e3f3dd7090))
+- *(chat)* Lead the tool group header with a chevron on the rail ([4aeee5c](https://github.com/arafatamim/Ferngeist/commit/4aeee5cc642b543a37e4b35e642f3c28d14924cc))
+- *(chat)* Show git history as file-style cards with faded edges ([4eda461](https://github.com/arafatamim/Ferngeist/commit/4eda461fbf3b4fca86ca7e33cdf3cf107ef34e67))
+- *(chat)* Show a ref's full name on long press in the commit view ([b759e18](https://github.com/arafatamim/Ferngeist/commit/b759e18724c8287253af114a567f20fd8ba3ab17))
+- *(chat)* Refresh git history at the end of each turn ([a743110](https://github.com/arafatamim/Ferngeist/commit/a743110f1fb72c1a45e1439a803ec2a60381aba2))
+- *(chat)* Show full ref names and expandable titles in the commit view ([cb513f9](https://github.com/arafatamim/Ferngeist/commit/cb513f9dad670077be29e5b5d49c0bbe49628fd1))
+- *(chat)* Group git history by day ([b82c7e2](https://github.com/arafatamim/Ferngeist/commit/b82c7e25b49285c67e868d82de16e7147492a1b2))
+
+### Fixes
+
+- *(chat)* Match turn diff counts to git ([fc91eda](https://github.com/arafatamim/Ferngeist/commit/fc91edad8f41ee74b8bbc882e5ec44389f8c4a5c))
+- *(chat)* Move the transcript with the keyboard and composer ([ff10562](https://github.com/arafatamim/Ferngeist/commit/ff1056230f5b6e83dae72357de2c3cf9fa0a441c))
+- *(chat)* Restore a chat's scroll once, not on every save ([112daa6](https://github.com/arafatamim/Ferngeist/commit/112daa69bcfa5bee46e62c37cfc2d0fcaea08236))
+- *(chat)* Let go of the held reply once the reader scrolls ([f69eac5](https://github.com/arafatamim/Ferngeist/commit/f69eac5a3b5797b04c29b47f00ebc989b6e3d549))
+- *(chat)* Leave a reply closed by a reattach untimed ([a519df2](https://github.com/arafatamim/Ferngeist/commit/a519df29603a842294dce7327b587556ed9c2ceb))
+- *(chat)* Time a turn by the gateway's duration, not when the phone hears it end ([feabf55](https://github.com/arafatamim/Ferngeist/commit/feabf5536fd787f367064e74a30f101e76d25096))
+- *(app)* Resize for the keyboard instead of panning the window ([0901bef](https://github.com/arafatamim/Ferngeist/commit/0901beffacadf579202342d01cc669c6204305d4))
+- *(chat)* Fetch git status once a loaded session is ready ([06fb695](https://github.com/arafatamim/Ferngeist/commit/06fb695221a9bde0dce80d9b8e9377e611795767))
+- *(chat)* Glide the first prompt sent after opening a chat ([241bf43](https://github.com/arafatamim/Ferngeist/commit/241bf43c2c71084149d7acf648694990517287ab))
+- *(service)* Hang up every transport from the notification's Stop action (#7) ([4a6115b](https://github.com/arafatamim/Ferngeist/commit/4a6115b4766280e45d5312d74e63220ed9557163))
+- *(chat)* Keep loaded history pages when it refreshes ([aadc168](https://github.com/arafatamim/Ferngeist/commit/aadc1685733503e815c8ada983182ad5ec553aa1))
+- *(chat)* Keep history dates current while the sheet is open ([3a040f5](https://github.com/arafatamim/Ferngeist/commit/3a040f55a5a99c35ae2cb3492605dfcafe05c3a9))
+- *(chat)* Date history rows by when they were committed ([5aab34b](https://github.com/arafatamim/Ferngeist/commit/5aab34beb0cfc682c283c761ef19e848371de7fd))
+
+### Maintenance
+
+- Make the Gradle wrapper executable ([68ddc73](https://github.com/arafatamim/Ferngeist/commit/68ddc73ce7941bd7ab0b8897b690deab550b0080))
+- *(release)* Bump versionCode to 1607 ([dbacf2e](https://github.com/arafatamim/Ferngeist/commit/dbacf2edb71970de2379e39cb4b11186aec2c5f1))
+
+### Testing
+
+- *(app)* Pass the turn timing repository to the chat view model factory ([275da20](https://github.com/arafatamim/Ferngeist/commit/275da208e9f351ed812daf3d18214acb3fdfd016))
+- *(chat)* Run the view model's I/O on the test scheduler ([e5a05f3](https://github.com/arafatamim/Ferngeist/commit/e5a05f385af5a2d44705e5b28cb7cd86bf58d2b5))
+
+### Merge
+
+- *(chat)* Browse commit history in the git sheet ([b9f47e4](https://github.com/arafatamim/Ferngeist/commit/b9f47e4895288d474d76577be06a9d240809670d))
+
+### Release
+
+- *(1.2.0)* Bump versionCode to 1606, Play notes follow ([b0b02bb](https://github.com/arafatamim/Ferngeist/commit/b0b02bbc7200bee6b9dbdffbef918390e8a54d7b))
 
 ## [1.2.0] - 2026-10-11
 

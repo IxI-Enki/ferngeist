@@ -1,0 +1,6 @@
+• Commit history in the git sheet: a branch graph grouped by day, with each commit's files and diffs (needs an up-to-date gateway)
+• Each turn shows how long it took and how it ended
+• Watch the agent's reasoning and tools live as it works
+• Smoother chat scrolling, and the transcript now moves with the keyboard
+• Stop in the notification disconnects every agent
+• Fixes and polish

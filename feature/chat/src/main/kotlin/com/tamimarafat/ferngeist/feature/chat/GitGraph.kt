@@ -141,6 +141,29 @@ internal fun strokesFor(
 
 private const val HALF = 0.5f
 
+/**
+ * How far right, in lanes, each row's lines reach within its own height, counting the bends
+ * that spill in from its neighbours. [strokes] holds [strokesFor] per row, in row order.
+ */
+internal fun graphReach(strokes: List<List<GraphStroke>>): List<Float> =
+    strokes.indices.map { i ->
+        // A neighbour's stroke shifts by one row height to sit in row i's coordinates.
+        listOf(-1, 0, 1)
+            .flatMap { d -> strokes.getOrNull(i + d).orEmpty().mapNotNull { it.reachWithin(d.toFloat()) } }
+            .maxOrNull() ?: 0f
+    }
+
+/** Rightmost lane this stroke covers between the row's top and bottom, or null if it misses the row. */
+private fun GraphStroke.reachWithin(rowShift: Float): Float? {
+    val top = maxOf(startY + rowShift, 0f)
+    val bottom = minOf(endY + rowShift, 1f)
+    if (top >= bottom) return null
+
+    // Clips always land on a stroke's end or midpoint, where the S-curve matches a straight blend.
+    fun laneAt(y: Float) = from + (to - from) * (y - startY - rowShift) / (endY - startY)
+    return maxOf(laneAt(top), laneAt(bottom))
+}
+
 /** Lanes a bend reaches (via [end]) that have no straight run of their own in the same half row. */
 private fun List<GraphEdge>.bentLanes(end: (GraphEdge) -> Int): Set<Int> {
     val straight = filter { it.from == it.to }.map { it.from }.toSet()

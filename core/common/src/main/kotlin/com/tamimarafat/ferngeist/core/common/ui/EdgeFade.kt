@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -77,25 +79,70 @@ fun BoxScope.EdgeFade(
     edgeHeight: Dp = 22.dp,
 ) {
     val edgePx = with(LocalDensity.current) { edgeHeight.toPx() }
+    // Band grows with scroll so it always covers content, never empty viewport.
+    // FrequentlyChangingValue: scrollState.value changes every frame; derivedStateOf
+    // throttles recomposition to actual band-size changes instead of every pixel.
+    val topBandPx = remember(edgePx) { derivedStateOf { min(scrollState.value.toFloat(), edgePx) } }
+    val bottomBandPx =
+        remember(edgePx) { derivedStateOf { min((scrollState.maxValue - scrollState.value).toFloat(), edgePx) } }
+    EdgeFadeBands(scrollState.canScrollBackward, scrollState.canScrollForward, topBandPx, bottomBandPx, fadeColor)
+}
+
+/** [EdgeFade] for a lazy list, which only knows the offsets of the items it has laid out. */
+@Composable
+fun BoxScope.EdgeFade(
+    listState: LazyListState,
+    fadeColor: Color,
+    edgeHeight: Dp = 22.dp,
+) {
+    val edgePx = with(LocalDensity.current) { edgeHeight.toPx() }
+    val topBandPx =
+        remember(edgePx) {
+            derivedStateOf {
+                if (listState.firstVisibleItemIndex >
+                    0
+                ) {
+                    edgePx
+                } else {
+                    min(listState.firstVisibleItemScrollOffset.toFloat(), edgePx)
+                }
+            }
+        }
+    val bottomBandPx =
+        remember(edgePx) {
+            derivedStateOf {
+                val info = listState.layoutInfo
+                val last = info.visibleItemsInfo.lastOrNull()
+                when {
+                    last == null -> 0f
+                    last.index < info.totalItemsCount - 1 -> edgePx
+                    else -> (last.offset + last.size - info.viewportEndOffset).toFloat().coerceIn(0f, edgePx)
+                }
+            }
+        }
+    EdgeFadeBands(listState.canScrollBackward, listState.canScrollForward, topBandPx, bottomBandPx, fadeColor)
+}
+
+@Composable
+private fun BoxScope.EdgeFadeBands(
+    canScrollBackward: Boolean,
+    canScrollForward: Boolean,
+    topBand: State<Float>,
+    bottomBand: State<Float>,
+    fadeColor: Color,
+) {
     val topAlpha by animateFloatAsState(
-        targetValue = if (scrollState.canScrollBackward) 1f else 0f,
+        targetValue = if (canScrollBackward) 1f else 0f,
         animationSpec = tween(300),
         label = "topFadeAlpha",
     )
     val bottomAlpha by animateFloatAsState(
-        targetValue = if (scrollState.canScrollForward) 1f else 0f,
+        targetValue = if (canScrollForward) 1f else 0f,
         animationSpec = tween(300),
         label = "bottomFadeAlpha",
     )
-    // Band grows with scroll so it always covers content, never empty viewport.
-    // FrequentlyChangingValue: scrollState.value changes every frame; derivedStateOf
-    // throttles recomposition to actual band-size changes instead of every pixel.
-    val topBandPx by remember(edgePx) {
-        derivedStateOf { min(scrollState.value.toFloat(), edgePx) }
-    }
-    val bottomBandPx by remember(edgePx) {
-        derivedStateOf { min((scrollState.maxValue - scrollState.value).toFloat(), edgePx) }
-    }
+    val topBandPx by topBand
+    val bottomBandPx by bottomBand
     val density = LocalDensity.current
     val brush = remember(fadeColor) { fadeBrush(fadeColor) }
     val bottomBrush = remember(fadeColor) { bottomFadeBrush(fadeColor) }

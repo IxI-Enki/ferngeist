@@ -111,4 +111,22 @@ class GitGraphTest {
         // Lane 0 stays continuous.
         assertTrue(GraphStroke(0, 0, 0, 0.5f, 1f) in strokes(3))
     }
+
+    @Test
+    fun reach_countsOnlyTheLinesInsideEachRow() {
+        val rows =
+            layoutGraph(
+                listOf(
+                    commit("m", "b", "s2"),
+                    commit("b", "a"),
+                    commit("s2", "s1"),
+                    commit("s1", "a"),
+                    commit("a"),
+                ),
+            )
+        val strokes = rows.indices.map { strokesFor(rows[it], rows.getOrNull(it - 1), rows.getOrNull(it + 1)) }
+
+        // m and a only see the half of a bend that leaves or lands on their own node.
+        assertEquals(listOf(0.5f, 1f, 1f, 1f, 0.5f), graphReach(strokes))
+    }
 }

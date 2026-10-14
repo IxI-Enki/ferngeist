@@ -4,11 +4,8 @@ package com.tamimarafat.ferngeist.feature.chat.ui
 
 import android.content.res.Configuration
 import android.text.format.DateUtils
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,7 +35,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +53,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -74,13 +69,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.tamimarafat.ferngeist.core.common.ui.DarkGitSemanticColors
+import com.tamimarafat.ferngeist.core.common.ui.EdgeFade
 import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.model.ChatGitCommit
 import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.feature.chat.GraphEdge
 import com.tamimarafat.ferngeist.feature.chat.GraphRow
+import com.tamimarafat.ferngeist.feature.chat.GraphStroke
 import com.tamimarafat.ferngeist.feature.chat.R
+import com.tamimarafat.ferngeist.feature.chat.graphReach
 import com.tamimarafat.ferngeist.feature.chat.layoutGraph
 import com.tamimarafat.ferngeist.feature.chat.strokesFor
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -158,54 +156,59 @@ internal fun GitHistoryList(
             .collect { currentOnLoadMore() }
     }
     val rows = remember(commits) { layoutGraph(commits) }
+    val strokes =
+        remember(rows) { rows.indices.map { strokesFor(rows[it], rows.getOrNull(it - 1), rows.getOrNull(it + 1)) } }
+    val reach = remember(strokes) { graphReach(strokes) }
     // Width follows the widest loaded row, capped, so the text column holds still.
     val laneCount =
         remember(rows) {
             val widest = rows.maxOfOrNull { row -> maxOf(row.lane, row.up.maxLane(), row.down.maxLane()) } ?: 0
             (widest + 1).coerceAtMost(MAX_LANES)
         }
-    // shortcut: no EdgeFade yet, it only takes a ScrollState; generalize it when wiring the sheet.
-    LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
-        itemsIndexed(commits, key = { _, commit -> commit.sha }) { index, commit ->
-            GitCommitRow(
-                commit = commit,
-                row = rows[index],
-                prev = rows.getOrNull(index - 1),
-                next = rows.getOrNull(index + 1),
-                laneCount = laneCount,
-                nowMillis = nowMillis,
-                onClick = { onCommitClick(commit) },
-            )
-        }
-        if (isLoadingMore) {
-            item(key = "loadingMore") {
-                SkeletonPulse {
-                    Column {
-                        repeat(LOADING_MORE_ROWS) {
-                            GitCommitRowSkeleton(it, laneCount, first = false, last = it == LOADING_MORE_ROWS - 1)
+    Box(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
+            itemsIndexed(commits, key = { _, commit -> commit.sha }) { index, commit ->
+                GitCommitRow(
+                    commit = commit,
+                    row = rows[index],
+                    strokes = strokes[index],
+                    reach = reach[index],
+                    laneCount = laneCount,
+                    nowMillis = nowMillis,
+                    onClick = { onCommitClick(commit) },
+                )
+            }
+            if (isLoadingMore) {
+                item(key = "loadingMore") {
+                    SkeletonPulse {
+                        Column {
+                            repeat(LOADING_MORE_ROWS) {
+                                GitCommitRowSkeleton(it, laneCount, first = false, last = it == LOADING_MORE_ROWS - 1)
+                            }
+                        }
+                    }
+                }
+            }
+            if (moreError != null) {
+                item(key = "moreError") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_git_history_more_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(onClick = onLoadMore, modifier = Modifier.handCursor()) {
+                            Text(stringResource(R.string.chat_retry))
                         }
                     }
                 }
             }
         }
-        if (moreError != null) {
-            item(key = "moreError") {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_git_history_more_failed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(onClick = onLoadMore, modifier = Modifier.handCursor()) {
-                        Text(stringResource(R.string.chat_retry))
-                    }
-                }
-            }
-        }
+        EdgeFade(listState = listState, fadeColor = MaterialTheme.colorScheme.surfaceContainerLow)
     }
 }
 
@@ -264,73 +267,79 @@ private fun List<GraphEdge>.maxLane(): Int = maxOfOrNull { maxOf(it.from, it.to)
 private fun GitCommitRow(
     commit: ChatGitCommit,
     row: GraphRow,
-    prev: GraphRow?,
-    next: GraphRow?,
+    strokes: List<GraphStroke>,
+    reach: Float,
     laneCount: Int,
     nowMillis: Long,
     onClick: () -> Unit,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.98f else 1f,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        label = "commitRowPress",
-    )
     val description = commitDescription(commit, nowMillis)
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .height(CommitRowHeight)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }.handCursor()
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = ripple(),
-                    role = Role.Button,
-                    onClick = onClick,
-                ).semantics(mergeDescendants = true) { contentDescription = description }
+                .semantics(mergeDescendants = true) { contentDescription = description }
                 .padding(end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         GitGraphCell(
             row = row,
-            prev = prev,
-            next = next,
+            strokes = strokes,
+            reach = reach,
             laneCount = laneCount,
             isHead = commit.refs.any { it.isHead || it.kind == ChatGitRef.Kind.HEAD },
         )
         Spacer(Modifier.width(8.dp))
-        Row(
-            modifier = Modifier.weight(1f).clearAndSetSemantics {},
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // The card sits beside the graph so the lane lines run unbroken between rows.
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(vertical = 3.dp),
         ) {
-            val refs = commit.refs.sortedBy { it.order() }
-            Text(
-                text = commit.subject,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            refs.firstOrNull()?.let { RefBadge(it) }
-            if (refs.size > 1) MoreRefsBadge(refs.size - 1)
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .handCursor()
+                        .clickable(role = Role.Button, onClick = onClick)
+                        .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f).clearAndSetSemantics {},
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val refs = commit.refs.sortedBy { it.order() }
+                    Text(
+                        text = commit.subject,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    refs.firstOrNull()?.let { RefBadge(it) }
+                    if (refs.size > 1) MoreRefsBadge(refs.size - 1)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = compactCommitDate(nowMillis, commit.authorTimeMillis),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    modifier = Modifier.widthIn(min = 40.dp).clearAndSetSemantics {},
+                )
+                Spacer(Modifier.width(8.dp))
+                AuthorAvatar(name = commit.authorName, email = commit.authorEmail)
+            }
         }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = compactCommitDate(nowMillis, commit.authorTimeMillis),
-            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            maxLines = 1,
-            modifier = Modifier.widthIn(min = 40.dp).clearAndSetSemantics {},
-        )
-        Spacer(Modifier.width(8.dp))
-        AuthorAvatar(name = commit.authorName, email = commit.authorEmail)
     }
 }
 
@@ -356,19 +365,20 @@ private fun graphPalette(): List<Color> {
 @Composable
 private fun GitGraphCell(
     row: GraphRow,
-    prev: GraphRow?,
-    next: GraphRow?,
+    strokes: List<GraphStroke>,
+    reach: Float,
     laneCount: Int,
     isHead: Boolean,
 ) {
     val palette = graphPalette()
     val nodeColor = palette[row.color % palette.size]
     val background = MaterialTheme.colorScheme.surfaceContainerLow
-    val strokes = remember(row, prev, next) { strokesFor(row, prev, next) }
+    // Only as wide as this row's own lines, so its card sits right beside them.
+    val lanes = reach.coerceAtMost(laneCount - 1f) + 1f
     Spacer(
         modifier =
             Modifier
-                .width(LaneWidth * laneCount + 6.dp)
+                .width(LaneWidth * lanes + 6.dp)
                 .fillMaxHeight()
                 .clearAndSetSemantics {}
                 .drawBehind {

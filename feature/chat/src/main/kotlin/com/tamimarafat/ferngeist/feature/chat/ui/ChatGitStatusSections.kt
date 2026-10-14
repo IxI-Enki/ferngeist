@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -21,14 +22,19 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -40,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.core.common.ui.EdgeFade
@@ -50,70 +57,57 @@ import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.feature.chat.R
 
+/** The Changes tab: aggregate totals, then the per-file list, which owns the only scroll. */
 @Composable
-internal fun GitStatusListContent(
+internal fun ColumnScope.GitChangesBody(
     status: ChatGitStatus,
     onFileClick: (ChatChangedFile) -> Unit,
 ) {
     val additions = status.changed.sumOf { it.added }
     val deletions = status.changed.sumOf { it.removed }
+    GitStatusSummaryCard(
+        additions = additions,
+        deletions = deletions,
+        fileCount = status.changed.size,
+    )
 
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        GitStatusHeader(status = status)
+    Spacer(modifier = Modifier.height(16.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        GitStatusSummaryCard(
-            additions = additions,
-            deletions = deletions,
-            fileCount = status.changed.size,
+    // Per-file list (own vertical scroll container, no nesting)
+    if (status.changed.isEmpty()) {
+        Text(
+            text = stringResource(R.string.chat_git_clean),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp),
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Per-file list (own vertical scroll container, no nesting)
-        if (status.changed.isEmpty()) {
-            Text(
-                text = stringResource(R.string.chat_git_clean),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(16.dp),
-            )
-        } else {
-            val scrollState = rememberScrollState()
-            Box(
+    } else {
+        val scrollState = rememberScrollState()
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+        ) {
+            Column(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .fillMaxHeight()
+                        .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Column(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight()
-                            .verticalScroll(scrollState),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    status.changed.forEach { file ->
-                        ChangedFileRow(file = file, onClick = { onFileClick(file) })
-                    }
+                status.changed.forEach { file ->
+                    ChangedFileRow(file = file, onClick = { onFileClick(file) })
                 }
-                EdgeFade(scrollState = scrollState, fadeColor = MaterialTheme.colorScheme.surfaceContainerLow)
             }
+            EdgeFade(scrollState = scrollState, fadeColor = MaterialTheme.colorScheme.surfaceContainerLow)
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun GitStatusHeader(status: ChatGitStatus) {
+internal fun GitStatusHeader(status: ChatGitStatus) {
     // Header: title + branch pill + ahead/behind
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -189,7 +183,7 @@ private fun GitAheadBehindIndicator(
 }
 
 @Composable
-private fun GitStatusSummaryCard(
+internal fun GitStatusSummaryCard(
     additions: Int,
     deletions: Int,
     fileCount: Int,
@@ -256,6 +250,8 @@ internal fun GitDiffDetailContent(
     error: String?,
     onBack: () -> Unit,
     onRetry: () -> Unit,
+    /** Diffing a commit's file: a missing [file] means its list is still loading, not that it was deleted. */
+    inCommit: Boolean = false,
 ) {
     Column(
         modifier =
@@ -275,6 +271,7 @@ internal fun GitDiffDetailContent(
             isLoading = isLoading,
             error = error,
             onRetry = onRetry,
+            inCommit = inCommit,
         )
     }
 }
@@ -290,12 +287,14 @@ private fun GitDiffDetailHeader(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.handCursor()) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = stringResource(R.string.chat_back_desc),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+        GitTooltip(stringResource(R.string.chat_back_desc)) {
+            IconButton(onClick = onBack, modifier = Modifier.handCursor()) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = stringResource(R.string.chat_back_desc),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
         if (file != null) {
             GitStatusBadge(status = file.status)
@@ -304,7 +303,12 @@ private fun GitDiffDetailHeader(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = fileNameOf(file.path),
+                    text =
+                        file.oldPath?.let {
+                            "${fileNameOf(
+                                it,
+                            )} → ${fileNameOf(file.path)}"
+                        } ?: fileNameOf(file.path),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.StartEllipsis,
@@ -382,9 +386,11 @@ private fun GitDiffDetailBody(
     isLoading: Boolean,
     error: String?,
     onRetry: () -> Unit,
+    inCommit: Boolean,
 ) {
     // Content: loading / error / binary / empty / rendered diff.
     when {
+        file == null && inCommit -> GitDiffSkeleton()
         file == null -> {
             // Requested path no longer in status (e.g. refreshed while open).
             // The header back arrow above remains available to return to the list.
@@ -396,14 +402,7 @@ private fun GitDiffDetailBody(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
             )
         }
-        isLoading -> {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                CircularWavyProgressIndicator(modifier = Modifier.size(64.dp))
-            }
-        }
+        isLoading -> GitDiffSkeleton()
         file.binary -> {
             Text(
                 text = stringResource(R.string.chat_git_binary),
@@ -449,7 +448,7 @@ private fun GitDiffDetailBody(
 }
 
 @Composable
-private fun ChangedFileRow(
+internal fun ChangedFileRow(
     file: ChatChangedFile,
     onClick: () -> Unit,
 ) {
@@ -533,4 +532,119 @@ private fun ChangedFileDiffCounts(file: ChatChangedFile) {
             )
         }
     }
+}
+
+/** Summary card and file rows, the shapes [GitStatusSummaryCard] and [ChangedFileRow] will fill. */
+@Composable
+internal fun GitFileListSkeleton(rows: Int = 4) {
+    SkeletonPulse(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).height(24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Bone(height = 16.dp, width = 40.dp)
+                    Bone(height = 16.dp, width = 32.dp)
+                    Spacer(Modifier.weight(1f))
+                    Bone(height = 12.dp, width = 72.dp)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            repeat(rows) { index ->
+                Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Bone(height = 22.dp, width = 22.dp, shape = RoundedCornerShape(6.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            Bone(
+                                height = 12.dp,
+                                modifier = Modifier.fillMaxWidth(BoneFractions[index % BoneFractions.size]),
+                            )
+                        }
+                        Bone(height = 10.dp, width = 44.dp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Diff lines: a gutter number and code of varied length, some indented like a real hunk. */
+@Composable
+private fun GitDiffSkeleton() {
+    SkeletonPulse(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Bone(height = 14.dp, width = 160.dp)
+            Spacer(Modifier.height(4.dp))
+            repeat(DIFF_SKELETON_LINES) { index ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Bone(height = 10.dp, width = 18.dp)
+                    Box(
+                        modifier =
+                            Modifier.weight(1f).padding(
+                                start =
+                                    if (index in
+                                        IndentedDiffLines
+                                    ) {
+                                        16.dp
+                                    } else {
+                                        0.dp
+                                    },
+                            ),
+                    ) {
+                        Bone(
+                            height = 10.dp,
+                            modifier = Modifier.fillMaxWidth(BoneFractions[(index + index / 2) % BoneFractions.size]),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val DIFF_SKELETON_LINES = 12
+private val IndentedDiffLines = setOf(1, 2, 5, 8, 9)
+
+@Preview(name = "Diff · loading", widthDp = 380, heightDp = 420)
+@Composable
+private fun GitDiffLoadingPreview() {
+    MaterialTheme {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            GitDiffDetailContent(
+                path = "feature/chat/src/main/kotlin/GitGraph.kt",
+                file = ChatChangedFile("feature/chat/src/main/kotlin/GitGraph.kt", "M", added = 12, removed = 3),
+                diff = null,
+                diffPath = null,
+                isLoading = true,
+                error = null,
+                onBack = {},
+                onRetry = {},
+            )
+        }
+    }
+}
+
+/** Names an icon-only control on long-press and hover, like the composer's buttons. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun GitTooltip(
+    label: String,
+    content: @Composable () -> Unit,
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+        content = content,
+    )
 }

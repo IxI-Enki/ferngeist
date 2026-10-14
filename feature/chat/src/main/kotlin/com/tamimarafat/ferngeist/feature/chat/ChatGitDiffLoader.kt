@@ -62,19 +62,24 @@ internal class ChatGitDiffLoader(
     }
 
     /**
-     * Fetches the unified diff for a single file in the gateway-backed working
-     * tree and stores it in [ChatState.gitFileDiff] (the UI renders the first
+     * Fetches the diff for a single file in the gateway-backed working tree, or in
+     * [commit] against its first parent, and stores it in [ChatState.gitFileDiff] (the UI renders the first
      * item).
      *
      * When the chat has no gateway workspace, or the fetch throws, the requested
      * path is retained with a nonblank error so the UI can retry the same file.
      */
-    suspend fun load(path: String) {
+    suspend fun load(
+        path: String,
+        commit: String? = null,
+        oldPath: String? = null,
+    ) {
         mutex.withLock {
             job?.cancel()
             update {
                 copy(
                     gitFileDiffPath = path,
+                    gitFileDiffCommit = commit,
                     isGitFileDiffLoading = true,
                     gitFileDiffError = null,
                     gitFileDiff = null,
@@ -83,7 +88,7 @@ internal class ChatGitDiffLoader(
             job =
                 scope.launch {
                     val currentJob = coroutineContext[Job]
-                    val result = runCatching { facade.fetchGitDiff(path) }
+                    val result = runCatching { facade.fetchGitDiff(path, commit, oldPath) }
                     mutex.withLock {
                         if (currentJob != job) return@withLock
                         handleResult(result, path)

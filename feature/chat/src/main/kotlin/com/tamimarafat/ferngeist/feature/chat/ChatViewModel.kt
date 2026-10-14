@@ -258,6 +258,15 @@ class ChatViewModel
                 acpSessionId = { trackedSessionId.takeIf { it != NEW_SESSION_ARG } },
             )
 
+        /** Commit history and a commit's files for the git sheet's History tab. */
+        private val gitHistoryLoader =
+            ChatGitHistoryLoader(
+                scope = viewModelScope,
+                facade = sessionFacade,
+                history = { state.value.gitHistory },
+                update = { reducer -> updateState { copy(gitHistory = gitHistory.reducer()) } },
+            )
+
         /** Chat switcher rows and the close-session action behind them. */
         private val switcherController =
             ChatSwitcherController(
@@ -696,6 +705,8 @@ class ChatViewModel
                 is ChatIntent.RemoveQueuedMessage,
                 is ChatIntent.ForceSendMessage,
                 is ChatIntent.LoadGitDiff,
+                is ChatIntent.LoadGitLog,
+                is ChatIntent.LoadGitCommit,
                 is ChatIntent.MarkSwitcherHintSeen,
                 is ChatIntent.CloseSession,
                 is ChatIntent.SubmitElicitation,
@@ -710,7 +721,9 @@ class ChatViewModel
             when (intent) {
                 is ChatIntent.RemoveQueuedMessage -> offlineQueue.removeQueuedMessage(intent.clientId)
                 is ChatIntent.ForceSendMessage -> offlineQueue.forceSend(intent.clientId)
-                is ChatIntent.LoadGitDiff -> gitDiffLoader.load(intent.path)
+                is ChatIntent.LoadGitDiff -> gitDiffLoader.load(intent.path, intent.commit, intent.oldPath)
+                is ChatIntent.LoadGitLog -> gitHistoryLoader.loadLog(intent.more)
+                is ChatIntent.LoadGitCommit -> gitHistoryLoader.loadCommit(intent.sha)
                 is ChatIntent.MarkSwitcherHintSeen -> switcherHintStore.markSeen()
                 is ChatIntent.CloseSession -> switcherController.close(intent.serverId, intent.sessionId)
                 is ChatIntent.SubmitElicitation -> sessionCoordinator.submitElicitation(intent.key, intent.values)

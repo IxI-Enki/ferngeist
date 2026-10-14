@@ -3,7 +3,6 @@
 package com.tamimarafat.ferngeist.feature.chat.ui
 
 import android.content.res.Resources
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -58,7 +57,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -98,7 +96,6 @@ import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatElicitationRequest
 import com.tamimarafat.ferngeist.core.model.ChatElicitationValue
-import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.core.model.UsageState
@@ -978,93 +975,6 @@ private fun ThoughtDetailsSheet(
             }
 
             RenderedMarkdown(text = thought, document = document)
-        }
-    }
-}
-
-/**
- * Modal bottom sheet showing the git working-tree status in detail: branch,
- * ahead/behind, aggregate added/deleted line totals, and a per-file list with the
- * porcelain status letter and per-file line counts — the standard layout most git
- * UIs use. Opened by long-pressing the git status pill in the chat top bar.
- *
- * Tapping a file switches the same sheet to that file's unified diff detail
- * (loading → loaded/error/binary/empty via [gitFileDiff] and friends); the back
- * arrow returns to the list without dismissing the sheet.
- */
-@Composable
-internal fun GitStatusSheet(
-    status: ChatGitStatus,
-    gitFileDiff: List<ToolCallContent.Diff>?,
-    gitFileDiffPath: String?,
-    isGitFileDiffLoading: Boolean,
-    gitFileDiffError: String?,
-    onLoadGitDiff: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
-    val scope = rememberCoroutineScope()
-    val escapeFocus = rememberEscapeFocusAnchor()
-    // Selected file path; null shows the summary/list, non-null shows its diff detail.
-    // Saved across process death so the detail survives rotation while the request runs.
-    var selectedFilePath by rememberSaveable { mutableStateOf<String?>(null) }
-
-    // Re-request the diff when the selection is restored (e.g. process death)
-    // or changes outside the row click. The ViewModel records the last requested
-    // path in gitFileDiffPath on every dispatch, so matching it means the request
-    // for this path is already in flight/settled and nothing is re-sent — the row
-    // click's immediate dispatch is preserved and never duplicated here.
-    LaunchedEffect(selectedFilePath) {
-        val path = selectedFilePath ?: return@LaunchedEffect
-        if (isDirectoryPath(path)) {
-            selectedFilePath = null
-            return@LaunchedEffect
-        }
-        if (path != gitFileDiffPath) {
-            onLoadGitDiff(path)
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        AnimatedContent(
-            targetState = selectedFilePath,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    // Key events reach the active focus target and its ancestors only, so the
-                    // sheet takes focus itself rather than relying on focusable content.
-                    .focusRequester(escapeFocus)
-                    .focusTarget()
-                    .onEscapeKey { scope.dismissSheet(sheetState, onDismiss) },
-            label = "GitStatusSheetContent",
-        ) { path ->
-            if (path == null) {
-                GitStatusListContent(
-                    status = status,
-                    onFileClick = { file ->
-                        if (!isDirectoryEntry(file)) {
-                            selectedFilePath = file.path
-                            onLoadGitDiff(file.path)
-                        }
-                    },
-                )
-            } else {
-                val file = status.changed.firstOrNull { it.path == path }
-                GitDiffDetailContent(
-                    path = path,
-                    file = file,
-                    diff = gitFileDiff,
-                    diffPath = gitFileDiffPath,
-                    isLoading = isGitFileDiffLoading,
-                    error = gitFileDiffError,
-                    onBack = { selectedFilePath = null },
-                    onRetry = { onLoadGitDiff(path) },
-                )
-            }
         }
     }
 }

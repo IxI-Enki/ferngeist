@@ -452,6 +452,15 @@ class ChatViewModel
         }
 
         /**
+         * A session/load announces no sessionReady, and the status asked for when the workspace
+         * appeared ran before the gateway knew this session's directory, so ask again once ready.
+         */
+        private fun refreshGitStatusOnceReady(wasReady: Boolean) {
+            if (wasReady || !state.value.isSessionReady) return
+            state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
+        }
+
+        /**
          * Applies a snapshot from the facade to UI state, keeping markdown hydration in sync.
          *
          * When the snapshot carries a USER message whose content+images match a
@@ -467,6 +476,7 @@ class ChatViewModel
             val (reconciledPending, echoKeys) = reconcileSendingPendingBubbles(snapshot.messages)
             val failed = snapshot.loadState == ChatLoadState.FAILED
             val wasStreaming = state.value.isStreaming
+            val wasReady = state.value.isSessionReady
             // A HYDRATING snapshot is an in-flight marker: it asserts that a load is
             // running, not that a reported failure is over. Letting it rewrite the error
             // to null and `isLoading` back to true replaces a visible load error with a
@@ -512,6 +522,7 @@ class ChatViewModel
                 )
             }
             if (wasStreaming && !snapshot.isStreaming) touchSessionAfterTurn()
+            refreshGitStatusOnceReady(wasReady)
             dropTitleThatIsThePrompt()
             applyServerTitle(snapshot.title)
             fetchGeneratedTitleIfNeeded(snapshot)

@@ -3,6 +3,7 @@ package com.tamimarafat.ferngeist.feature.chat
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatGitCommit
 import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
 import com.tamimarafat.ferngeist.core.model.GitHistoryHeadGoneException
 import com.tamimarafat.ferngeist.core.model.GitHistoryUnsupportedException
@@ -171,6 +172,28 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
             assertEquals(listOf(renamed), state.gitHistory.commitFiles)
             assertEquals("abc", state.gitFileDiffCommit)
             assertEquals(listOf("abc" to "a.kt"), facade.gitDiffCommitRequests)
+        }
+
+    @Test
+    fun `the session becoming ready after a load asks for git status again`() =
+        runTest {
+            val facadeFactory = TestFacadeFactory { TestFacade() }
+            val viewModel = createViewModel(facadeFactory = facadeFactory)
+            val facade = facadeFactory.lastFacade.value!!
+            // Before session/load the gateway has no directory for this session, so status is empty.
+            facade.emitGatewayWorkspaceConnection(GatewayWorkspaceConnection("rt-1", "http", "10.0.0.2:5788", "token"))
+            advanceUntilIdle()
+            assertNull(viewModel.state.value.gitStatus)
+
+            facade.gitStatus = ChatGitStatus(branch = "main")
+            facade.emitSnapshot(readySnapshot())
+            advanceUntilIdle()
+
+            assertEquals(
+                "main",
+                viewModel.state.value.gitStatus
+                    ?.branch,
+            )
         }
 
     private fun page(

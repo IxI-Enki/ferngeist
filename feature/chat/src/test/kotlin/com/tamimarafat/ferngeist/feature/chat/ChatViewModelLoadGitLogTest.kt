@@ -43,6 +43,35 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
         }
 
     @Test
+    fun `a refresh adds new commits on top and keeps the pages already loaded`() =
+        runTest {
+            var refreshed = false
+            val (viewModel, _) =
+                gatewayViewModel {
+                    gitLog = { head, _ ->
+                        when {
+                            head != null -> page("h", true, "c", "d")
+                            refreshed -> page("h2", true, "new", "a")
+                            else -> page("h", true, "a", "b")
+                        }
+                    }
+                }
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
+            advanceUntilIdle()
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = true))
+            advanceUntilIdle()
+
+            refreshed = true
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
+            advanceUntilIdle()
+
+            val history = viewModel.state.value.gitHistory
+            assertEquals(listOf("new", "a", "b", "c", "d"), history.commits.map { it.sha })
+            assertEquals("h2", history.head)
+            assertTrue(history.hasMore)
+        }
+
+    @Test
     fun `a vanished head on a later page reloads page one instead of failing`() =
         runTest {
             val (viewModel, facade) =
@@ -199,13 +228,20 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
     private fun page(
         head: String,
         hasMore: Boolean,
-        sha: String,
+        vararg shas: String,
     ) = ChatGitLogPage(
         head = head,
         commits =
-            listOf(
-                ChatGitCommit(sha, emptyList(), sha, authorName = "A", authorEmail = "", authorTimeMillis = 0),
-            ),
+            shas.map {
+                ChatGitCommit(
+                    it,
+                    emptyList(),
+                    it,
+                    authorName = "A",
+                    authorEmail = "",
+                    authorTimeMillis = 0,
+                )
+            },
         hasMore = hasMore,
         remoteUrl = null,
     )

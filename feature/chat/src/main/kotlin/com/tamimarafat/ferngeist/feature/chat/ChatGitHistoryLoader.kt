@@ -67,10 +67,25 @@ internal class ChatGitHistoryLoader(
             return
         }
         update {
+            // A refresh that still meets the loaded list keeps the pages past it, so new commits
+            // join the top instead of cutting the list back to one page. A rewrite starts over.
+            val joinsAt =
+                if (more) {
+                    -1
+                } else {
+                    page.commits.lastOrNull()?.let { last ->
+                        commits.indexOfFirst {
+                            it.sha ==
+                                last.sha
+                        }
+                    }
+                        ?: -1
+                }
+            val tail = if (joinsAt >= 0) commits.drop(joinsAt + 1) else emptyList()
             copy(
                 head = page.head,
-                commits = if (more) commits + page.commits else page.commits,
-                hasMore = page.hasMore,
+                commits = if (more) commits + page.commits else page.commits + tail,
+                hasMore = if (tail.isEmpty()) page.hasMore else hasMore,
                 remoteUrl = page.remoteUrl,
                 isLoaded = true,
                 isLoading = false,

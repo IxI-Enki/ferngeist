@@ -6,6 +6,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.hilt.lifecycle.viewmodel.compose.rememberHiltViewModelFactory
 import androidx.lifecycle.DEFAULT_ARGS_KEY
@@ -53,31 +54,35 @@ fun WorkspaceSessionsPane(
         )
     val server by viewModel.server.collectAsStateWithLifecycle()
 
-    SessionListScreen(
-        navArgName = null,
-        loadedName = server?.name,
-        serverId = serverId,
-        // The workspace owns the spine, so there is no route to pop: "back" steps the left
-        // pane up to the agent list instead. That only has meaning when the agent list is
-        // hidden — at three panes it is already on screen, so the button would do nothing.
-        showBackButton = showBackButton,
-        // The workspace can show the agent list beside this list, and both claim
-        // ServerNameSharedBoundsKey for the same server — two claimants scale the title to the
-        // agent card's bounds. Panes never share bounds; only the compact flow morphs.
-        sharedBoundsEnabled = false,
-        onNavigateBack = { workspace.backToAgents() },
-        onNavigateToChat = { sessionId, cwd, _, title ->
-            workspace.selectSession(
-                WorkspaceSelection(
-                    serverId = serverId,
-                    sessionId = sessionId,
-                    cwd = cwd,
-                    title = title.orEmpty(),
-                ),
-            )
-        },
-        viewModel = viewModel,
-        sharedTransitionScope = sharedTransitionScope,
-        animatedContentScope = animatedContentScope,
-    )
+    // The pane stays composed across agent switches; without the key, its remembered dialog,
+    // worktree and scroll state would carry over from the previous agent.
+    key(serverId) {
+        SessionListScreen(
+            navArgName = null,
+            loadedName = server?.name,
+            serverId = serverId,
+            // The workspace owns the spine, so there is no route to pop: "back" steps the left
+            // pane up to the agent list instead. That only has meaning when the agent list is
+            // hidden — at three panes it is already on screen, so the button would do nothing.
+            showBackButton = showBackButton,
+            // The workspace can show the agent list beside this list, and both claim
+            // ServerNameSharedBoundsKey for the same server — two claimants scale the title to the
+            // agent card's bounds. Panes never share bounds; only the compact flow morphs.
+            sharedBoundsEnabled = false,
+            onNavigateBack = { workspace.backToAgents() },
+            onNavigateToChat = { sessionId, cwd, _, title ->
+                workspace.selectSession(
+                    WorkspaceSelection(
+                        serverId = serverId,
+                        sessionId = sessionId,
+                        cwd = cwd,
+                        title = title.orEmpty(),
+                    ),
+                )
+            },
+            viewModel = viewModel,
+            sharedTransitionScope = sharedTransitionScope,
+            animatedContentScope = animatedContentScope,
+        )
+    }
 }

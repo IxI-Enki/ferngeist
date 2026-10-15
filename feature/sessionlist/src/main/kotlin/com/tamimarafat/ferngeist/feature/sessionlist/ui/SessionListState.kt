@@ -169,7 +169,7 @@ internal fun SessionListEventEffects(
             ?: pendingAuthentication?.authMethods?.firstOrNull()?.id
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
                 is SessionListEvent.NavigateToChat -> {

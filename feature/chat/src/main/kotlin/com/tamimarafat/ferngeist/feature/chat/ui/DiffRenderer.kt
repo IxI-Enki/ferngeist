@@ -351,8 +351,8 @@ internal fun buildDiffRows(
     oldText: String?,
     newText: String,
 ): List<LineDiffRow> {
-    val oldLines = oldText?.lines() ?: emptyList()
-    val newLines = newText.lines()
+    val oldLines = oldText?.diffLines() ?: emptyList()
+    val newLines = newText.diffLines()
     val fullRows = buildFullDiffRows(oldLines, newLines)
     return collapseDiffRows(fullRows)
 }
@@ -479,9 +479,10 @@ internal data class DiffStats(
 )
 
 // A final newline ends the last line rather than starting an empty one, as git counts it.
+// An empty text has no lines (a new or deleted file), and a final newline does not start one.
 private fun String.diffLines(): List<String> {
     val lines = lines()
-    return if (lines.size > 1 && lines.last().isEmpty()) lines.dropLast(1) else lines
+    return if (lines.last().isEmpty()) lines.dropLast(1) else lines
 }
 
 internal fun List<ToolCallContent.Diff>.computeDiffStats(): DiffStats {

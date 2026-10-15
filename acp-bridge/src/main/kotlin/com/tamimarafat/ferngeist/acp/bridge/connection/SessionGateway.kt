@@ -757,6 +757,9 @@ internal class SessionGateway(
                     )
                 }
 
+            // The request often carries the only copy of the call's diff and input, so it is
+            // applied as an update before the permission prompt.
+            AcpSessionUpdateMapper.mapSessionUpdateToEvent(toolCall)?.let { emitToBridge(sessionId, it) }
             emitToBridge(
                 sessionId,
                 AppSessionEvent.ToolPermissionRequested(

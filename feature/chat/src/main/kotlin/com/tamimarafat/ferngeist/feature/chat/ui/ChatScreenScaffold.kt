@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -219,7 +220,30 @@ private fun BoxScope.ChatScreenContentOverlays(
     onSwitchSession: OnSwitchSession,
     appBarScrollConnection: NestedScrollConnection,
 ) {
-    ChatScreenDialogsHost(screenState, viewModel)
+    // The tool call sheet reads the working tree's diff for an edit with none of its own, but only in
+    // the newest turn: the tree holds everything since, so an older call's diff would be wrong.
+    val selected = screenState.selectedToolCallSegmentId.value
+    val inNewestTurn =
+        screenState.state.messages
+            .lastOrNull()
+            ?.segments
+            ?.any { it.id == selected } == true
+    CompositionLocalProvider(
+        LocalWorkingTreeChanges provides
+            if (inNewestTurn) screenState.state.turnWorkingTree() else emptyList(),
+        LocalTurnGitFallback provides
+            TurnGitFallback(
+                diffs = screenState.state.turnGitDiffs,
+                loading = screenState.state.turnGitDiffsLoading,
+                errors = screenState.state.turnGitDiffsErrors,
+                onRequest = { path, oldPath, revision ->
+                    viewModel.dispatch(ChatIntent.LoadTurnFileDiff(path, oldPath, revision))
+                },
+                onRefresh = { if (inNewestTurn) viewModel.dispatch(ChatIntent.RefreshGitStatus) },
+            ),
+    ) {
+        ChatScreenDialogsHost(screenState, viewModel)
+    }
     if (screenState.showGitStatusSheet.value) {
         screenState.state.gitStatus?.let { status ->
             GitStatusSheet(

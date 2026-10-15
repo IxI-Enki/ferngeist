@@ -72,6 +72,7 @@ internal object AcpSessionUpdateMapper {
             title = update.title,
             kind = update.kind,
             status = update.status,
+            content = update.content.takeIf { it.isNotEmpty() },
             rawInput = update.rawInput,
             locations = update.locations.map { it.path },
         )

@@ -157,6 +157,20 @@ class DiffBlocksTest {
     }
 
     @Test
+    fun emptyOldText_isANewFileWithNothingDeleted() {
+        val diff = ToolCallContent.Diff(path = "a.kt", oldText = "", newText = "one\ntwo\n")
+
+        assertEquals(DiffStats(additions = 2, deletions = 0), listOf(diff).computeDiffStats())
+        assertEquals(2, buildDiffRows(diff.oldText, diff.newText).size)
+        assert(buildDiffRows(diff.oldText, diff.newText).all { it is LineDiffRow.Insert })
+    }
+
+    @Test
+    fun diffRows_aFinalNewlineAddedOnOneSide_isNotAChangedLine() {
+        assertEquals(emptyList<LineDiffRow>(), buildDiffRows("same", "same\n"))
+    }
+
+    @Test
     fun directoryPath_isNotDiffable() {
         assert(isDirectoryPath(".commandcode/"))
         assert(isDirectoryPath("demo-screenshots/"))

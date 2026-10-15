@@ -1,6 +1,8 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import com.agentclientprotocol.model.ToolCallContent
+import com.tamimarafat.ferngeist.core.model.ChatChangedFile
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -138,6 +140,160 @@ class ChatViewModelLoadGitDiffTest : ChatViewModelTestBase() {
             assertEquals("src/Latest.kt", state.gitFileDiffPath)
             assertEquals(latestDiff, state.gitFileDiff?.single())
             assertTrue(state.gitFileDiffError.isNullOrBlank())
+        }
+
+    @Test
+    fun `LoadTurnFileDiff stores the diff under its path and answers once per path`() =
+        runTest {
+            val diff = testDiff("old\n", "new\n", "src/New.kt")
+            val (viewModel, facade) =
+                gatewayViewModel {
+                    fetchGitDiffResult = listOf(diff)
+                }
+            advanceUntilIdle()
+
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt"))
+            advanceUntilIdle()
+            // A second request for the answered path must not fetch again.
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt"))
+            advanceUntilIdle()
+
+            val state = viewModel.state.value
+            assertEquals(diff, state.turnGitDiffs["src/New.kt"]?.single())
+            assertTrue(state.turnGitDiffsLoading.isEmpty())
+            assertTrue(state.turnGitDiffsErrors.isEmpty())
+            assertEquals(listOf("src/New.kt"), facade.gitDiffRequests)
+        }
+
+    @Test
+    fun `LoadTurnFileDiff with facade exception records a per-path error`() =
+        runTest {
+            val (viewModel, facade) =
+                gatewayViewModel {
+                    fetchGitDiffError = IllegalStateException("gateway unreachable")
+                }
+            advanceUntilIdle()
+
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt"))
+            advanceUntilIdle()
+            // A failed path retries on the next request.
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt"))
+            advanceUntilIdle()
+
+            val state = viewModel.state.value
+            assertNull(state.turnGitDiffs["src/New.kt"])
+            assertTrue(state.turnGitDiffsLoading.isEmpty())
+            assertTrue(state.turnGitDiffsErrors["src/New.kt"].isNullOrBlank().not())
+            assertEquals(listOf("src/New.kt", "src/New.kt"), facade.gitDiffRequests)
+        }
+
+    @Test
+    fun `LoadTurnFileDiff without gateway workspace records a per-path error`() =
+        runTest {
+            val facadeFactory = FakeChatSessionFacadeFactory()
+            val viewModel = createViewModel(facadeFactory = facadeFactory)
+            advanceUntilIdle()
+
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt"))
+            advanceUntilIdle()
+
+            val state = viewModel.state.value
+            assertNull(state.turnGitDiffs["src/New.kt"])
+            assertTrue(state.turnGitDiffsLoading.isEmpty())
+            assertTrue(state.turnGitDiffsErrors["src/New.kt"].isNullOrBlank().not())
+            // The facade has no workspace connection, so it answers null without asking a gateway.
+            assertTrue(
+                facadeFactory.lastFacade.value!!
+                    .gitDiffRequests
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `LoadTurnFileDiff in flight is not refetched for the same revision`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val (viewModel, facade) =
+                gatewayViewModel {
+                    fetchGitDiffGates["src/New.kt"] = gate
+                    fetchGitDiffResult = listOf(testDiff("old\n", "new\n", "src/New.kt"))
+                }
+            advanceUntilIdle()
+
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt", revision = "M:1:0"))
+            advanceUntilIdle()
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt", revision = "M:1:0"))
+            advanceUntilIdle()
+            assertEquals(setOf("src/New.kt"), viewModel.state.value.turnGitDiffsLoading)
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            val state = viewModel.state.value
+            assertTrue(state.turnGitDiffsLoading.isEmpty())
+            assertEquals(1, state.turnGitDiffs["src/New.kt"]?.size)
+            assertEquals(listOf("src/New.kt"), facade.gitDiffRequests)
+        }
+
+    @Test
+    fun `LoadTurnFileDiff for a newer revision replaces the stale answer`() =
+        runTest {
+            val (viewModel, facade) =
+                gatewayViewModel {
+                    fetchGitDiffResult = listOf(testDiff("old\n", "new\n", "src/New.kt"))
+                }
+            advanceUntilIdle()
+
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt", revision = "M:1:0"))
+            advanceUntilIdle()
+            facade.fetchGitDiffResult = listOf(testDiff("old\n", "newer\n", "src/New.kt"))
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt", revision = "M:2:0"))
+            advanceUntilIdle()
+
+            assertEquals(2, facade.gitDiffRequests.size)
+            val state = viewModel.state.value
+            assertEquals("newer\n", state.turnGitDiffs["src/New.kt"]?.single()?.newText)
+            assertTrue(state.turnGitDiffsLoading.isEmpty())
+        }
+
+    @Test
+    fun `LoadTurnFileDiff stores an empty answer so the path is not retried`() =
+        runTest {
+            val (viewModel, facade) = gatewayViewModel { fetchGitDiffResult = emptyList() }
+            advanceUntilIdle()
+
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt"))
+            advanceUntilIdle()
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt"))
+            advanceUntilIdle()
+
+            assertEquals(emptyList<Any>(), viewModel.state.value.turnGitDiffs["src/New.kt"])
+            assertEquals(1, facade.gitDiffRequests.size)
+        }
+
+    @Test
+    fun `a git status refresh re-reads the turn diffs already loaded`() =
+        runTest {
+            val (viewModel, facade) =
+                gatewayViewModel {
+                    gitStatus = ChatGitStatus(changed = listOf(ChatChangedFile(path = "src/New.kt", status = "M")))
+                    fetchGitDiffResult = listOf(testDiff("old\n", "new\n", "src/New.kt"))
+                }
+            advanceUntilIdle()
+            viewModel.dispatch(ChatIntent.LoadTurnFileDiff("src/New.kt", revision = "M:1:0"))
+            advanceUntilIdle()
+
+            // Same counts, different text: only a re-read can notice.
+            facade.fetchGitDiffResult = listOf(testDiff("old\n", "newer\n", "src/New.kt"))
+            viewModel.dispatch(ChatIntent.RefreshGitStatus)
+            advanceUntilIdle()
+
+            assertEquals(2, facade.gitDiffRequests.size)
+            assertEquals(
+                "newer\n",
+                viewModel.state.value.turnGitDiffs["src/New.kt"]
+                    ?.single()
+                    ?.newText,
+            )
         }
 
     // region: Helpers

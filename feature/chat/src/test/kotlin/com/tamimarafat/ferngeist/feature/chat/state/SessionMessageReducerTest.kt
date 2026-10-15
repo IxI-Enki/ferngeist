@@ -3,6 +3,7 @@ package com.tamimarafat.ferngeist.feature.chat.state
 import com.agentclientprotocol.model.PlanEntry
 import com.agentclientprotocol.model.PlanEntryPriority
 import com.agentclientprotocol.model.PlanEntryStatus
+import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.acp.bridge.session.AppSessionEvent
@@ -395,4 +396,60 @@ class SessionMessageReducerTest {
         val userMessageCount = updated.count { it.role == ChatMessage.Role.USER }
         assertEquals(1, userMessageCount)
     }
+
+    @Test
+    fun `a diff sent with the start of a call survives an update that brings only text`() {
+        val diff = ToolCallContent.Diff(path = "a.kt", oldText = "a", newText = "b")
+        val (started, idx) = apply(emptyList(), emptyMap(), started("t1", content = listOf(diff)))
+        val (updated, _) =
+            apply(
+                started,
+                idx,
+                AppSessionEvent.ToolCallUpdated(
+                    toolCallId = "t1",
+                    status = ToolCallStatus.COMPLETED,
+                    title = null,
+                    kind = null,
+                    content = listOf(ToolCallContent.Terminal("term")),
+                ),
+            )
+
+        assertEquals(
+            listOf(diff, ToolCallContent.Terminal("term")),
+            updated
+                .last()
+                .segments
+                .single()
+                .toolCall
+                ?.content,
+        )
+    }
+
+    @Test
+    fun `an id reused in a later turn starts a new call and leaves the old one alone`() {
+        val (firstTurn, idx) = apply(emptyList(), emptyMap(), started("t1", title = "Edit old.kt"))
+        val messages =
+            listOf(
+                AppSessionEvent.UserMessage("next prompt"),
+                started("t1", title = "Edit new.kt"),
+                AppSessionEvent.ToolCallUpdated("t1", ToolCallStatus.COMPLETED, title = null, kind = null),
+            ).fold(SessionMessageReducer.finishStreaming(firstTurn) to idx) { (m, i), event -> apply(m, i, event) }
+                .first
+
+        val calls = messages.flatMap { it.segments }.mapNotNull { it.toolCall }
+        assertEquals(listOf("Edit old.kt", "Edit new.kt"), calls.map { it.title })
+        assertEquals(listOf(null, ToolCallStatus.COMPLETED), calls.map { it.status })
+    }
+
+    private fun started(
+        id: String,
+        title: String = "Edit",
+        content: List<ToolCallContent>? = null,
+    ) = AppSessionEvent.ToolCallStarted(
+        toolCallId = id,
+        title = title,
+        kind = ToolKind.EDIT,
+        status = null,
+        content = content,
+    )
 }

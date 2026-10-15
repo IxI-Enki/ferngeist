@@ -1,6 +1,7 @@
 package com.tamimarafat.ferngeist.acp.bridge.session
 
 import com.agentclientprotocol.model.PlanEntry
+import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.core.model.AcpPermissionOption
@@ -397,9 +398,11 @@ object SessionMessageReducer {
         val toolCallId = event.toolCallId.ifBlank { "tool_${UUID.randomUUID()}" }
 
         // Idempotent: a ToolCallStarted with an id already known to the index (replay,
-        // out-of-order bootstrap from updateToolCall) must not duplicate the segment
-        val existing = toolCallIndex[toolCallId]
-        if (existing != null) {
+        // out-of-order bootstrap from updateToolCall) must not duplicate the segment. Some
+        // agents restart their ids every turn, so an id from an earlier message is a new call;
+        // treating it as a replay would rewrite that older turn's call.
+        val existing = toolCallIndex[toolCallId]?.let { locateToolCall(messages, toolCallIndex, toolCallId)?.first }
+        if (existing != null && existing.messageIndex == messages.lastIndex) {
             return ReducerResult(messages, toolCallIndex)
         }
 
@@ -433,6 +436,7 @@ object SessionMessageReducer {
                         title = event.title.ifBlank { "Tool Call" },
                         kind = event.kind,
                         status = event.status,
+                        content = event.content,
                         rawInput = event.rawInput,
                         locations = event.locations,
                     ),
@@ -493,7 +497,7 @@ object SessionMessageReducer {
                     oldSegment.copy(
                         toolCall =
                             oldToolCall?.copy(
-                                content = event.content ?: oldToolCall.content,
+                                content = mergedContent(oldToolCall.content, event.content),
                                 status = event.status ?: oldToolCall.status,
                                 title = event.title ?: oldToolCall.title.ifBlank { "Tool Call" },
                                 kind = event.kind ?: oldToolCall.kind,
@@ -819,3 +823,16 @@ internal fun failUnfinishedToolCalls(messages: List<ChatMessage>): List<ChatMess
 
 private fun AssistantSegment.isUnfinishedCall(): Boolean =
     toolCall?.status == ToolCallStatus.PENDING || toolCall?.status == ToolCallStatus.IN_PROGRESS
+
+/**
+ * An update's content replaces the call's, except that diffs already reported survive an update
+ * that brings none: agents send the diff when the edit is proposed, then finish it with only text.
+ */
+private fun mergedContent(
+    old: List<ToolCallContent>?,
+    new: List<ToolCallContent>?,
+): List<ToolCallContent>? {
+    if (new == null) return old
+    val keptDiffs = old.orEmpty().filterIsInstance<ToolCallContent.Diff>()
+    return if (keptDiffs.isEmpty() || new.any { it is ToolCallContent.Diff }) new else keptDiffs + new
+}

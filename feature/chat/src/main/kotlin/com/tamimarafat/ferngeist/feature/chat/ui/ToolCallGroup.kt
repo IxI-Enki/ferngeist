@@ -219,9 +219,12 @@ private class RailRow(
 
 private val RailRow.verb: ToolVerb get() = call?.summaryVerb() ?: ToolVerb.THOUGHT
 
-// A failed call's diff never landed, so it doesn't count toward the group's total.
-private fun RailRow.landedDiffs(): List<ToolCallContent.Diff> =
-    call?.takeIf { it.status != ToolCallStatus.FAILED }?.diffs().orEmpty()
+// A file verb counts files, not calls: three edits to one file are "edited a file".
+private val RailRow.summaryKey: Any
+    get() = call?.filePath()?.takeIf { verb != ToolVerb.FAILED }?.let { verb to it } ?: id
+
+// Only a change that happened counts toward the group's total (see landed()).
+private fun RailRow.landedDiffs(): List<ToolCallContent.Diff> = call?.takeIf { it.landed() }?.diffs().orEmpty()
 
 /** The diffs' total, or null when there are none to count. */
 @Composable
@@ -288,10 +291,20 @@ internal fun ToolCallGroup(
     val summaryRows = if (running) rows.filter { it.running } else rows
     // Only while live: once the group ends, the time is clutter beside the reply.
     val elapsed = rememberElapsedLabel(startedAtMs, live = live)
+    // A sole row with a diff would repeat the header's total, so only the header shows it.
+    val soleDiffRow =
+        rows
+            .singleOrNull {
+                it.call
+                    ?.diffs()
+                    .orEmpty()
+                    .isNotEmpty()
+            }?.takeIf { it.landedDiffs().isNotEmpty() }
+            ?.id
 
     Column(modifier = modifier.fillMaxWidth()) {
         ToolGroupHeader(
-            summary = toolSummary(summaryRows.map { it.verb }, running),
+            summary = toolSummary(summaryRows.distinctBy { it.summaryKey }.map { it.verb }, running),
             elapsed = elapsed?.text,
             elapsedDescription = elapsed?.description,
             stats = rememberDiffStats(rows.flatMap { it.landedDiffs() }),
@@ -300,7 +313,7 @@ internal fun ToolCallGroup(
             onClick = { expanded = !open },
         )
         FoldBody(open = open, foldsInFlight = foldsInFlight) {
-            ToolRail(rows, reveals, animate = isStreaming) { row ->
+            ToolRail(rows, reveals, animate = isStreaming, hideStatsOf = soleDiffRow) { row ->
                 // Any chunk of a thought resolves to the whole run in the sheet.
                 val thought = row.thought
                 if (thought != null) onThoughtClick(thought.segments.last().id) else onToolCallClick(row.id)
@@ -472,6 +485,7 @@ private fun ToolRail(
     rows: List<RailRow>,
     reveals: HashMap<String, RowReveal>,
     animate: Boolean,
+    hideStatsOf: String?,
     onRowClick: (RailRow) -> Unit,
 ) {
     // Rows first seen while the message is not streaming start drawn, so history and scroll-back
@@ -509,7 +523,7 @@ private fun ToolRail(
                 RailRowFrame(reveal = reveal.clock, description = row.description(), onClick = { onRowClick(row) }) {
                     val call = row.call
                     if (call != null) {
-                        ToolRowContent(call)
+                        ToolRowContent(call, showStats = row.id != hideStatsOf)
                     } else {
                         ThoughtRowContent(
                             thoughtText = row.thought?.text.orEmpty(),
@@ -524,7 +538,7 @@ private fun ToolRail(
 
 @Composable
 private fun RailRow.description(): String =
-    call?.let { it.title + " " + (it.status?.name?.lowercase() ?: "unknown") }
+    call?.let { it.titleWithFile() + " " + (it.status?.name?.lowercase() ?: "unknown") }
         ?: stringResource(R.string.chat_reasoning_desc)
 
 @Composable
@@ -553,13 +567,16 @@ private fun RailRowFrame(
 }
 
 @Composable
-private fun RowScope.ToolRowContent(call: ToolCallDisplay) {
+private fun RowScope.ToolRowContent(
+    call: ToolCallDisplay,
+    showStats: Boolean,
+) {
     Box(modifier = Modifier.size(ICON_SIZE), contentAlignment = Alignment.Center) {
         ToolCallStatusIndicator(call)
     }
     Spacer(modifier = Modifier.width(TEXT_GAP))
     Text(
-        text = call.title.ifBlank { stringResource(R.string.chat_tool_call) },
+        text = call.titleWithFile().ifBlank { stringResource(R.string.chat_tool_call) },
         maxLines = 1,
         overflow = TextOverflow.MiddleEllipsis,
         style = MaterialTheme.typography.bodySmall,
@@ -572,7 +589,7 @@ private fun RowScope.ToolRowContent(call: ToolCallDisplay) {
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 8.dp),
         )
-    } else {
+    } else if (showStats) {
         DiffSummaryRow(call.diffs(), modifier = Modifier.padding(start = 8.dp))
     }
 }

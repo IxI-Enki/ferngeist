@@ -56,6 +56,16 @@ data class ChatState(
     val gitFileDiffError: String? = null,
     /** The commit [gitFileDiff] was read from; null for the working tree. */
     val gitFileDiffCommit: String? = null,
+    /**
+     * Working-tree diffs backing the latest turn's files whose tool calls reported
+     * none, keyed by git-relative path. Read only for the newest turn: git
+     * describes the tree as it is now, so an older turn must never borrow them.
+     */
+    val turnGitDiffs: Map<String, List<ToolCallContent.Diff>> = emptyMap(),
+    val turnGitDiffsLoading: Set<String> = emptySet(),
+    val turnGitDiffsErrors: Map<String, String> = emptyMap(),
+    /** Git paths already changed when the newest turn started; null when git was not known then. */
+    val turnDirtyAtStart: Set<String>? = null,
     val gitHistory: GitHistoryState = GitHistoryState(),
     val error: String? = null,
     /**

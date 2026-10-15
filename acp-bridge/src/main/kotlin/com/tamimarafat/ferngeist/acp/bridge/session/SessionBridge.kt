@@ -302,6 +302,7 @@ sealed interface AppSessionEvent {
         val title: String,
         val kind: ToolKind?,
         val status: ToolCallStatus?,
+        val content: List<ToolCallContent>? = null,
         val rawInput: JsonElement? = null,
         val locations: List<String>? = null,
     ) : AppSessionEvent

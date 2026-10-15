@@ -72,6 +72,19 @@ sealed interface ChatIntent {
         val oldPath: String? = null,
     ) : ChatIntent
 
+    /**
+     * Load a latest-turn file's working-tree diff for inline display in the turn's
+     * close, when its tool calls reported no diff. [path] is git-relative;
+     * [oldPath] names a renamed file's old side. [revision] identifies the git entry
+     * asked about: cached per path and revision, so a changed entry refetches and a
+     * failed path retries on the next request.
+     */
+    data class LoadTurnFileDiff(
+        val path: String,
+        val oldPath: String? = null,
+        val revision: String = "",
+    ) : ChatIntent
+
     /** Reload history from `HEAD`, keeping the current list until it lands, or append the next page ([more]). */
     data class LoadGitLog(
         val more: Boolean,

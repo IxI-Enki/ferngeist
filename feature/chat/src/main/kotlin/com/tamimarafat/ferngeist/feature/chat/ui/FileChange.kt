@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -34,6 +35,7 @@ import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.core.model.TurnTiming
+import com.tamimarafat.ferngeist.feature.chat.ChatState
 import com.tamimarafat.ferngeist.feature.chat.R
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -94,15 +96,42 @@ private fun ToolCallDisplay.editedPath(): String? =
 private fun ToolCallDisplay.editedPaths(): List<String> =
     editedPath()?.let(::listOf) ?: locations.orEmpty().takeIf { kind == ToolKind.EDIT }.orEmpty()
 
-/**
- * Git's counts for [path], from the working tree as it is now. [path] is usually absolute and git's
- * relative to the repo root, so a suffix on a path boundary is a match.
- */
-internal fun List<ChatChangedFile>.statsFor(path: String): DiffStats? {
-    val normalized = path.replace('\\', '/')
-    return firstOrNull { !it.binary && (normalized == it.path || normalized.endsWith("/" + it.path)) }
-        ?.let { DiffStats(additions = it.added, deletions = it.removed) }
+private val FILE_KINDS = setOf(ToolKind.READ, ToolKind.EDIT, ToolKind.DELETE, ToolKind.MOVE)
+
+/** The file a read, edit, delete or move works on, from its raw input or else its first location. */
+internal fun ToolCallDisplay.filePath(): String? =
+    ((rawInput as? JsonObject)?.firstString(PATH_KEYS) ?: locations?.firstOrNull())
+        ?.takeIf { kind in FILE_KINDS && it.isNotBlank() }
+
+/** The call's title, with its file's name added when the agent's title leaves it out ("Read" → "Read a.kt"). */
+internal fun ToolCallDisplay.titleWithFile(): String {
+    val name = filePath()?.replace('\\', '/')?.trimEnd('/')?.substringAfterLast('/')
+    return if (name.isNullOrEmpty() || title.contains(name)) title else "$title $name"
 }
+
+/**
+ * Git's entry for [path], from the working tree as it is now. [path] is usually absolute and git's
+ * relative to the repo root, so a suffix on a path boundary is a match; the longest such entry wins,
+ * so `src/X.kt` is not mistaken for a root `X.kt`.
+ */
+internal fun List<ChatChangedFile>.entryFor(path: String): ChatChangedFile? = matching(path, dirs = false)
+
+/** Git's counts for [path]; see [entryFor] for how it is matched. Unlike it, a directory entry counts. */
+internal fun List<ChatChangedFile>.statsFor(path: String): DiffStats? =
+    matching(path, dirs = true)?.let { DiffStats(additions = it.added, deletions = it.removed) }
+
+private fun List<ChatChangedFile>.matching(
+    path: String,
+    dirs: Boolean,
+): ChatChangedFile? {
+    val normalized = path.replace('\\', '/')
+    return filter {
+        !it.binary && (dirs || !it.isDir) && (normalized == it.path || normalized.endsWith("/" + it.path))
+    }.maxByOrNull { it.path.length }
+}
+
+/** Git's status and counts for an entry: a request for the same file at a different value refetches. */
+private fun ChatChangedFile.revision() = "$status:$added:$removed"
 
 /**
  * The working tree's changed files, provided to the newest turn only: git reports the tree as it is
@@ -110,8 +139,37 @@ internal fun List<ChatChangedFile>.statsFor(path: String): DiffStats? {
  */
 internal val LocalWorkingTreeChanges = compositionLocalOf { emptyList<ChatChangedFile>() }
 
+/**
+ * Git's changed files that can stand for the newest turn's work: a file already changed when the
+ * turn started would mix earlier work into its diff and counts, so it is left out.
+ */
+internal fun ChatState.turnWorkingTree(): List<ChatChangedFile> {
+    val tree = gitStatus?.changed.orEmpty()
+    val dirty = turnDirtyAtStart ?: return tree
+    return tree.filterNot { it.path in dirty }
+}
+
+/**
+ * Working-tree diffs backing the latest turn's files whose tool calls reported
+ * none, with the request that loads one. Provided where the chat state is at
+ * hand; empty (no-op request) anywhere else, e.g. previews.
+ */
+internal data class TurnGitFallback(
+    val diffs: Map<String, List<ToolCallContent.Diff>> = emptyMap(),
+    val loading: Set<String> = emptySet(),
+    val errors: Map<String, String> = emptyMap(),
+    val onRequest: (path: String, oldPath: String?, revision: String) -> Unit = { _, _, _ -> },
+    /** Re-reads git's status, so a file the running turn just changed is listed. */
+    val onRefresh: () -> Unit = {},
+)
+
+internal val LocalTurnGitFallback = compositionLocalOf { TurnGitFallback() }
+
 private fun JsonObject.firstString(keys: List<String>): String? =
     keys.firstNotNullOfOrNull { key -> (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content }
+
+/** A failed call's change never happened, and one awaiting permission has not happened yet. */
+internal fun ToolCallDisplay.landed(): Boolean = status != ToolCallStatus.FAILED && permissionOptions.isNullOrEmpty()
 
 /** One file a turn changed: the diffs the turn reported for it (maybe none), and the last call that touched it. */
 internal class FileChange(
@@ -135,7 +193,7 @@ internal fun FileChange.stats(tree: List<ChatChangedFile>): DiffStats? =
 internal fun List<AssistantSegment>.fileChanges(): List<FileChange> {
     val byPath = LinkedHashMap<String, FileChange>()
     for (segment in this) {
-        val call = segment.toolCall?.takeIf { it.status != ToolCallStatus.FAILED } ?: continue
+        val call = segment.toolCall?.takeIf { it.landed() } ?: continue
         val diffs = call.diffs()
         // An edit with nothing to count still changed its file: listed, with no diff blocks.
         if (diffs.isEmpty()) {
@@ -182,10 +240,13 @@ internal fun TurnChanges(
         remember(files, tree) {
             files.map { it.stats(tree) }
         }
+    val counted = stats.filterNotNull()
     val total =
-        stats.filterNotNull().takeIf { it.isNotEmpty() }?.let { counted ->
-            DiffStats(additions = counted.sumOf { it.additions }, deletions = counted.sumOf { it.deletions })
+        counted.takeIf { it.isNotEmpty() }?.let {
+            DiffStats(additions = it.sumOf { s -> s.additions }, deletions = it.sumOf { s -> s.deletions })
         }
+    // One counted file's stats would repeat the header's total, so only the header shows them.
+    val rowStats = counted.size > 1
     var open by rememberSaveable { mutableStateOf(false) }
     Column(modifier = modifier.fillMaxWidth()) {
         ToolGroupHeader(
@@ -226,13 +287,50 @@ internal fun TurnChanges(
                             overflow = TextOverflow.StartEllipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        stats[index]?.let { DiffStatsRow(it, modifier = Modifier.padding(start = 8.dp)) }
+                        stats[index]?.takeIf { rowStats }?.let {
+                            DiffStatsRow(it, modifier = Modifier.padding(start = 8.dp))
+                        }
                     }
                 }
             }
         }
     }
 }
+
+/**
+ * What the tool call sheet's diff slot shows for an EDIT call with no exact diff of its own: none
+ * reported, and none rebuilt from its input but a whole-file write, which cannot tell an overwrite
+ * from a new file. It is the working tree's diffs for the files the call touched, requested on first
+ * display and again whenever git's entry for a file changes. Empty until git answers, for a file git
+ * no longer lists (committed or reverted), and wherever no tree is provided (see [turnWorkingTree]).
+ */
+@Composable
+internal fun ToolCallDisplay.gitFallbackDiffs(): List<ToolCallContent.Diff> {
+    val tree = LocalWorkingTreeChanges.current
+    val fallback = LocalTurnGitFallback.current
+    val wanted =
+        remember(this) {
+            kind == ToolKind.EDIT &&
+                content.orEmpty().none { it is ToolCallContent.Diff } &&
+                diffs().all { it.oldText == null }
+        }
+    // The status may predate this call, so it is re-read once when the sheet opens.
+    LaunchedEffect(wanted) { if (wanted) fallback.onRefresh() }
+    val entries =
+        remember(this, tree, wanted) {
+            if (wanted) {
+                editedPaths().mapNotNull { tree.entryFor(it) }.distinctBy { it.path }
+            } else {
+                emptyList()
+            }
+        }
+    LaunchedEffect(entries) {
+        entries.forEach { fallback.onRequest(it.path, it.oldPath, it.revision()) }
+    }
+    return entries.flatMap { fallback.diffs[it.path].orEmpty() }
+}
+
+private fun ToolCallContent.Diff.lineCount() = maxOf(newText.count { it == '\n' }, oldText?.count { it == '\n' } ?: 0)
 
 /** "Brewed for 1m 20s · done 2:24 AM": the verb is seeded by the turn, so it stays put across reloads. */
 @Composable

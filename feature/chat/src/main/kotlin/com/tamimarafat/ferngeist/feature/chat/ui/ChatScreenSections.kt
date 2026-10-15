@@ -772,7 +772,7 @@ private fun ChatMessageItem(
         }
     val isLast = message.id == renderedLastMessageId
     CompositionLocalProvider(
-        LocalWorkingTreeChanges provides if (isLast) state.gitStatus?.changed.orEmpty() else emptyList(),
+        LocalWorkingTreeChanges provides if (isLast) state.turnWorkingTree() else emptyList(),
     ) {
         MessageBubble(
             message = message,
@@ -847,7 +847,7 @@ private fun ToolCallDetailsSheet(
 @Composable
 private fun ToolCallDetailsHeader(toolCall: ToolCallDisplay) {
     val defaultToolCallLabel = stringResource(R.string.chat_tool_call)
-    val toolCallSheetTitle = toolCall.title.ifBlank { defaultToolCallLabel }
+    val toolCallSheetTitle = toolCall.titleWithFile().ifBlank { defaultToolCallLabel }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = toolCallSheetTitle,
@@ -894,8 +894,12 @@ private fun ToolCallDetailsBody(toolCall: ToolCallDisplay) {
         }
     }
 
-    val content = toolCall.content
-    if (!content.isNullOrEmpty()) {
+    val reported = toolCall.content.orEmpty()
+    val gitDiffs = toolCall.gitFallbackDiffs()
+    // No reported diff: git's, when gitFallbackDiffs has one, else the one rebuilt from the call's input.
+    val content =
+        if (reported.any { it is ToolCallContent.Diff }) reported else reported + gitDiffs.ifEmpty { toolCall.diffs() }
+    if (content.isNotEmpty()) {
         content.forEach { tc ->
             when (tc) {
                 is ToolCallContent.Content -> ContentBlockRenderer(tc.content)

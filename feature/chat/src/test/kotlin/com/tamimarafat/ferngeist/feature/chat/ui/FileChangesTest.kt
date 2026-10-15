@@ -3,9 +3,12 @@ package com.tamimarafat.ferngeist.feature.chat.ui
 import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.model.ToolCallStatus
 import com.agentclientprotocol.model.ToolKind
+import com.tamimarafat.ferngeist.core.model.AcpPermissionOption
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
+import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
+import com.tamimarafat.ferngeist.feature.chat.ChatState
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -167,6 +170,41 @@ class FileChangesTest {
     }
 
     @Test
+    fun diffLessFileMatchesItsGitEntryByRepoRelativeSuffix() {
+        val tree =
+            listOf(
+                ChatChangedFile(path = "src/New.kt", status = "??", added = 12, removed = 0),
+            )
+
+        assertEquals("src/New.kt", tree.entryFor("/repo/src/New.kt")?.path)
+        // A suffix must sit on a path boundary: "xNew.kt" is a different file.
+        assertEquals(null, tree.entryFor("/repo/src/xNew.kt"))
+    }
+
+    @Test
+    fun theLongestMatchingGitEntryWins() {
+        val tree =
+            listOf(
+                ChatChangedFile(path = "X.kt", status = "M"),
+                ChatChangedFile(path = "src/X.kt", status = "M"),
+            )
+
+        assertEquals("src/X.kt", tree.entryFor("/repo/src/X.kt")?.path)
+    }
+
+    @Test
+    fun binaryAndDirectoryEntriesNeverBackATurnFile() {
+        val tree =
+            listOf(
+                ChatChangedFile(path = "img.png", status = "M", binary = true),
+                ChatChangedFile(path = "vendor/lib", status = "M", isDir = true),
+            )
+
+        assertEquals(null, tree.entryFor("img.png"))
+        assertEquals(null, tree.entryFor("vendor/lib"))
+    }
+
+    @Test
     fun gitCountsWinOverSummedDiffsOfARepeatedlyEditedFile() {
         val edits =
             listOf(
@@ -200,6 +238,45 @@ class FileChangesTest {
             )
 
         assertEquals(emptyList<ToolCallContent.Diff>(), read.diffs())
+    }
+
+    @Test
+    fun aFileCallsTitleGainsItsFileNameOnlyWhenItLeavesItOut() {
+        val bare = ToolCallDisplay(title = "Read", kind = ToolKind.READ, locations = listOf("/repo/src/A.kt"))
+        val command =
+            ToolCallDisplay(title = "ls", kind = ToolKind.EXECUTE, rawInput = buildJsonObject { put("path", "/repo") })
+
+        assertEquals("Read A.kt", bare.titleWithFile())
+        assertEquals("Read src/A.kt", bare.copy(title = "Read src/A.kt").titleWithFile())
+        assertEquals("ls", command.titleWithFile())
+    }
+
+    @Test
+    fun aFileAlreadyChangedWhenTheTurnStartedIsLeftOutOfItsTree() {
+        val tree =
+            listOf(
+                ChatChangedFile(path = "old.kt", status = "M"),
+                ChatChangedFile(path = "new.kt", status = "??"),
+            )
+        val state = ChatState(gitStatus = ChatGitStatus(changed = tree))
+
+        assertEquals(tree, state.turnWorkingTree())
+        assertEquals(listOf("new.kt"), state.copy(turnDirtyAtStart = setOf("old.kt")).turnWorkingTree().map { it.path })
+    }
+
+    @Test
+    fun anEditAwaitingPermissionHasNotChangedItsFileYet() {
+        val pending =
+            edit("c0", "a.kt", ToolCallStatus.PENDING).let { segment ->
+                segment.copy(
+                    toolCall =
+                        segment.toolCall?.copy(
+                            permissionOptions = listOf(AcpPermissionOption("y", "Allow", "allow_once")),
+                        ),
+                )
+            }
+
+        assertEquals(emptyList<FileChange>(), listOf(pending).fileChanges())
     }
 
     private fun edit(

@@ -4,14 +4,16 @@ import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Reads the gateway-backed working tree's git status and per-file diff into [ChatState],
- * keeping the in-flight request bookkeeping out of [ChatViewModel].
+ * Reads the gateway-backed working tree's git status, the per-file diff behind the git sheet, and
+ * the latest turn's inline fallback diffs into [ChatState], keeping the in-flight request
+ * bookkeeping out of [ChatViewModel].
  */
 internal class ChatGitDiffLoader(
     private val scope: CoroutineScope,
@@ -26,6 +28,23 @@ internal class ChatGitDiffLoader(
      * request set.
      */
     private var job: Job? = null
+
+    /**
+     * The latest turn's inline fallback fetches, one per git-relative path and independent of the
+     * sheet's single-file [job]. A path's in-flight fetch is replaced only by a request for a newer
+     * [revision]; [turnLoaded] remembers the revision each path's stored diff was read at. Touched
+     * only on [scope]'s (main) thread and without suspending between check and write, so the
+     * [mutex] is not needed here.
+     */
+    private class TurnFetch(
+        val job: Job,
+        val revision: String,
+    )
+
+    private val turnInFlight = mutableMapOf<String, TurnFetch>()
+
+    /** Each loaded path's request (old path and revision), so a status refresh can re-read it. */
+    private val turnLoaded = mutableMapOf<String, Pair<String?, String>>()
 
     /**
      * Serializes request setup (job cancellation, state initialization, job assignment)
@@ -57,6 +76,12 @@ internal class ChatGitDiffLoader(
                             deletions = status.changed.sumOf { it.removed },
                         )
                     update { copy(gitStatus = status, gitDiffStats = stats) }
+                    // Git's counts can stay put while the text changes, so every refresh re-reads
+                    // the turn's diffs already shown.
+                    turnLoaded.toMap().forEach { (path, request) ->
+                        turnLoaded.remove(path)
+                        loadTurnFile(path, request.first, request.second)
+                    }
                 }
         }
     }
@@ -110,7 +135,7 @@ internal class ChatGitDiffLoader(
                         copy(
                             gitFileDiff = null,
                             isGitFileDiffLoading = false,
-                            gitFileDiffError = "No gateway workspace connection to load git diff for $path",
+                            gitFileDiffError = noWorkspaceMessage(path),
                         )
                     }
                     return@onSuccess
@@ -124,9 +149,7 @@ internal class ChatGitDiffLoader(
                 }
             }.onFailure { throwable ->
                 if (throwable is CancellationException) return
-                val message =
-                    throwable.message?.takeIf { it.isNotBlank() }
-                        ?: "Failed to load git diff for $path"
+                val message = failureMessage(throwable, path)
                 update {
                     copy(
                         gitFileDiff = null,
@@ -136,4 +159,102 @@ internal class ChatGitDiffLoader(
                 }
             }
     }
+
+    /**
+     * Fetches one latest-turn file's working-tree diff into [ChatState.turnGitDiffs], for inline
+     * display when its tool calls reported none. [revision] identifies the git entry the request
+     * was made for (e.g. its status and counts): the same revision is never fetched twice, whether
+     * answered or in flight, and a newer one replaces the stored diff, so the diff cannot go stale
+     * behind counts that moved on. A failed path retries on the next call.
+     */
+    fun loadTurnFile(
+        path: String,
+        oldPath: String? = null,
+        revision: String = "",
+    ) {
+        if (path.isBlank() || turnLoaded[path]?.second == revision) return
+        val inFlight = turnInFlight[path]
+        if (inFlight?.revision == revision) return
+        inFlight?.job?.cancel()
+        update {
+            copy(
+                turnGitDiffsLoading = turnGitDiffsLoading + path,
+                turnGitDiffsErrors = turnGitDiffsErrors - path,
+            )
+        }
+        // Lazy so the entry is registered before the body can run: on an immediate dispatcher the
+        // body would otherwise check the map before this call had stored its job.
+        val job =
+            scope.launch(start = CoroutineStart.LAZY) {
+                val result = runCatching { facade.fetchGitDiff(path, null, oldPath) }
+                // Replaced or cleared while fetching: a newer request owns the path's state.
+                if (turnInFlight[path]?.job !== coroutineContext[Job]) return@launch
+                turnInFlight.remove(path)
+                handleTurnResult(result, path, oldPath, revision)
+            }
+        turnInFlight[path] = TurnFetch(job, revision)
+        job.start()
+    }
+
+    private fun handleTurnResult(
+        result: Result<List<ToolCallContent.Diff>?>,
+        path: String,
+        oldPath: String?,
+        revision: String,
+    ) {
+        result
+            .onSuccess { diffs ->
+                if (diffs == null) {
+                    update {
+                        copy(
+                            turnGitDiffsLoading = turnGitDiffsLoading - path,
+                            turnGitDiffsErrors = turnGitDiffsErrors + (path to noWorkspaceMessage(path)),
+                        )
+                    }
+                    return@onSuccess
+                }
+                turnLoaded[path] = oldPath to revision
+                update {
+                    copy(
+                        turnGitDiffs = turnGitDiffs + (path to diffs),
+                        turnGitDiffsLoading = turnGitDiffsLoading - path,
+                    )
+                }
+            }.onFailure { throwable ->
+                // Only the whole scope dying cancels a fetch that still owns its path.
+                if (throwable is CancellationException) return@onFailure
+                update {
+                    copy(
+                        turnGitDiffsLoading = turnGitDiffsLoading - path,
+                        turnGitDiffsErrors = turnGitDiffsErrors + (path to failureMessage(throwable, path)),
+                    )
+                }
+            }
+    }
+
+    /**
+     * Drops the inline fallback diffs when a new turn starts: they describe the
+     * tree as it is now, so the next turn must not borrow them. Also notes which files
+     * were already changed, whose git diff would mix earlier work into this turn's.
+     */
+    fun clearTurnDiffs() {
+        turnInFlight.values.forEach { it.job.cancel() }
+        turnInFlight.clear()
+        turnLoaded.clear()
+        update {
+            copy(
+                turnGitDiffs = emptyMap(),
+                turnGitDiffsLoading = emptySet(),
+                turnGitDiffsErrors = emptyMap(),
+                turnDirtyAtStart = gitStatus?.changed?.mapTo(HashSet()) { it.path },
+            )
+        }
+    }
+
+    private fun noWorkspaceMessage(path: String) = "No gateway workspace connection to load git diff for $path"
+
+    private fun failureMessage(
+        throwable: Throwable,
+        path: String,
+    ) = throwable.message?.takeIf { it.isNotBlank() } ?: "Failed to load git diff for $path"
 }

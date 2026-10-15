@@ -523,6 +523,7 @@ class ChatViewModel
                 )
             }
             if (wasStreaming && !snapshot.isStreaming) touchSessionAfterTurn()
+            onTurnBoundary(wasStreaming, snapshot.isStreaming)
             refreshGitStatusOnceReady(wasReady)
             dropTitleThatIsThePrompt()
             applyServerTitle(snapshot.title)
@@ -536,6 +537,17 @@ class ChatViewModel
         private suspend fun touchSessionAfterTurn() {
             val id = durableSessionId ?: return
             withContext(ioDispatcher) { sessionRepository.touchSession(serverId, id, System.currentTimeMillis()) }
+        }
+
+        /**
+         * A starting turn retires the previous turn's inline git diffs: they
+         * describe the tree as it is now, so the next turn must not borrow them.
+         */
+        private fun onTurnBoundary(
+            wasStreaming: Boolean,
+            isStreaming: Boolean,
+        ) {
+            if (!wasStreaming && isStreaming) gitDiffLoader.clearTurnDiffs()
         }
 
         /**
@@ -716,6 +728,7 @@ class ChatViewModel
                 is ChatIntent.RemoveQueuedMessage,
                 is ChatIntent.ForceSendMessage,
                 is ChatIntent.LoadGitDiff,
+                is ChatIntent.LoadTurnFileDiff,
                 is ChatIntent.LoadGitLog,
                 is ChatIntent.LoadGitCommit,
                 is ChatIntent.MarkSwitcherHintSeen,
@@ -739,6 +752,12 @@ class ChatViewModel
                 is ChatIntent.RemoveQueuedMessage -> offlineQueue.removeQueuedMessage(intent.clientId)
                 is ChatIntent.ForceSendMessage -> offlineQueue.forceSend(intent.clientId)
                 is ChatIntent.LoadGitDiff -> gitDiffLoader.load(intent.path, intent.commit, intent.oldPath)
+                is ChatIntent.LoadTurnFileDiff ->
+                    gitDiffLoader.loadTurnFile(
+                        intent.path,
+                        intent.oldPath,
+                        intent.revision,
+                    )
                 is ChatIntent.LoadGitLog -> gitHistoryLoader.loadLog(intent.more)
                 is ChatIntent.LoadGitCommit -> gitHistoryLoader.loadCommit(intent.sha)
                 is ChatIntent.MarkSwitcherHintSeen -> switcherHintStore.markSeen()

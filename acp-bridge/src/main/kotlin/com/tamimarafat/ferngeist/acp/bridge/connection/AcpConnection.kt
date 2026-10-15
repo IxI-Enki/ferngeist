@@ -182,7 +182,7 @@ class AcpConnection(
     @Suppress("TooGenericExceptionCaught")
     private suspend fun restoreSessions(result: AcpInitializeResult) {
         val rpc = result.agentCapabilities.sessionAttachRpc()
-        val toRestore = sessionsToRestore.toMap()
+        val toRestore = sessionsToRestore.entries.associate { it.key to it.value }
         sessionsToRestore.clear()
         if (rpc == null) return
         for ((sessionId, cwd) in toRestore) {

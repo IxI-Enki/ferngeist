@@ -92,7 +92,11 @@ internal class SessionGateway(
     private val sessionCwds = ConcurrentHashMap<String, String>()
 
     /** The registered sessions and their working directories. */
-    fun registeredSessionCwds(): Map<String, String> = sessionCwds.toMap()
+    fun registeredSessionCwds(): Map<String, String> =
+        // ConcurrentHashMap's toMap() shortcut for size==1 can throw
+        // NoSuchElementException under concurrent removal, so snapshot via
+        // entries instead.
+        sessionCwds.entries.associate { it.key to it.value }
 
     /**
      * Creates a new ACP session and returns a [SessionPort] for the chat layer.

@@ -18,6 +18,7 @@ import com.tamimarafat.ferngeist.gateway.GatewayProtocol
 import com.tamimarafat.ferngeist.gateway.GatewayRemoteStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 import com.tamimarafat.ferngeist.gateway.GatewayRequestException
+import com.tamimarafat.ferngeist.gateway.GatewaySessionSummary
 import com.tamimarafat.ferngeist.gateway.GatewayStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -218,7 +219,7 @@ class AcpChatSessionFacadeTest {
             scheme: String,
             host: String,
             gatewayCredential: String,
-        ) = TODO("unused in facade tests")
+        ): List<GatewaySessionSummary> = emptyList()
 
         override suspend fun closeSession(
             scheme: String,

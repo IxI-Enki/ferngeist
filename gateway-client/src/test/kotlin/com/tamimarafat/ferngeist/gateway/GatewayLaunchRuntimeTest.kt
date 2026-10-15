@@ -5,7 +5,9 @@ import com.tamimarafat.ferngeist.core.model.repository.GatewaySourceRepository
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -41,7 +43,46 @@ class GatewayLaunchRuntimeTest {
             assertEquals("runtime-1", launched.handoff.runtimeId)
             assertEquals("sess-1", launched.handoff.sessionId)
             assertEquals("attach-1", launched.handoff.attachToken)
-            assertEquals(listOf("POST /v1/agents/pi-acp/connect"), requested)
+            // The session list is checked first; this fake answers it with a non-list body.
+            assertEquals(listOf("GET /v1/sessions", "POST /v1/agents/pi-acp/connect"), requested)
+        }
+
+    @Test
+    fun `a launch resumes the agent's existing session instead of connecting`() =
+        runTest {
+            val requested = mutableListOf<String>()
+            val engine =
+                MockEngine { request ->
+                    requested += "${request.method.value} ${request.url.encodedPath}"
+                    when (request.url.encodedPath) {
+                        "/v1/sessions" ->
+                            respond(
+                                """{"sessions":[
+                                {"sessionId":"s-other","runtimeId":"r-other","agentId":"other","status":"active"},
+                                {"sessionId":"s-live","runtimeId":"r-live","agentId":"pi-acp","status":"active"},
+                                {"sessionId":"s-dead","runtimeId":"r-dead","agentId":"pi-acp","status":"failed"},
+                                {"sessionId":"s-old","runtimeId":"r-1","agentId":"pi-acp","status":"disconnected"}
+                                ]}""",
+                                HttpStatusCode.OK,
+                                headersOf(HttpHeaders.ContentType, "application/json"),
+                            )
+                        else -> respond("""{"attachToken":"resumed-1"}""", HttpStatusCode.OK)
+                    }
+                }
+
+            val handoff =
+                launchGatewayRuntime(
+                    gatewayRepository = GatewayRepositoryImpl(HttpClient(engine), json),
+                    gatewaySourceRepository = FakeGatewaySources(),
+                    gatewaySource = SOURCE,
+                    agentId = "pi-acp",
+                ).getOrThrow().handoff
+
+            assertEquals("s-old", handoff.sessionId)
+            assertEquals("r-1", handoff.runtimeId)
+            assertEquals("resumed-1", handoff.attachToken)
+            assertEquals("ws://gw.local:5788/v1/acp/r-1", handoff.webSocketUrl)
+            assertEquals(listOf("GET /v1/sessions", "POST /v1/sessions/s-old/resume"), requested)
         }
 
     @Test

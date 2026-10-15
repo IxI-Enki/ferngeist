@@ -115,16 +115,60 @@ private suspend fun attemptConnect(
     try {
         val handoff =
             withContext(Dispatchers.IO) {
-                gatewayRepository.connectAgent(
-                    scheme = gatewaySource.scheme,
-                    host = gatewaySource.host,
-                    gatewayCredential = gatewaySource.gatewayCredential,
-                    agentId = agentId,
-                )
+                resumeExistingSession(gatewayRepository, gatewaySource, agentId)
+                    ?: gatewayRepository.connectAgent(
+                        scheme = gatewaySource.scheme,
+                        host = gatewaySource.host,
+                        gatewayCredential = gatewaySource.gatewayCredential,
+                        agentId = agentId,
+                    )
             }
         Result.success(GatewayLaunchResult(gatewaySource = gatewaySource, handoff = handoff))
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
         Result.failure(error)
+    }
+
+/**
+ * Reattaches to the device's newest disconnected gateway session for [agentId] instead of
+ * spawning another process: connect always starts fresh, and the gateway caps sessions
+ * per device (409), so sessions that survived an app reinstall must be reused. Only
+ * disconnected ones: attaching to an active session would steal it from its live client.
+ *
+ * Null when there is none, or when listing/resuming fails, so the caller falls back to
+ * connect.
+ */
+@Suppress("TooGenericExceptionCaught")
+private suspend fun resumeExistingSession(
+    gatewayRepository: GatewayRepository,
+    gatewaySource: GatewaySource,
+    agentId: String,
+): GatewayConnectResponse? =
+    try {
+        val existing =
+            gatewayRepository
+                .listGatewaySessions(gatewaySource.scheme, gatewaySource.host, gatewaySource.gatewayCredential)
+                .filter { it.agentId == agentId && it.status == "disconnected" }
+                .maxByOrNull { it.createdAt.orEmpty() }
+        existing?.let {
+            val resumed =
+                gatewayRepository.resumeSession(
+                    gatewaySource.scheme,
+                    gatewaySource.host,
+                    gatewaySource.gatewayCredential,
+                    it.sessionId,
+                )
+            val socketScheme = if (gatewaySource.scheme.lowercase() in setOf("https", "wss")) "wss" else "ws"
+            GatewayConnectResponse(
+                runtimeId = it.runtimeId,
+                sessionId = it.sessionId,
+                attachToken = resumed.attachToken,
+                webSocketUrl = "$socketScheme://${gatewaySource.host}/v1/acp/${it.runtimeId}",
+            )
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
     }

@@ -54,7 +54,7 @@ import kotlin.math.roundToInt
  * The wide-window workspace: agents, sessions and chat side by side, chat pinned on the right.
  *
  * Pane count is computed, not chosen — [calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth]
- * yields 2 partitions from the medium width class and 3 from expanded, and
+ * yields 1 partition below 600dp, 2 from 600dp up to 1200dp, and 3 at 1200dp and wider, and
  * [WorkspaceState.paneValue] clamps the visible panes to that count (the scaffold itself would
  * otherwise squeeze three panes into two partitions).
  *

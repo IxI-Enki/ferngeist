@@ -252,6 +252,15 @@ class FileChangesTest {
     }
 
     @Test
+    fun aFileCallsTitleLosesItsFileForTheChipToShow() {
+        val call = ToolCallDisplay(title = "Read src/A.kt", kind = ToolKind.READ, locations = listOf("/repo/src/A.kt"))
+
+        assertEquals("Read", call.titleWithoutFile())
+        assertEquals("Read", call.copy(title = "Read").titleWithoutFile())
+        assertEquals("ls", ToolCallDisplay(title = "ls", kind = ToolKind.EXECUTE).titleWithoutFile())
+    }
+
+    @Test
     fun aFileAlreadyChangedWhenTheTurnStartedIsLeftOutOfItsTree() {
         val tree =
             listOf(

@@ -418,6 +418,7 @@ internal fun ToolGroupHeader(
     elapsed: String? = null,
     elapsedDescription: String? = null,
     separator: String? = null,
+    chevronAtEnd: Boolean = false,
 ) {
     val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
     val rotation by animateFloatAsState(
@@ -430,18 +431,19 @@ internal fun ToolGroupHeader(
         modifier = Modifier.fillMaxWidth().handCursor().clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.ChevronRight,
-            contentDescription = stringResource(R.string.chat_tool_call_details_desc),
-            tint = baseColor,
+        val chevron = @Composable { modifier: Modifier ->
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = stringResource(R.string.chat_tool_call_details_desc),
+                tint = baseColor,
+                modifier = modifier.size(CHEVRON_SIZE).graphicsLayer { rotationZ = rotation },
+            )
+        }
+        if (!chevronAtEnd) {
             // Centred on the trunk, so the open chevron points straight down the rail.
-            modifier =
-                Modifier
-                    .padding(start = TRUNK_X - CHEVRON_SIZE / 2)
-                    .size(CHEVRON_SIZE)
-                    .graphicsLayer { rotationZ = rotation },
-        )
-        Spacer(modifier = Modifier.width(4.dp))
+            chevron(Modifier.padding(start = TRUNK_X - CHEVRON_SIZE / 2))
+            Spacer(modifier = Modifier.width(4.dp))
+        }
         // The summary wraps freely; the diff total holds the end. A new summary rises
         // in as the old one rises out, so a change of state reads as the next step.
         val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
@@ -477,6 +479,7 @@ internal fun ToolGroupHeader(
             )
         }
         stats?.let { DiffStatsRow(it, modifier = Modifier.padding(start = 8.dp)) }
+        if (chevronAtEnd) chevron(Modifier.padding(start = 4.dp))
     }
 }
 
@@ -575,13 +578,28 @@ private fun RowScope.ToolRowContent(
         ToolCallStatusIndicator(call)
     }
     Spacer(modifier = Modifier.width(TEXT_GAP))
-    Text(
-        text = call.titleWithFile().ifBlank { stringResource(R.string.chat_tool_call) },
-        maxLines = 1,
-        overflow = TextOverflow.MiddleEllipsis,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.weight(1f),
-    )
+    val file = call.filePath()
+    if (file == null) {
+        Text(
+            text = call.title.ifBlank { stringResource(R.string.chat_tool_call) },
+            maxLines = 1,
+            overflow = TextOverflow.MiddleEllipsis,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+        )
+    } else {
+        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            call.titleWithoutFile().takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    text = it,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(end = 6.dp),
+                )
+            }
+            FileChip(file, modifier = Modifier.weight(1f, fill = false))
+        }
+    }
     if (!call.permissionOptions.isNullOrEmpty()) {
         Text(
             text = stringResource(R.string.chat_awaiting_permission),

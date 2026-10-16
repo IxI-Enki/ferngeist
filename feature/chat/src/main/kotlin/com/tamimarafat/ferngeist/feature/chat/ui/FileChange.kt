@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -107,6 +108,12 @@ internal fun ToolCallDisplay.filePath(): String? =
 internal fun ToolCallDisplay.titleWithFile(): String {
     val name = filePath()?.replace('\\', '/')?.trimEnd('/')?.substringAfterLast('/')
     return if (name.isNullOrEmpty() || title.contains(name)) title else "$title $name"
+}
+
+/** The title without its file ("Read src/A.kt" → "Read"), for a row that shows the file as a [FileChip]. */
+internal fun ToolCallDisplay.titleWithoutFile(): String {
+    val name = filePath()?.fileName()?.takeIf { it.isNotEmpty() } ?: return title
+    return title.replaceFirst(Regex("""\S*${Regex.escape(name)}\S*"""), "").trim()
 }
 
 /**
@@ -264,6 +271,7 @@ internal fun TurnChanges(
             open = open,
             active = false,
             onClick = { open = !open },
+            chevronAtEnd = true,
         )
         FoldBody(open = open, foldsInFlight = foldsInFlight) {
             SettledRail(rowCount = files.size) {
@@ -279,13 +287,14 @@ internal fun TurnChanges(
                                 .padding(start = RAIL_TEXT_START),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        FileChip(file.path)
                         Text(
-                            text = file.path,
+                            text = file.path.replace('\\', '/').substringBeforeLast('/', ""),
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            // The file name is the part worth keeping.
                             overflow = TextOverflow.StartEllipsis,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).padding(start = 8.dp),
                         )
                         stats[index]?.takeIf { rowStats }?.let {
                             DiffStatsRow(it, modifier = Modifier.padding(start = 8.dp))

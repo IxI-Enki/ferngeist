@@ -281,7 +281,7 @@ private fun GitDiffDetailHeader(
     file: ChatChangedFile?,
     onBack: () -> Unit,
 ) {
-    // Header: back arrow + status badge + file name + counts
+    // Header: back arrow + file icon + file name + counts
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -297,7 +297,7 @@ private fun GitDiffDetailHeader(
             }
         }
         if (file != null) {
-            GitStatusBadge(status = file.status)
+            FileTypeIcon(file.path, modifier = Modifier.size(20.dp))
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -352,6 +352,7 @@ private fun GitFileDiffCounts(file: ChatChangedFile) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        GitStatusBadge(status = file.status)
         if (file.binary) {
             Text(
                 text = stringResource(R.string.chat_git_binary),
@@ -475,15 +476,25 @@ internal fun ChangedFileRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            GitStatusBadge(status = file.status)
-
-            Text(
-                text = file.path,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.StartEllipsis,
-                modifier = Modifier.weight(1f),
-            )
+            if (isDirectoryEntry(file)) {
+                Text(
+                    text = file.path,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.StartEllipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                FileChip(file.path, filled = false, textStyle = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = file.path.replace('\\', '/').substringBeforeLast('/', ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.StartEllipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
 
             if (isDirectoryEntry(file)) {
                 Text(

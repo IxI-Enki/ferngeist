@@ -127,6 +127,8 @@
     <string name="chat_git_status_title">Git</string>
     <string name="chat_git_status_desc">Detalhes do status do Git</string>
     <string name="chat_git_directory">Diretório</string>
+    <string name="chat_git_staged">Preparados</string>
+    <string name="chat_git_unstaged">Alterações</string>
     <string name="chat_git_file_deleted">O arquivo não está mais na árvore de trabalho: %1$s</string>
     <string name="chat_git_tab_changes">Alterações</string>
     <string name="chat_git_tab_history">Histórico</string>

@@ -218,6 +218,8 @@ data class GatewayChangedFile(
     val isDir: Boolean = false,
     /** The pre-rename path, set for renames and copies in a commit's file list. */
     val oldPath: String? = null,
+    /** True when the change is in the index; an older gateway omits it, so every file reads as unstaged. */
+    val staged: Boolean = false,
 )
 
 @Serializable

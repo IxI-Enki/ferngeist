@@ -131,6 +131,8 @@
     <string name="chat_git_status_title">Git</string>
     <string name="chat_git_status_desc">Сведения о статусе Git</string>
     <string name="chat_git_directory">Каталог</string>
+    <string name="chat_git_staged">В индексе</string>
+    <string name="chat_git_unstaged">Изменения</string>
     <string name="chat_git_file_deleted">Файла больше нет в рабочем дереве: %1$s</string>
     <string name="chat_git_tab_changes">Изменения</string>
     <string name="chat_git_tab_history">История</string>

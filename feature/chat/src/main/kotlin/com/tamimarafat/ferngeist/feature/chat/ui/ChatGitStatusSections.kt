@@ -2,6 +2,7 @@
 
 package com.tamimarafat.ferngeist.feature.chat.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,8 +98,15 @@ internal fun ColumnScope.GitChangesBody(
                         .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                status.changed.forEach { file ->
-                    ChangedFileRow(file = file, onClick = { onFileClick(file) })
+                // Staged files lead; headings only appear when there is something to tell apart.
+                val (staged, unstaged) = status.changed.partition { it.staged }
+                if (staged.isNotEmpty()) {
+                    GitFileGroup(R.string.chat_git_staged, staged, onFileClick)
+                    if (unstaged.isNotEmpty()) {
+                        GitFileGroup(R.string.chat_git_unstaged, unstaged, onFileClick)
+                    }
+                } else {
+                    unstaged.forEach { ChangedFileRow(file = it, onClick = { onFileClick(it) }) }
                 }
             }
             EdgeFade(scrollState = scrollState, fadeColor = MaterialTheme.colorScheme.surfaceContainerLow)
@@ -446,6 +454,21 @@ private fun GitDiffDetailBody(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun GitFileGroup(
+    @StringRes title: Int,
+    files: List<ChatChangedFile>,
+    onFileClick: (ChatChangedFile) -> Unit,
+) {
+    Text(
+        text = stringResource(title),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+    )
+    files.forEach { ChangedFileRow(file = it, onClick = { onFileClick(it) }) }
 }
 
 @Composable

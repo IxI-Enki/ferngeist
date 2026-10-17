@@ -228,6 +228,8 @@
     <string name="chat_git_binary">binary</string>
     <string name="chat_git_status_desc">Git status details</string>
     <string name="chat_git_directory">Directory</string>
+    <string name="chat_git_staged">Staged</string>
+    <string name="chat_git_unstaged">Changes</string>
     <string name="chat_git_file_deleted">File is no longer in the working tree: %1$s</string>
     <string name="chat_git_tab_changes">Changes</string>
     <string name="chat_git_tab_history">History</string>

@@ -127,6 +127,8 @@
     <string name="chat_git_status_title">Git</string>
     <string name="chat_git_status_desc">গিট স্ট্যাটাসের বিবরণ</string>
     <string name="chat_git_directory">ডিরেক্টরি</string>
+    <string name="chat_git_staged">স্টেজ করা</string>
+    <string name="chat_git_unstaged">পরিবর্তন</string>
     <string name="chat_git_file_deleted">ফাইলটি আর ওয়ার্কিং ট্রিতে নেই: %1$s</string>
     <string name="chat_git_tab_changes">পরিবর্তন</string>
     <string name="chat_git_tab_history">ইতিহাস</string>

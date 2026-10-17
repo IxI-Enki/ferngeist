@@ -208,6 +208,8 @@ data class ChatChangedFile(
     val isDir: Boolean = false,
     /** The pre-rename path, for renames and copies in a commit's file list. */
     val oldPath: String? = null,
+    /** True when the change is staged in the index. */
+    val staged: Boolean = false,
 )
 
 /** Branch, ahead/behind counts, and changed entries of a gateway working tree. */

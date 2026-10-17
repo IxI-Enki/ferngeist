@@ -258,6 +258,7 @@ internal fun GatewayChangedFile.toChatChangedFile(): ChatChangedFile =
         binary = binary,
         isDir = isDir,
         oldPath = oldPath,
+        staged = staged,
     )
 
 /** A history page; the gateway's `""` for an empty repository or no `origin` becomes null. */

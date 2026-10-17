@@ -817,7 +817,15 @@ private fun ToolCallDetailsSheet(
     toolCall: ToolCallDisplay,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
+    // A diff can outrun the screen, and the git fallback that fills one lands after the sheet
+    // opens, so the sheet's content grows under the reader. PartiallyExpanded is anchored at half
+    // the screen, so a sheet that opens on a still-empty body settles there once the diff arrives:
+    // leaving it out leaves only positions the growing content cannot drop the sheet to.
+    val sheetState =
+        rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+        )
     val scope = rememberCoroutineScope()
     val escapeFocus = rememberEscapeFocusAnchor()
 

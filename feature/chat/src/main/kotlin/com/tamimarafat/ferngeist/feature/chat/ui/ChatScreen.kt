@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.Dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tamimarafat.ferngeist.core.model.ChatConfigOption
 import com.tamimarafat.ferngeist.core.model.ChatFileData
@@ -115,6 +117,13 @@ fun ChatScreen(
             viewModel.dispatch(ChatIntent.RefreshGitStatus)
         }
         wasStreaming = screenState.state.isStreaming
+    }
+
+    // The working tree moves outside the app — a terminal, another checkout — and the gateway has no
+    // change feed, so every resume re-reads the status. A chat's back-stack entry resumes both when
+    // the app returns to the foreground and when this chat becomes the current destination again.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.dispatch(ChatIntent.RefreshGitStatus)
     }
 
     ChatScreenScaffold(

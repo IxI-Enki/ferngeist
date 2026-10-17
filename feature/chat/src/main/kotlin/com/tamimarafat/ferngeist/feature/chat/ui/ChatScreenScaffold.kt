@@ -24,6 +24,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -245,6 +246,9 @@ private fun BoxScope.ChatScreenContentOverlays(
         ChatScreenDialogsHost(screenState, viewModel)
     }
     if (screenState.showGitStatusSheet.value) {
+        // The sheet is where the reader asks what the tree looks like, so every open re-reads the
+        // status rather than showing whatever the last turn boundary or resume left in state.
+        LaunchedEffect(Unit) { viewModel.dispatch(ChatIntent.RefreshGitStatus) }
         screenState.state.gitStatus?.let { status ->
             GitStatusSheet(
                 status = status,

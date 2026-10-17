@@ -508,15 +508,23 @@ internal fun ChangedFileRow(
                     modifier = Modifier.weight(1f),
                 )
             } else {
-                FileChip(file.path, filled = false, textStyle = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = file.path.replace('\\', '/').substringBeforeLast('/', ""),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.StartEllipsis,
+                // The name and its directory share one flexible slot. Measured loose, a long name
+                // takes the whole row before the counts are measured and pushes them off the end.
+                Row(
                     modifier = Modifier.weight(1f),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    FileChip(file.path, filled = false, textStyle = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = file.path.replace('\\', '/').substringBeforeLast('/', ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.StartEllipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
 
             if (isDirectoryEntry(file)) {

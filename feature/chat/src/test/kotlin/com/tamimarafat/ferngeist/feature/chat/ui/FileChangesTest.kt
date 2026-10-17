@@ -7,8 +7,10 @@ import com.tamimarafat.ferngeist.core.model.AcpPermissionOption
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
+import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.feature.chat.ChatState
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -287,6 +289,42 @@ class FileChangesTest {
 
         assertEquals(emptyList<FileChange>(), listOf(pending).fileChanges())
     }
+
+    @Test
+    fun aTurnFileRowOpensEveryDiffItCounted() {
+        val turn = turnOf(edit("c0", "a.kt"), edit("c1", "b.kt"), edit("c2", "a.kt"))
+        val file = turnFiles(turn).first()
+
+        val opened = turn.toolCallForSelection(file.selectionId(), newestTree = emptyList())
+
+        assertEquals(file.diffs, opened?.content)
+        assertEquals(listOf("a.kt"), opened?.locations)
+    }
+
+    @Test
+    fun aTurnFileGitCountsOpensWithNoReportedDiffSoGitsFillsIt() {
+        val turn = turnOf(edit("c0", "a.kt"), edit("c1", "a.kt"))
+        val file = turnFiles(turn).single()
+        val tree = listOf(ChatChangedFile(path = "a.kt", status = "M", added = 1, removed = 1))
+
+        val opened = turn.toolCallForSelection(file.selectionId(), tree)
+
+        assertEquals(emptyList<ToolCallContent>(), opened?.content)
+        assertEquals(ToolKind.EDIT, opened?.kind)
+    }
+
+    @Test
+    fun aToolCallRowStillOpensItsOwnCall() {
+        val turn = turnOf(edit("c0", "a.kt"), edit("c1", "a.kt"))
+
+        assertEquals(turn.single().segments[0].toolCall, turn.toolCallForSelection("c0", emptyList()))
+        assertEquals("c0", FileChange("a.kt", emptyList(), "c0").selectionId().selectedSegmentId())
+    }
+
+    private fun turnFiles(turn: List<ChatMessage>) = turn.single().segments.fileChanges()
+
+    private fun turnOf(vararg segments: AssistantSegment) =
+        listOf(ChatMessage(role = ChatMessage.Role.ASSISTANT, segments = segments.toList().toPersistentList()))
 
     private fun edit(
         id: String,

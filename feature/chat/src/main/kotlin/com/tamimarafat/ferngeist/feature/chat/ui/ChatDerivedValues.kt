@@ -134,8 +134,8 @@ private fun rememberChatMessages(
             renderedMessages.thoughtForSegment(selectedThoughtSegmentId.value)
         }
     val selectedToolCall =
-        remember(renderedMessages, selectedToolCallSegmentId.value) {
-            renderedMessages.toolCallForSegment(selectedToolCallSegmentId.value)
+        remember(renderedMessages, selectedToolCallSegmentId.value, state.gitStatus, state.turnDirtyAtStart) {
+            renderedMessages.toolCallForSelection(selectedToolCallSegmentId.value, state.turnWorkingTree())
         }
     val activePermissionRequest =
         remember(renderedMessages) {

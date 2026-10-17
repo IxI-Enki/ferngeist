@@ -222,7 +222,7 @@ private fun BoxScope.ChatScreenContentOverlays(
 ) {
     // The tool call sheet reads the working tree's diff for an edit with none of its own, but only in
     // the newest turn: the tree holds everything since, so an older call's diff would be wrong.
-    val selected = screenState.selectedToolCallSegmentId.value
+    val selected = screenState.selectedToolCallSegmentId.value?.selectedSegmentId()
     val inNewestTurn =
         screenState.state.messages
             .lastOrNull()

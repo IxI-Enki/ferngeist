@@ -34,6 +34,7 @@ import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.model.AssistantSegment
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
+import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ToolCallDisplay
 import com.tamimarafat.ferngeist.core.model.TurnTiming
 import com.tamimarafat.ferngeist.feature.chat.ChatState
@@ -192,6 +193,44 @@ internal class FileChange(
 internal fun FileChange.stats(tree: List<ChatChangedFile>): DiffStats? =
     tree.statsFor(path) ?: diffs.takeIf { it.isNotEmpty() }?.computeDiffStats()
 
+private const val TURN_FILE_SEPARATOR = '\u0000'
+
+/** What a turn file's row selects: its last call's segment, then the file, so the sheet can open the whole file. */
+internal fun FileChange.selectionId(): String = "$segmentId$TURN_FILE_SEPARATOR$path"
+
+/** The segment a tool call selection names, whether it came from a call's row or a turn file's. */
+internal fun String.selectedSegmentId(): String = substringBefore(TURN_FILE_SEPARATOR)
+
+/**
+ * The call a selection opens. A turn file's row opens what its counts came from (see [stats]):
+ * while git counts the file, a diff-less EDIT call on it, which [gitFallbackDiffs] fills with git's
+ * diff; else every diff the turn reported for it, not only its last call's. [newestTree] is the
+ * working tree the newest turn counts against; older turns never use git.
+ */
+internal fun List<ChatMessage>.toolCallForSelection(
+    selectionId: String?,
+    newestTree: List<ChatChangedFile>,
+): ToolCallDisplay? {
+    val segmentId = selectionId?.selectedSegmentId() ?: return null
+    val path = selectionId.substringAfter(TURN_FILE_SEPARATOR, "")
+    val call = toolCallForSegment(segmentId) ?: return null
+    val message = lastOrNull { candidate -> candidate.segments.any { it.id == segmentId } }
+    val tree = if (message === lastOrNull()) newestTree else emptyList()
+    val file =
+        message
+            ?.segments
+            ?.fileChanges()
+            ?.firstOrNull { it.path == path && (it.diffs.isNotEmpty() || tree.statsFor(path) != null) }
+            ?: return call
+    return ToolCallDisplay(
+        title = call.title,
+        kind = ToolKind.EDIT,
+        status = call.status,
+        content = if (tree.statsFor(path) != null) emptyList() else file.diffs,
+        locations = listOf(path),
+    )
+}
+
 /**
  * The files a turn changed, in the order each was first touched. A failed call's diff never
  * landed, so it is left out. ponytail: repeated edits to one file sum their counts rather than
@@ -283,7 +322,7 @@ internal fun TurnChanges(
                                 .fillMaxWidth()
                                 .height(RAIL_ROW_HEIGHT)
                                 .handCursor()
-                                .clickable { onToolCallClick(file.segmentId) }
+                                .clickable { onToolCallClick(file.selectionId()) }
                                 .padding(start = RAIL_TEXT_START),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

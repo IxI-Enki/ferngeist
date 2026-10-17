@@ -1,3 +1,21 @@
+## [1.4.0] - 2026-10-18
+
+### Features
+
+- *(chat)* Show file-type icons and chips for files ([fc54f73e](https://github.com/arafatamim/Ferngeist/commit/fc54f73e5c6b4625a5d51a9ec1b5d671465497c4))
+
+### Fixes
+
+- *(fastlane)* Skip release notes when promoting between tracks ([d73bad00](https://github.com/arafatamim/Ferngeist/commit/d73bad00a9df854889dca1f89f99b43c57241994))
+- *(acp-bridge)* Avoid ConcurrentHashMap.toMap() NSEE during reconnect ([e2f131d2](https://github.com/arafatamim/Ferngeist/commit/e2f131d2265cf2eb1b8229449aa7ac9d8c2c6992))
+- *(workspace)* Correct 3-pane threshold comment and pin breakpoints ([21d71a83](https://github.com/arafatamim/Ferngeist/commit/21d71a83728ccacd79a3c7249ceab4e83935f501))
+- *(workspace)* Reset the sessions pane per agent ([cc7af884](https://github.com/arafatamim/Ferngeist/commit/cc7af884927b6b1ca8a6107e3d93f7eaaecdc5d2))
+- *(gateway)* Resume disconnected sessions before connecting a fresh agent ([00a1033f](https://github.com/arafatamim/Ferngeist/commit/00a1033f25881f388e45c3c56811692e88aaebfd))
+- *(chat)* Show accurate diffs for tool calls and turn changes ([a47e24a6](https://github.com/arafatamim/Ferngeist/commit/a47e24a6610d85242208666568e4223b9ce3206e))
+- *(chat)* Separate staged from unstaged files in the git view ([c2566dd3](https://github.com/arafatamim/Ferngeist/commit/c2566dd3be39bcf0e5cc6cb3540a487de2ddea22))
+- *(chat)* Open every diff a turn file's row counted ([1cf1a913](https://github.com/arafatamim/Ferngeist/commit/1cf1a913d51b7a1eeeef4ebdcae9ce907f205540))
+- *(chat)* Keep the tool call sheet from settling half-expanded ([ae9690de](https://github.com/arafatamim/Ferngeist/commit/ae9690de0dacee7fe3adde73ff1768e9c6fb84a7))
+
 ## [1.3.0] - 2026-10-15
 
 ### Documentation

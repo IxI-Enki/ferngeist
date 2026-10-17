@@ -1,0 +1,5 @@
+• Git changes are grouped into staged and unstaged (needs an up-to-date gateway)
+• Files show an icon for their type
+• Fixed diff view in turn-end and edit tool
+• Fixed an issue with resuming agents
+• Other fixes and polish

@@ -2,25 +2,15 @@ package com.tamimarafat.ferngeist.gateway
 
 import com.agentclientprotocol.model.ToolCallContent
 import io.ktor.client.HttpClient
-import io.ktor.client.request.accept
-import io.ktor.client.request.delete
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.request.url
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
 class GatewayRepositoryImpl
     @Inject
     constructor(
-        private val httpClient: HttpClient,
+        httpClient: HttpClient,
         private val json: Json,
+        private val gatewayClock: GatewayClock = GatewayClock(),
     ) : GatewayRepository,
         GatewayPairingRepository,
         GatewayAuthRepository,
@@ -30,16 +20,17 @@ class GatewayRepositoryImpl
         GatewayWorkspaceRepository,
         GatewayCustomAgentRepository,
         GatewayWorktreeRepository {
+        /** Every JSON call, along with its signed send and retry recovery, in one pipeline. */
+        private val http = GatewayHttpPipeline(httpClient, json, gatewayClock)
+
         override suspend fun fetchStatus(
             scheme: String,
             host: String,
         ): GatewayStatus {
             val response =
-                httpClient.getJson<GatewayStatus>(
-                    json = json,
+                http.getJson<GatewayStatus>(
                     scheme = scheme,
                     host = host,
-                    credential = null,
                     "v1",
                     "status",
                 )
@@ -47,6 +38,11 @@ class GatewayRepositoryImpl
             // through (pairing, opening a gateway, reconnect); gate on protocol
             // compatibility here so mismatches surface clearly instead of as 404/422s.
             response.requireSupportedProtocol()
+            // The handshake is the first place the app sees the gateway's clock; seed
+            // the offset up front so the first signed request is already correct.
+            parseGatewayServerTimeEpochSeconds(response.serverTime)?.let { serverSeconds ->
+                gatewayClock.recordServerTime(host, serverSeconds)
+            }
             return response
         }
 
@@ -54,8 +50,7 @@ class GatewayRepositoryImpl
             scheme: String,
             host: String,
         ): GatewayPairStartResponse =
-            httpClient.postJson(
-                json = json,
+            http.postJson(
                 scheme = scheme,
                 host = host,
                 credential = null,
@@ -70,8 +65,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
         ): List<GatewayAgent> {
             val response =
-                httpClient.getJson<GatewayAgentsResponse>(
-                    json,
+                http.getJson<GatewayAgentsResponse>(
                     scheme,
                     host,
                     gatewayCredential,
@@ -87,8 +81,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             agentId: String,
         ): GatewayConnectResponse =
-            httpClient.postJson(
-                json = json,
+            http.postJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -107,8 +100,7 @@ class GatewayRepositoryImpl
             args: List<String>,
             hint: String,
         ): GatewayAgent =
-            httpClient.postJson(
-                json = json,
+            http.postJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -124,7 +116,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             agentId: String,
         ) {
-            httpClient.deleteJsonUnit(
+            http.deleteJsonUnit(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -141,7 +133,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             agentId: String,
         ) {
-            httpClient.postJsonUnit(
+            http.postJsonUnit(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -160,8 +152,7 @@ class GatewayRepositoryImpl
             base: String?,
             branch: String?,
         ): GatewayWorktree =
-            httpClient.postJson(
-                json = json,
+            http.postJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -175,8 +166,7 @@ class GatewayRepositoryImpl
             host: String,
             gatewayCredential: String,
         ): List<GatewayWorktree> =
-            httpClient.getJson(
-                json = json,
+            http.getJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -193,7 +183,7 @@ class GatewayRepositoryImpl
         ) {
             // The response's `branchDeleted` is deliberately dropped: the branch surviving
             // removal is the normal case, and the next list call shows what is left.
-            httpClient.deleteJsonUnit(
+            http.deleteJsonUnit(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -210,8 +200,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             sessionId: String,
         ): GatewaySessionResumeResponse =
-            httpClient.postJson(
-                json = json,
+            http.postJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -227,8 +216,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
         ): List<GatewaySessionSummary> {
             val response =
-                httpClient.getJson<GatewaySessionListResponse>(
-                    json = json,
+                http.getJson<GatewaySessionListResponse>(
                     scheme = scheme,
                     host = host,
                     credential = gatewayCredential,
@@ -244,7 +232,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             sessionId: String,
         ) {
-            httpClient.deleteJsonUnit(
+            http.deleteJsonUnit(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -259,8 +247,7 @@ class GatewayRepositoryImpl
             host: String,
             gatewayCredential: String,
         ): GatewayPushConfig =
-            httpClient.getJson(
-                json = json,
+            http.getJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -275,7 +262,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             subscription: GatewayPushSubscription,
         ) {
-            httpClient.postJsonUnit(
+            http.postJsonUnit(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -293,8 +280,7 @@ class GatewayRepositoryImpl
             runtimeId: String,
             envVars: Map<String, String>,
         ): GatewayConnectResponse =
-            httpClient.postJson(
-                json = json,
+            http.postJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -312,8 +298,7 @@ class GatewayRepositoryImpl
             runtimeId: String,
         ): List<GatewayLogEntry> {
             val response =
-                httpClient.getJson<GatewayRuntimeLogsResponse>(
-                    json = json,
+                http.getJson<GatewayRuntimeLogsResponse>(
                     scheme = scheme,
                     host = host,
                     credential = gatewayCredential,
@@ -333,8 +318,7 @@ class GatewayRepositoryImpl
             acpSessionId: String?,
             compare: String?,
         ): GatewayGitStatus =
-            httpClient.getJson(
-                json = json,
+            http.getJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -360,8 +344,7 @@ class GatewayRepositoryImpl
             val query = pathQuery + commitQuery + compareQuery(compare) + acpSessionQuery(acpSessionId)
             return if (pathQuery.isEmpty()) {
                 // Whole-tree: gateway returns a JSON array of ToolCallContentDiff objects.
-                httpClient.getJson(
-                    json = json,
+                http.getJson(
                     scheme = scheme,
                     host = host,
                     credential = gatewayCredential,
@@ -371,8 +354,7 @@ class GatewayRepositoryImpl
             } else {
                 // Single file: gateway returns one ToolCallContentDiff object.
                 val single =
-                    httpClient.getJson<ToolCallContent.Diff>(
-                        json = json,
+                    http.getJson<ToolCallContent.Diff>(
                         scheme = scheme,
                         host = host,
                         credential = gatewayCredential,
@@ -395,8 +377,7 @@ class GatewayRepositoryImpl
             compare: String?,
             beyond: Int,
         ): GatewayGitLog =
-            httpClient.getJson(
-                json = json,
+            http.getJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -416,8 +397,7 @@ class GatewayRepositoryImpl
             runtimeId: String,
             acpSessionId: String?,
         ): GatewayGitRefs =
-            httpClient.getJson(
-                json = json,
+            http.getJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -433,8 +413,7 @@ class GatewayRepositoryImpl
             sha: String,
             acpSessionId: String?,
         ): GatewayGitCommitFiles =
-            httpClient.getJson(
-                json = json,
+            http.getJson(
                 scheme = scheme,
                 host = host,
                 credential = gatewayCredential,
@@ -451,8 +430,7 @@ class GatewayRepositoryImpl
         ): GatewayPairingResult {
             val proofKey = GatewayProofAuth.generateProofKey()
             val response =
-                httpClient.postJson<GatewayPairCompleteResponse>(
-                    json = json,
+                http.postJson<GatewayPairCompleteResponse>(
                     scheme = scheme,
                     host = host,
                     credential = null,
@@ -484,15 +462,14 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
         ): GatewayPairingResult {
             val endpoint =
-                buildGatewayEndpoint(
+                http.buildGatewayEndpoint(
                     scheme,
                     host,
                     segments = arrayOf("v1", "auth", "refresh"),
                 )
             val response =
                 try {
-                    httpClient.postJson<GatewayPairCompleteResponse>(
-                        json = json,
+                    http.postJson<GatewayPairCompleteResponse>(
                         scheme = scheme,
                         host = host,
                         credential = gatewayCredential,
@@ -526,170 +503,6 @@ class GatewayRepositoryImpl
             )
         }
     }
-
-private suspend inline fun <reified T> HttpClient.getJson(
-    json: Json,
-    scheme: String,
-    host: String,
-    credential: String? = null,
-    vararg segments: String,
-    query: Map<String, String> = emptyMap(),
-): T {
-    val endpoint = buildGatewayEndpoint(scheme, host, segments = segments, query = query)
-    val authHeaders =
-        credential?.takeIf { it.isNotBlank() }?.let {
-            GatewayProofAuth.buildAuthHeaders(
-                gatewayCredential = it,
-                method = "GET",
-                endpoint = endpoint,
-                body = null,
-            )
-        }
-    val response =
-        get {
-            url(endpoint)
-            accept(ContentType.Application.Json)
-            authHeaders?.let { applyGatewayAuthHeaders(it) }
-        }
-    if (!response.status.isSuccess()) {
-        throw gatewayRequestException(
-            response.status.value,
-            response.status.description,
-            endpoint,
-            response.bodyAsText(),
-        )
-    }
-    return json.decodeFromString(response.bodyAsText())
-}
-
-private suspend inline fun <reified T> HttpClient.postJson(
-    json: Json,
-    scheme: String,
-    host: String,
-    credential: String? = null,
-    vararg segments: String,
-    body: String? = null,
-): T {
-    val endpoint = buildGatewayEndpoint(scheme, host, *segments)
-    val authHeaders =
-        credential?.takeIf { it.isNotBlank() }?.let {
-            GatewayProofAuth.buildAuthHeaders(
-                gatewayCredential = it,
-                method = "POST",
-                endpoint = endpoint,
-                body = body,
-            )
-        }
-    val response =
-        post {
-            url(endpoint)
-            accept(ContentType.Application.Json)
-            contentType(ContentType.Application.Json)
-            authHeaders?.let { applyGatewayAuthHeaders(it) }
-            if (body != null) {
-                setBody(body)
-            }
-        }
-    if (!response.status.isSuccess()) {
-        throw gatewayRequestException(
-            response.status.value,
-            response.status.description,
-            endpoint,
-            response.bodyAsText(),
-        )
-    }
-    return json.decodeFromString(response.bodyAsText())
-}
-
-private suspend fun HttpClient.postJsonUnit(
-    scheme: String,
-    host: String,
-    credential: String? = null,
-    vararg segments: String,
-    body: String? = null,
-) {
-    val endpoint = buildGatewayEndpoint(scheme, host, *segments)
-    val authHeaders =
-        credential?.takeIf { it.isNotBlank() }?.let {
-            GatewayProofAuth.buildAuthHeaders(
-                gatewayCredential = it,
-                method = "POST",
-                endpoint = endpoint,
-                body = body,
-            )
-        }
-    val response =
-        post {
-            url(endpoint)
-            accept(ContentType.Application.Json)
-            contentType(ContentType.Application.Json)
-            authHeaders?.let { applyGatewayAuthHeaders(it) }
-            if (body != null) {
-                setBody(body)
-            }
-        }
-    if (!response.status.isSuccess()) {
-        throw gatewayRequestException(
-            response.status.value,
-            response.status.description,
-            endpoint,
-            response.bodyAsText(),
-        )
-    }
-}
-
-private suspend fun HttpClient.deleteJsonUnit(
-    scheme: String,
-    host: String,
-    credential: String? = null,
-    vararg segments: String,
-    query: Map<String, String> = emptyMap(),
-) {
-    val endpoint = buildGatewayEndpoint(scheme, host, segments = segments, query = query)
-    val authHeaders =
-        credential?.takeIf { it.isNotBlank() }?.let {
-            GatewayProofAuth.buildAuthHeaders(
-                gatewayCredential = it,
-                method = "DELETE",
-                endpoint = endpoint,
-                body = null,
-            )
-        }
-    val response =
-        delete {
-            url(endpoint)
-            accept(ContentType.Application.Json)
-            authHeaders?.let { applyGatewayAuthHeaders(it) }
-        }
-    if (!response.status.isSuccess()) {
-        throw gatewayRequestException(
-            response.status.value,
-            response.status.description,
-            endpoint,
-            response.bodyAsText(),
-        )
-    }
-}
-
-private fun buildGatewayEndpoint(
-    scheme: String,
-    host: String,
-    vararg segments: String,
-    query: Map<String, String> = emptyMap(),
-): String {
-    val normalizedScheme = normalizeControlScheme(scheme)
-    val normalizedHost = normalizeGatewayHost(host)
-    val path = segments.joinToString("/")
-    val base = "$normalizedScheme://$normalizedHost/$path"
-    if (query.isEmpty()) return base
-    val encodedQuery =
-        query.entries.joinToString("&") { (key, value) ->
-            val encodedKey = java.net.URLEncoder.encode(key, Charsets.UTF_8.name())
-            val encodedValue = java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
-            "$encodedKey=$encodedValue"
-        }
-    return "$base?$encodedQuery"
-}
 
 /** Request bodies must omit null/false fields regardless of the injected shared [Json] config. */
 private val requestBodyJson =
@@ -736,22 +549,6 @@ internal fun buildCreateWorktreeRequestBody(
         ),
     )
 
-private fun normalizeControlScheme(scheme: String): String =
-    when (scheme.trim().lowercase()) {
-        "", "http", "ws" -> "http"
-        "https", "wss" -> "https"
-        else -> scheme.trim().lowercase()
-    }
-
-private fun normalizeGatewayHost(host: String): String =
-    host
-        .trim()
-        .removePrefix("http://")
-        .removePrefix("https://")
-        .removePrefix("ws://")
-        .removePrefix("wss://")
-        .trimEnd('/')
-
 /**
  * Thrown when a gateway refresh fails because the stored credential has expired
  * and is no longer recoverable (past the gateway's grace window, or legacy
@@ -769,7 +566,7 @@ class GatewayCredentialExpiredException(
     )
 
 private fun GatewayRequestException.isTransientProofRejection(): Boolean =
-    responseBody.orEmpty().let { "proof expired" in it || "proof replayed" in it }
+    parseGatewayErrorBody(responseBody.orEmpty().trim()).isTransientProofRejection(responseBody)
 
 private fun acpSessionQuery(acpSessionId: String?): Map<String, String> =
     acpSessionId?.takeIf { it.isNotBlank() }?.let { mapOf("acpSessionId" to it) } ?: emptyMap()
@@ -786,9 +583,11 @@ class GatewayRequestException(
     override val message: String,
     /** The raw response body, so callers can read the gateway's `{"error": "..."}` envelope. */
     val responseBody: String? = null,
+    /** Machine-readable auth rejection code (`proof_expired`, ...), when the gateway sent one. */
+    val code: String? = null,
 ) : IllegalStateException(message)
 
-private fun gatewayRequestException(
+internal fun gatewayRequestException(
     statusCode: Int,
     statusDescription: String,
     endpoint: String,
@@ -833,12 +632,6 @@ private fun gatewayRequestException(
         statusCode = statusCode,
         message = message,
         responseBody = normalizedBody.takeIf { it.isNotBlank() },
+        code = parseGatewayErrorBody(normalizedBody)?.code,
     )
-}
-
-private fun io.ktor.client.request.HttpRequestBuilder.applyGatewayAuthHeaders(headers: GatewayAuthHeaders) {
-    header("Authorization", headers.authorization)
-    headers.proofTimestamp?.let { header("X-Ferngeist-Proof-Timestamp", it) }
-    headers.proofNonce?.let { header("X-Ferngeist-Proof-Nonce", it) }
-    headers.proofSignature?.let { header("X-Ferngeist-Proof-Signature", it) }
 }

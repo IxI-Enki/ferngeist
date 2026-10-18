@@ -12,6 +12,9 @@ data class GatewayStatus(
     val version: String,
     @SerialName("protocolVersion")
     val protocolVersion: String? = null,
+    // RFC 3339 UTC clock of the gateway, whenever it answered. The client learns its
+    // device-clock offset from it (see GatewayClock); absent on older gateways.
+    val serverTime: String? = null,
     val remote: GatewayRemoteStatus,
 )
 
@@ -353,9 +356,50 @@ fun GatewayStatus.requireSupportedProtocol() {
 @Serializable
 data class GatewayErrorResponse(
     val error: String? = null,
+    // Machine-readable rejection code (see GatewayErrorCode). The gateway sets it only
+    // on credential/proof/scope rejections, and omits it on older builds; every other
+    // failure is code-less so it cannot be mistaken for an auth rejection.
+    val code: String? = null,
+    // RFC 3339 UTC clock of the gateway at the moment it composed the rejection, when
+    // the gateway exposes one; the client corrects its device clock from it.
+    val serverTime: String? = null,
 )
 
+/** Machine-readable auth-gate rejection codes the gateway returns in the envelope's `code`. */
+internal object GatewayErrorCode {
+    /** The signed timestamp fell outside the gateway's ±5-minute window. */
+    const val PROOF_EXPIRED = "proof_expired"
+
+    /** The nonce was already used; a fresh one generally redeems it. */
+    const val PROOF_REPLAYED = "proof_replayed"
+}
+
 private val errorBodyJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * The error envelope parsed out of a non-2xx body, or null when the body is not one
+ * (plain strings, HTML error pages, empty bodies, ...). The gateway only fills `code`
+ * and `serverTime` on auth rejections; all other `GatewayErrorResponse` fields stay null.
+ */
+internal fun parseGatewayErrorBody(responseBody: String?): GatewayErrorResponse? =
+    responseBody
+        ?.takeIf { it.isNotBlank() }
+        ?.let { body ->
+            runCatching { errorBodyJson.decodeFromString<GatewayErrorResponse>(body) }.getOrNull()
+        }
+
+/**
+ * Whether this auth rejection is the ephemeral kind a re-signed retry can still fix: a
+ * skewed clock (`proof_expired`) or a replayed nonce (`proof_replayed`), the opposite
+ * of a dead credential that no re-signing helps. When the response carries no `code`
+ * (gateway predates the field), falls back to the wording the envelope carried.
+ */
+internal fun GatewayErrorResponse?.isTransientProofRejection(fallbackBody: String?): Boolean =
+    when (this?.code) {
+        GatewayErrorCode.PROOF_EXPIRED, GatewayErrorCode.PROOF_REPLAYED -> true
+        null -> fallbackBody.orEmpty().let { "proof expired" in it || "proof replayed" in it }
+        else -> false
+    }
 
 /**
  * The gateway's own message from a non-2xx body, or null when it is not the envelope.
@@ -364,8 +408,4 @@ private val errorBodyJson = Json { ignoreUnknownKeys = true }
  * refused-delete body, and [GatewayRequestException] carries only the raw text.
  */
 fun gatewayErrorMessage(responseBody: String?): String? =
-    responseBody
-        ?.takeIf { it.isNotBlank() }
-        ?.let { body ->
-            runCatching { errorBodyJson.decodeFromString<GatewayErrorResponse>(body).error }.getOrNull()
-        }?.takeIf { it.isNotBlank() }
+    parseGatewayErrorBody(responseBody)?.error?.takeIf { it.isNotBlank() }

@@ -32,6 +32,7 @@ class GatewayRepositoryImpl
                 http.getJson<GatewayStatus>(
                     scheme = scheme,
                     host = host,
+                    credential = null,
                     "v1",
                     "status",
                 )

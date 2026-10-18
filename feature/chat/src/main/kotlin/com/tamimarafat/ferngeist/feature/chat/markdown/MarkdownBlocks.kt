@@ -1,10 +1,11 @@
 /*
  * Vendored from com.adamglin.compose.markdown:markdown-compose 0.1.5 (MIT, (c) 2026 Adam Glin).
  *
- * Modified from upstream in one functional way: every block takes an optional [BlockReveal], so a
+ * Modified from upstream in two functional ways: every block takes an optional [BlockReveal], so a
  * streaming run shows only what its reveal cursor has reached and fades the leading edge in (see
- * MarkdownReveal.kt and docs/adr/0001). Upstream keeps every block renderer private and offers no
- * per-block hook, so there was no way to do that without copying.
+ * MarkdownReveal.kt and docs/adr/0001); and paragraphs and headings draw [LocalInlineChips]'
+ * matches as inline content once their reveal settles (see InlineChips.kt). Upstream keeps every
+ * block renderer private and offers no per-block hook, so there was no way to do that without copying.
  */
 
 package com.tamimarafat.ferngeist.feature.chat.markdown
@@ -29,6 +30,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -152,10 +155,12 @@ private fun MarkdownBlock(
                 reveal = reveal,
             )
 
-        is BlockNode.Heading ->
+        is BlockNode.Heading -> {
+            val (text, inlineContent) = block.children.toChipText(styles.inline, settledChips(reveal))
             RevealText(
-                text = block.children.toAnnotatedString(styles.inline),
+                text = text,
                 reveal = reveal,
+                inlineContent = inlineContent,
                 style =
                     when (block.level) {
                         1 -> MarkdownTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
@@ -167,6 +172,7 @@ private fun MarkdownBlock(
                     },
                 modifier = modifier.fillMaxWidth(),
             )
+        }
 
         is BlockNode.ListBlock ->
             ListBlock(
@@ -204,13 +210,16 @@ private fun MarkdownBlock(
                 modifier = modifier,
             )
 
-        is BlockNode.Paragraph ->
+        is BlockNode.Paragraph -> {
+            val (text, inlineContent) = block.children.toChipText(styles.inline, settledChips(reveal))
             RevealText(
-                text = block.children.toAnnotatedString(styles.inline),
+                text = text,
                 style = MarkdownTheme.typography.bodyLarge,
                 reveal = reveal,
+                inlineContent = inlineContent,
                 modifier = modifier.fillMaxWidth(),
             )
+        }
 
         is BlockNode.RawTextBlock ->
             RevealText(
@@ -574,10 +583,19 @@ internal fun List<InlineNode>.toAnnotatedString(
                     style = SpanStyle(textDecoration = TextDecoration.Underline),
                 ),
         ),
+    chips: InlineChips? = null,
 ): AnnotatedString =
     buildAnnotatedString {
-        appendInlineNodes(nodes = this@toAnnotatedString, styles = styles)
+        appendInlineNodes(nodes = this@toAnnotatedString, styles = styles, chips = chips)
     }
+
+/** [LocalInlineChips] once [reveal] has settled: a chip landing mid-reveal would jump under the cursor. */
+@Composable
+private fun settledChips(reveal: BlockReveal?): InlineChips? {
+    val chips = LocalInlineChips.current ?: return null
+    val settled by remember(reveal) { derivedStateOf { reveal == null || reveal.run.isSettled } }
+    return chips.takeIf { settled }
+}
 
 @Composable
 internal fun MarkdownInlineText(
@@ -596,21 +614,20 @@ internal fun MarkdownInlineText(
 private fun AnnotatedString.Builder.appendInlineNodes(
     nodes: List<InlineNode>,
     styles: MarkdownInlineStyles,
+    chips: InlineChips? = null,
 ) {
     nodes.forEach { node ->
         when (node) {
-            is InlineNode.CodeSpan ->
-                withStyle(styles.code) {
-                    append(node.literal)
-                }
+            is InlineNode.CodeSpan -> appendWithChips(node.literal, chips, styles.code)
 
             is InlineNode.Emphasis ->
                 withStyle(styles.emphasis) {
-                    appendInlineNodes(node.children, styles)
+                    appendInlineNodes(node.children, styles, chips)
                 }
 
             is InlineNode.HardBreak -> append("\n")
 
+            // No chips inside a link: the tap already goes to its destination.
             is InlineNode.Link ->
                 withLink(
                     LinkAnnotation.Url(
@@ -627,15 +644,15 @@ private fun AnnotatedString.Builder.appendInlineNodes(
 
             is InlineNode.Strikethrough ->
                 withStyle(styles.strike) {
-                    appendInlineNodes(node.children, styles)
+                    appendInlineNodes(node.children, styles, chips)
                 }
 
             is InlineNode.Strong ->
                 withStyle(styles.strong) {
-                    appendInlineNodes(node.children, styles)
+                    appendInlineNodes(node.children, styles, chips)
                 }
 
-            is InlineNode.Text -> append(node.literal)
+            is InlineNode.Text -> appendWithChips(node.literal, chips)
 
             is InlineNode.UnsupportedInline -> append(node.literal)
 

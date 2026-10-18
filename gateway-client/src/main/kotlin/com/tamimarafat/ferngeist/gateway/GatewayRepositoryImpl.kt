@@ -5,6 +5,7 @@ import io.ktor.client.HttpClient
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
+@Suppress("TooManyFunctions") // one override per gateway endpoint
 class GatewayRepositoryImpl
     @Inject
     constructor(
@@ -418,6 +419,37 @@ class GatewayRepositoryImpl
                 host = host,
                 credential = gatewayCredential,
                 segments = arrayOf("v1", "runtimes", runtimeId, "git", "commits", sha),
+                query = acpSessionQuery(acpSessionId),
+            )
+
+        override suspend fun fetchFile(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            path: String,
+            acpSessionId: String?,
+        ): GatewayFileContents =
+            http.getJson(
+                scheme = scheme,
+                host = host,
+                credential = gatewayCredential,
+                segments = arrayOf("v1", "runtimes", runtimeId, "files"),
+                query = mapOf("path" to path) + acpSessionQuery(acpSessionId),
+            )
+
+        override suspend fun fetchFileList(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            acpSessionId: String?,
+        ): GatewayFileList =
+            http.getJson(
+                scheme = scheme,
+                host = host,
+                credential = gatewayCredential,
+                segments = arrayOf("v1", "runtimes", runtimeId, "files", "list"),
                 query = acpSessionQuery(acpSessionId),
             )
 

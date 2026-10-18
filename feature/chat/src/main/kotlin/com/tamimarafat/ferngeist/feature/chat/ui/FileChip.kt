@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 internal fun FileChip(
     path: String,
     modifier: Modifier = Modifier,
+    label: String = path.fileName(),
     // Off where the chip already sits on a card: a pill inside a card reads as clutter.
     filled: Boolean = true,
     textStyle: TextStyle = MaterialTheme.typography.bodySmall,
@@ -37,7 +38,7 @@ internal fun FileChip(
     ) {
         FileTypeIcon(path, modifier = Modifier.size(14.dp))
         Text(
-            text = path.fileName(),
+            text = label,
             style = textStyle,
             maxLines = 1,
             // The extension is the part worth keeping.

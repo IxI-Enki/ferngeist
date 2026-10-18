@@ -86,6 +86,14 @@ sealed interface ChatIntent {
         val revision: String = "",
     ) : ChatIntent
 
+    /** Open the file a transcript chip names, as its tool call reported the path, in the file sheet. */
+    data class OpenFile(
+        val path: String,
+    ) : ChatIntent
+
+    /** Close the file sheet. */
+    data object CloseFile : ChatIntent
+
     /** Reload history from `HEAD`, keeping the current list until it lands, or append the next page ([more]). */
     data class LoadGitLog(
         val more: Boolean,

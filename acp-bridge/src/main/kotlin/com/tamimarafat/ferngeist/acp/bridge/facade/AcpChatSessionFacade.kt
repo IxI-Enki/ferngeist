@@ -19,6 +19,7 @@ import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
+import com.tamimarafat.ferngeist.core.model.ChatFileContents
 import com.tamimarafat.ferngeist.core.model.ChatFileData
 import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
 import com.tamimarafat.ferngeist.core.model.ChatGitRefs
@@ -381,6 +382,32 @@ class AcpChatSessionFacade(
                 acpSessionId = liveSessionIdOrNull(),
             ).changed
             .map { it.toChatChangedFile() }
+    }
+
+    override suspend fun fetchFile(path: String): ChatFileContents? {
+        val connection = _gatewayWorkspaceConnection.value ?: return null
+        val file =
+            gatewayRepository.fetchFile(
+                scheme = connection.scheme,
+                host = connection.host,
+                gatewayCredential = connection.gatewayCredential,
+                runtimeId = connection.runtimeId,
+                path = path,
+                acpSessionId = liveSessionIdOrNull(),
+            )
+        return ChatFileContents(text = file.text, truncated = file.truncated)
+    }
+
+    override suspend fun fetchFileList(): List<String>? {
+        val connection = _gatewayWorkspaceConnection.value ?: return null
+        return gatewayRepository
+            .fetchFileList(
+                scheme = connection.scheme,
+                host = connection.host,
+                gatewayCredential = connection.gatewayCredential,
+                runtimeId = connection.runtimeId,
+                acpSessionId = liveSessionIdOrNull(),
+            ).files
     }
 
     /**

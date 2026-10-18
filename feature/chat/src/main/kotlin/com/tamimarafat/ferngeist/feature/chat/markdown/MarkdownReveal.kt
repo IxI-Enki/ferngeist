@@ -4,6 +4,7 @@ import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -282,9 +283,10 @@ internal fun RevealText(
     reveal: BlockReveal?,
     modifier: Modifier = Modifier,
     byLine: Boolean = false,
+    inlineContent: Map<String, InlineTextContent> = emptyMap(),
 ) {
     if (reveal == null) {
-        BasicText(text = text, style = style, modifier = modifier)
+        BasicText(text = text, style = style, modifier = modifier, inlineContent = inlineContent)
         return
     }
     val end by remember(text, reveal, byLine) {
@@ -296,6 +298,7 @@ internal fun RevealText(
     BasicText(
         text = visible,
         style = style,
+        inlineContent = inlineContent,
         onTextLayout = { layout = it },
         modifier =
             modifier

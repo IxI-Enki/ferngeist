@@ -245,6 +245,21 @@ private fun BoxScope.ChatScreenContentOverlays(
     ) {
         ChatScreenDialogsHost(screenState, viewModel)
     }
+    screenState.state.openFile?.let { file ->
+        FileSheet(file, onDismiss = { viewModel.dispatch(ChatIntent.CloseFile) })
+    }
+    // The files a chip's shared name could mean, while the reader picks one.
+    var fileCandidates by remember { mutableStateOf<List<String>?>(null) }
+    fileCandidates?.let { candidates ->
+        FilePickerSheet(
+            candidates = candidates,
+            onPick = { path ->
+                fileCandidates = null
+                viewModel.dispatch(ChatIntent.OpenFile(path))
+            },
+            onDismiss = { fileCandidates = null },
+        )
+    }
     if (screenState.showGitStatusSheet.value) {
         // The sheet is where the reader asks what the tree looks like, so every open re-reads the
         // status rather than showing whatever the last turn boundary or resume left in state.
@@ -297,24 +312,46 @@ private fun BoxScope.ChatScreenContentOverlays(
         )
     }
 
-    ChatScreenBody(
-        state = screenState.state,
-        scroll = screenState.scrollHandle,
-        appBarScrollConnection = appBarScrollConnection,
-        renderedLastMessageId = screenState.renderedLastMessageId,
-        listTopPadding = innerPadding.calculateTopPadding(),
-        listBottomPadding = screenState.listBottomPadding,
-        onRetryLoad = { viewModel.dispatch(ChatIntent.RetryLoad) },
-        onThoughtClick = { segmentId ->
-            screenState.selectedThoughtSegmentId.value = segmentId
-        },
-        onToolCallClick = { segmentId ->
-            screenState.selectedToolCallSegmentId.value = segmentId
-        },
-        onRetryMessage = { clientId ->
-            viewModel.dispatch(ChatIntent.RetryMessage(clientId))
-        },
-    )
+    // Chips need a workspace to read the file from; without a gateway the transcript has none.
+    val hasWorkspace = screenState.state.gatewayWorkspaceConnection != null
+    val openFile: ((List<String>) -> Unit)? =
+        remember(viewModel, hasWorkspace) {
+            if (hasWorkspace) {
+                { candidates ->
+                    val only = candidates.singleOrNull()
+                    if (only != null) {
+                        viewModel.dispatch(ChatIntent.OpenFile(only))
+                    } else {
+                        fileCandidates = candidates
+                    }
+                }
+            } else {
+                null
+            }
+        }
+    CompositionLocalProvider(
+        LocalFileOpener provides openFile,
+        LocalWorkspaceFiles provides screenState.state.workspaceFiles,
+    ) {
+        ChatScreenBody(
+            state = screenState.state,
+            scroll = screenState.scrollHandle,
+            appBarScrollConnection = appBarScrollConnection,
+            renderedLastMessageId = screenState.renderedLastMessageId,
+            listTopPadding = innerPadding.calculateTopPadding(),
+            listBottomPadding = screenState.listBottomPadding,
+            onRetryLoad = { viewModel.dispatch(ChatIntent.RetryLoad) },
+            onThoughtClick = { segmentId ->
+                screenState.selectedThoughtSegmentId.value = segmentId
+            },
+            onToolCallClick = { segmentId ->
+                screenState.selectedToolCallSegmentId.value = segmentId
+            },
+            onRetryMessage = { clientId ->
+                viewModel.dispatch(ChatIntent.RetryMessage(clientId))
+            },
+        )
+    }
 
     ChatBottomFade(bandHeight = screenState.bottomFadeBandHeight)
 

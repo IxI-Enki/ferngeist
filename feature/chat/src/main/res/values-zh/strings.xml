@@ -29,6 +29,11 @@
     <string name="chat_error_desc">错误</string>
     <string name="chat_file_binary">二进制文件，不显示</string>
     <string name="chat_file_empty">空文件</string>
+    <string name="chat_file_deleted">在此修订中已删除</string>
+    <string name="chat_file_origin_working_tree">工作区</string>
+    <string name="chat_file_origin_commit">于 %1$s</string>
+    <string name="chat_file_origin_compare">对比 %1$s</string>
+    <string name="chat_file_open_full">打开完整文件</string>
     <string name="chat_file_truncated">仅显示此文件的前 1 MiB</string>
     <string name="chat_tool_call">工具调用</string>
     <string name="chat_tool_call_details_desc">显示工具调用详情</string>

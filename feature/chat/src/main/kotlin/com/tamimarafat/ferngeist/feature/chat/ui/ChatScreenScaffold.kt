@@ -229,6 +229,37 @@ private fun BoxScope.ChatScreenContentOverlays(
             .lastOrNull()
             ?.segments
             ?.any { it.id == selected } == true
+    // The files a chip's shared name could mean, while the reader picks one.
+    var fileCandidates by remember { mutableStateOf<List<String>?>(null) }
+    // Opening a file needs a workspace to read it from; without a gateway there is none.
+    val hasWorkspace = screenState.state.gatewayWorkspaceConnection != null
+    val openFile: ((List<String>) -> Unit)? =
+        remember(viewModel, hasWorkspace) {
+            if (hasWorkspace) {
+                { candidates ->
+                    val only = candidates.singleOrNull()
+                    if (only != null) {
+                        viewModel.dispatch(ChatIntent.OpenFile(only))
+                    } else {
+                        fileCandidates = candidates
+                    }
+                }
+            } else {
+                null
+            }
+        }
+    // The whole file is read at the revision of the diff it was opened from, so the git sheet says
+    // what that file is rather than always asking for the working tree.
+    val openFileAt: ((String, String?, String?, String?) -> Unit)? =
+        remember(viewModel, hasWorkspace) {
+            if (hasWorkspace) {
+                { path, commit, compare, oldPath ->
+                    viewModel.dispatch(ChatIntent.OpenFile(path, commit, compare, oldPath))
+                }
+            } else {
+                null
+            }
+        }
     CompositionLocalProvider(
         LocalWorkingTreeChanges provides
             if (inNewestTurn) screenState.state.turnWorkingTree() else emptyList(),
@@ -242,14 +273,12 @@ private fun BoxScope.ChatScreenContentOverlays(
                 },
                 onRefresh = { if (inNewestTurn) viewModel.dispatch(ChatIntent.RefreshGitStatus) },
             ),
+        // The tool call sheet's open-full-file button wants the same opener the transcript chips use.
+        LocalFileOpener provides openFile,
+        LocalWorkspaceFiles provides screenState.state.workspaceFiles,
     ) {
         ChatScreenDialogsHost(screenState, viewModel)
     }
-    screenState.state.openFile?.let { file ->
-        FileSheet(file, onDismiss = { viewModel.dispatch(ChatIntent.CloseFile) })
-    }
-    // The files a chip's shared name could mean, while the reader picks one.
-    var fileCandidates by remember { mutableStateOf<List<String>?>(null) }
     fileCandidates?.let { candidates ->
         FilePickerSheet(
             candidates = candidates,
@@ -288,6 +317,7 @@ private fun BoxScope.ChatScreenContentOverlays(
                 },
                 onLoadGitLog = { more -> viewModel.dispatch(ChatIntent.LoadGitLog(more)) },
                 onLoadGitCommit = { sha -> viewModel.dispatch(ChatIntent.LoadGitCommit(sha)) },
+                onOpenFile = openFileAt,
                 onOpen = {
                     viewModel.dispatch(ChatIntent.LoadGitRefs)
                     viewModel.dispatch(ChatIntent.RefreshGitStatus)
@@ -311,24 +341,12 @@ private fun BoxScope.ChatScreenContentOverlays(
             onDismiss = { screenState.showSwitcherSheet.value = false },
         )
     }
+    // Last of the sheets so it stacks over whichever one opened it; the transcript chip opens it
+    // over the chat, the tool call and git sheets open it over themselves.
+    screenState.state.openFile?.let { file ->
+        FileSheet(file, onDismiss = { viewModel.dispatch(ChatIntent.CloseFile) })
+    }
 
-    // Chips need a workspace to read the file from; without a gateway the transcript has none.
-    val hasWorkspace = screenState.state.gatewayWorkspaceConnection != null
-    val openFile: ((List<String>) -> Unit)? =
-        remember(viewModel, hasWorkspace) {
-            if (hasWorkspace) {
-                { candidates ->
-                    val only = candidates.singleOrNull()
-                    if (only != null) {
-                        viewModel.dispatch(ChatIntent.OpenFile(only))
-                    } else {
-                        fileCandidates = candidates
-                    }
-                }
-            } else {
-                null
-            }
-        }
     CompositionLocalProvider(
         LocalFileOpener provides openFile,
         LocalWorkspaceFiles provides screenState.state.workspaceFiles,

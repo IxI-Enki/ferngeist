@@ -49,7 +49,7 @@ data class ChatState(
      */
     val resumedSession: Boolean = false,
     val gatewayWorkspaceConnection: GatewayWorkspaceConnection? = null,
-    /** The file a transcript chip opened; null while the file sheet is closed. */
+    /** The file a transcript chip or a diff's open-full-file button opened; null while the sheet is closed. */
     val openFile: FileView? = null,
     /** The workspace's files by file name, for chips on names no tool call touched; null until listed. */
     val workspaceFiles: Map<String, List<String>>? = null,

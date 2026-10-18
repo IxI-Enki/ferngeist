@@ -35,10 +35,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -88,6 +90,7 @@ import com.agentclientprotocol.model.ToolKind
 import com.tamimarafat.ferngeist.core.common.ui.ConnectionDiagnosticsDialog
 import com.tamimarafat.ferngeist.core.common.ui.ErrorStateCard
 import com.tamimarafat.ferngeist.core.common.ui.dismissSheet
+import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.common.ui.onEscapeKey
 import com.tamimarafat.ferngeist.core.common.ui.rememberEscapeFocusAnchor
 import com.tamimarafat.ferngeist.core.model.ChatCommand
@@ -856,15 +859,38 @@ private fun ToolCallDetailsSheet(
 private fun ToolCallDetailsHeader(toolCall: ToolCallDisplay) {
     val defaultToolCallLabel = stringResource(R.string.chat_tool_call)
     val toolCallSheetTitle = toolCall.titleWithFile().ifBlank { defaultToolCallLabel }
+    // Only an edit names a file whose whole content says something the diff does not; a read's file
+    // is what the sheet already shows.
+    val openablePath = toolCall.filePath()?.takeIf { toolCall.kind == ToolKind.EDIT }
+    val openFile = LocalFileOpener.current
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = toolCallSheetTitle,
-            style = MaterialTheme.typography.bodyLarge,
-            // Same reason as the permission sheet: an agent can dump an entire transcript
-            // into the tool title, so cap it rather than let it push the body off-screen.
-            maxLines = AGENT_TEXT_MAX_LINES,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.Top) {
+            Text(
+                text = toolCallSheetTitle,
+                style = MaterialTheme.typography.bodyLarge,
+                // Same reason as the permission sheet: an agent can dump an entire transcript
+                // into the tool title, so cap it rather than let it push the body off-screen.
+                maxLines = AGENT_TEXT_MAX_LINES,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (openablePath != null && openFile != null) {
+                val label = stringResource(R.string.chat_file_open_full)
+                GitTooltip(label) {
+                    IconButton(
+                        onClick = { openFile(listOf(openablePath)) },
+                        modifier = Modifier.size(32.dp).handCursor(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Description,
+                            contentDescription = label,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        }
         toolCall.kind?.let { kind ->
             Text(
                 text = toolKindLabel(kind),

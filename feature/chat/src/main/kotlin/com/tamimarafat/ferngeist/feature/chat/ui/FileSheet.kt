@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -83,11 +85,23 @@ internal fun FileSheet(
                     .onEscapeKey { scope.dismissSheet(sheetState, onDismiss) },
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            FileTitle(file.path)
+            FileTitle(file.path, origin = fileOriginLabel(file.commit, file.compare))
             FileSheetBody(file)
         }
     }
 }
+
+/** The revision the sheet is showing, so its content is never read as the wrong one. */
+@Composable
+private fun fileOriginLabel(
+    commit: String?,
+    compare: String?,
+): String =
+    when {
+        commit != null -> stringResource(R.string.chat_file_origin_commit, commit.take(SHORT_SHA))
+        compare != null -> stringResource(R.string.chat_file_origin_compare, compare)
+        else -> stringResource(R.string.chat_file_origin_working_tree)
+    }
 
 /** The files a name several share could mean; tapping one opens it. */
 @Composable
@@ -129,11 +143,20 @@ internal fun FilePickerSheet(
     }
 }
 
-/** A file's chip over its directory. */
+/** A file's chip over its directory, badged with the revision it was read at. */
 @Composable
-private fun FileTitle(path: String) {
+private fun FileTitle(
+    path: String,
+    origin: String? = null,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        FileChip(path, textStyle = MaterialTheme.typography.bodyMedium)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FileChip(path, textStyle = MaterialTheme.typography.bodyMedium)
+            origin?.let { FileOriginBadge(it) }
+        }
         Text(
             text = path.replace('\\', '/').substringBeforeLast('/', ""),
             style = MaterialTheme.typography.bodySmall,
@@ -145,10 +168,26 @@ private fun FileTitle(path: String) {
 }
 
 @Composable
+private fun FileOriginBadge(label: String) {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
+    }
+}
+
+@Composable
 private fun FileSheetBody(file: FileView) {
     val notice =
         when {
             file.error != null -> file.error
+            file.deleted -> stringResource(R.string.chat_file_deleted)
             file.binary -> stringResource(R.string.chat_file_binary)
             file.text?.isEmpty() == true -> stringResource(R.string.chat_file_empty)
             else -> null
@@ -260,3 +299,4 @@ private fun Gutter(
 
 private val GUTTER_WIDTH = 7.dp
 private val DELETION_TICK_LENGTH = 9.dp
+private const val SHORT_SHA = 7

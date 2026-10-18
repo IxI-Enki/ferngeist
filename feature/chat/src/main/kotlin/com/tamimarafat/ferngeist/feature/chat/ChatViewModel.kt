@@ -855,7 +855,8 @@ class ChatViewModel
                         intent.oldPath,
                         intent.revision,
                     )
-                is ChatIntent.OpenFile -> fileLoader.open(intent.path)
+                is ChatIntent.OpenFile ->
+                    fileLoader.open(intent.path, intent.commit, intent.compare, intent.oldPath)
                 is ChatIntent.CloseFile -> fileLoader.close()
                 is ChatIntent.LoadGitLog,
                 is ChatIntent.LoadGitCommit,

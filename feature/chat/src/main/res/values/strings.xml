@@ -58,6 +58,11 @@
     <string name="chat_error_desc">Error</string>
     <string name="chat_file_binary">Binary file, not shown</string>
     <string name="chat_file_empty">Empty file</string>
+    <string name="chat_file_deleted">Deleted in this revision</string>
+    <string name="chat_file_origin_working_tree">Working tree</string>
+    <string name="chat_file_origin_commit">At %1$s</string>
+    <string name="chat_file_origin_compare">vs %1$s</string>
+    <string name="chat_file_open_full">Open full file</string>
     <string name="chat_file_truncated">Only the first 1 MiB of this file is shown</string>
     <string name="chat_tool_call">Tool Call</string>
     <string name="chat_tool_call_details_desc">Show tool call details</string>

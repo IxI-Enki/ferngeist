@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.feature.chat
 
+import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
 import com.tamimarafat.ferngeist.feature.chat.ui.diffLines
@@ -24,12 +25,20 @@ data class FileView(
     val truncated: Boolean = false,
     val binary: Boolean = false,
     val error: String? = null,
+    /** The commit the text and gutter are read from; null for the working tree. */
+    val commit: String? = null,
+    /** The ref the working tree is marked against; null for `HEAD` or a commit's own parent. */
+    val compare: String? = null,
+    /** Gone in this revision, so [text] is empty and there is nothing to show but the notice. */
+    val deleted: Boolean = false,
 )
 
 /**
- * Reads the file a transcript chip opens into [ChatState.openFile]: git's diff when the working
- * tree has the file changed, whose new side is the whole file and whose old side marks what
- * changed, else the plain file.
+ * Reads the file a chip or an "open full file" button names into [ChatState.openFile], as the
+ * revision it was asked for: git's diff when the working tree has the file changed, whose new side
+ * is the whole file and whose old side marks what changed, else the plain file. A commit's file
+ * and a comparison read the diff the git sheet shows for it, so the whole file matches the
+ * revision the reader tapped from.
  */
 internal class ChatFileLoader(
     private val scope: CoroutineScope,
@@ -42,31 +51,51 @@ internal class ChatFileLoader(
     /** The read in flight; a newer open or a close replaces it, and a replaced read never lands. */
     private var job: Job? = null
 
-    fun open(path: String) {
+    fun open(
+        path: String,
+        commit: String? = null,
+        compare: String? = null,
+        oldPath: String? = null,
+    ) {
         job?.cancel()
         val relative = path.relativeTo(cwd)
         if (relative == null) {
             job = null
-            update { copy(openFile = FileView(path, isLoading = false, error = "$path is outside the project")) }
+            update {
+                copy(
+                    openFile =
+                        FileView(
+                            path,
+                            isLoading = false,
+                            commit = commit,
+                            compare = compare,
+                            error = "$path is outside the project",
+                        ),
+                )
+            }
             return
         }
-        update { copy(openFile = FileView(path)) }
+        update { copy(openFile = FileView(path, commit = commit, compare = compare)) }
         job =
             scope.launch {
-                val result = runCatching { read(relative) }
+                val result = runCatching { read(relative, commit, compare, oldPath) }
                 if (job !== coroutineContext[Job]) return@launch
                 job = null
                 val file =
                     result.fold(
-                        onSuccess = {
-                            it?.copy(
-                                path = path,
-                            ) ?: FileView(path, isLoading = false, error = NO_WORKSPACE)
+                        onSuccess = { view ->
+                            view?.copy(path = path) ?: FileView(
+                                path,
+                                isLoading = false,
+                                commit = commit,
+                                compare = compare,
+                                error = NO_WORKSPACE,
+                            )
                         },
                         onFailure = { error ->
                             if (error is CancellationException) return@launch
                             val message = error.message?.takeIf { it.isNotBlank() } ?: "Failed to load $path"
-                            FileView(path, isLoading = false, error = message)
+                            FileView(path, isLoading = false, commit = commit, compare = compare, error = message)
                         },
                     )
                 update { copy(openFile = file) }
@@ -79,20 +108,49 @@ internal class ChatFileLoader(
         update { copy(openFile = null) }
     }
 
-    private suspend fun read(relative: String): FileView? {
-        val entry = tree().entryFor(relative)?.takeIf { it.status != "D" }
-        if (entry != null) {
-            val diff = facade.fetchGitDiff(entry.path, oldPath = entry.oldPath)?.firstOrNull() ?: return null
-            return markedFile(diff.oldText, diff.newText)
+    private suspend fun read(
+        relative: String,
+        commit: String?,
+        compare: String?,
+        oldPath: String?,
+    ): FileView? {
+        if (commit != null || compare != null) {
+            val diff = facade.fetchGitDiff(relative, commit, oldPath, compare)?.firstOrNull()
+            return diff?.marked(commit = commit, compare = compare)
         }
-        val file = facade.fetchFile(relative) ?: return null
-        return FileView("", isLoading = false, text = file.text, binary = file.text == null, truncated = file.truncated)
+        val entry = tree().entryFor(relative)
+        if (entry == null) {
+            return facade.fetchFile(relative)?.let { file ->
+                FileView(
+                    "",
+                    isLoading = false,
+                    text = file.text,
+                    binary = file.text == null,
+                    truncated = file.truncated,
+                )
+            }
+        }
+        val diff = facade.fetchGitDiff(entry.path, oldPath = entry.oldPath)?.firstOrNull()
+        // A deletion has no text on the new side, so the diff is what says the file is gone.
+        return diff?.marked(commit = null, compare = null, deleted = entry.status == "D")
     }
 
     private companion object {
         const val NO_WORKSPACE = "No gateway workspace connection to read the file"
     }
 }
+
+/** [this] as a whole file, its gutter marked with what its revision changed. */
+private fun ToolCallContent.Diff.marked(
+    commit: String?,
+    compare: String?,
+    deleted: Boolean = false,
+): FileView =
+    markedFile(oldText, newText).copy(
+        commit = commit,
+        compare = compare,
+        deleted = deleted || (oldText != null && newText.isEmpty()),
+    )
 
 /**
  * [this] relative to the project directory [cwd], as the gateway reads it; null for an absolute

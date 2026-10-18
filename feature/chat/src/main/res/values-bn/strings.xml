@@ -26,6 +26,11 @@
     <string name="chat_error_desc">ত্রুটি</string>
     <string name="chat_file_binary">বাইনারি ফাইল, দেখানো হচ্ছে না</string>
     <string name="chat_file_empty">খালি ফাইল</string>
+    <string name="chat_file_deleted">এই সংশোধনীতে মুছে ফেলা হয়েছে</string>
+    <string name="chat_file_origin_working_tree">ওয়ার্কিং ট্রি</string>
+    <string name="chat_file_origin_commit">%1$s-এ</string>
+    <string name="chat_file_origin_compare">%1$s-এর সাথে</string>
+    <string name="chat_file_open_full">সম্পূর্ণ ফাইল খুলুন</string>
     <string name="chat_file_truncated">এই ফাইলের শুধু প্রথম 1 MiB দেখানো হচ্ছে</string>
     <string name="chat_tool_call">টুল কল</string>
     <string name="chat_tool_call_details_desc">টুল কলের বিবরণ দেখুন</string>

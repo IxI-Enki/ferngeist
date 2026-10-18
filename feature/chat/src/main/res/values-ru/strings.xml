@@ -29,6 +29,11 @@
     <string name="chat_error_desc">Ошибка</string>
     <string name="chat_file_binary">Двоичный файл не показан</string>
     <string name="chat_file_empty">Пустой файл</string>
+    <string name="chat_file_deleted">Удалён в этой версии</string>
+    <string name="chat_file_origin_working_tree">Рабочее дерево</string>
+    <string name="chat_file_origin_commit">В %1$s</string>
+    <string name="chat_file_origin_compare">с %1$s</string>
+    <string name="chat_file_open_full">Открыть файл целиком</string>
     <string name="chat_file_truncated">Показан только первый 1 МиБ этого файла</string>
     <string name="chat_tool_call">Вызов инструмента</string>
     <string name="chat_tool_call_details_desc">Детали вызова</string>

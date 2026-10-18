@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -384,6 +385,8 @@ internal fun GitDiffDetailContent(
     onRetry: () -> Unit,
     /** Diffing a commit's file: a missing [file] means its list is still loading, not that it was deleted. */
     inCommit: Boolean = false,
+    /** Opens the whole file this diff came from, at the revision it was read; null hides the control. */
+    onOpenFile: (() -> Unit)? = null,
 ) {
     Column(
         modifier =
@@ -391,7 +394,7 @@ internal fun GitDiffDetailContent(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        GitDiffDetailHeader(file = file, onBack = onBack)
+        GitDiffDetailHeader(file = file, onBack = onBack, onOpenFile = onOpenFile)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -412,8 +415,9 @@ internal fun GitDiffDetailContent(
 private fun GitDiffDetailHeader(
     file: ChatChangedFile?,
     onBack: () -> Unit,
+    onOpenFile: (() -> Unit)?,
 ) {
-    // Header: back arrow + file icon + file name + counts
+    // Header: back arrow + file icon + file name + counts + open-full-file
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -446,6 +450,18 @@ private fun GitDiffDetailHeader(
                     overflow = TextOverflow.StartEllipsis,
                 )
                 GitFileDiffCounts(file = file)
+            }
+            if (onOpenFile != null) {
+                val label = stringResource(R.string.chat_file_open_full)
+                GitTooltip(label) {
+                    IconButton(onClick = onOpenFile, modifier = Modifier.handCursor()) {
+                        Icon(
+                            imageVector = Icons.Rounded.Description,
+                            contentDescription = label,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }

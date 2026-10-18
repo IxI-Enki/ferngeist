@@ -26,6 +26,11 @@
     <string name="chat_error_desc">Erro</string>
     <string name="chat_file_binary">Arquivo binário, não exibido</string>
     <string name="chat_file_empty">Arquivo vazio</string>
+    <string name="chat_file_deleted">Excluído nesta revisão</string>
+    <string name="chat_file_origin_working_tree">Árvore de trabalho</string>
+    <string name="chat_file_origin_commit">Em %1$s</string>
+    <string name="chat_file_origin_compare">vs %1$s</string>
+    <string name="chat_file_open_full">Abrir arquivo completo</string>
     <string name="chat_file_truncated">Apenas o primeiro MiB deste arquivo é exibido</string>
     <string name="chat_tool_call">Chamada de ferramenta</string>
     <string name="chat_tool_call_details_desc">Mostrar detalhes da chamada de ferramenta</string>

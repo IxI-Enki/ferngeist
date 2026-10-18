@@ -86,9 +86,16 @@ sealed interface ChatIntent {
         val revision: String = "",
     ) : ChatIntent
 
-    /** Open the file a transcript chip names, as its tool call reported the path, in the file sheet. */
+    /**
+     * Open a file in the file sheet, read at the revision the reader is looking at: the working
+     * tree's copy by default, the copy [commit] holds, or the working tree marked against the
+     * compare ref [compare]. [oldPath] names a renamed file's old side.
+     */
     data class OpenFile(
         val path: String,
+        val commit: String? = null,
+        val compare: String? = null,
+        val oldPath: String? = null,
     ) : ChatIntent
 
     /** Close the file sheet. */

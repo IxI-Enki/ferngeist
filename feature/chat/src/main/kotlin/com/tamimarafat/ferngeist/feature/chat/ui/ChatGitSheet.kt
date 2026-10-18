@@ -92,6 +92,8 @@ internal fun GitStatusSheet(
     onLoadGitDiff: (path: String, commit: String?, oldPath: String?) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
     onLoadGitCommit: (sha: String) -> Unit,
+    /** Opens a file's whole content at the revision its diff was read from; null hides the control. */
+    onOpenFile: ((path: String, commit: String?, compare: String?, oldPath: String?) -> Unit)?,
     /** Sheet opened: refresh what it shows, including the refs the picker lists. */
     onOpen: () -> Unit,
     onDismiss: () -> Unit,
@@ -162,6 +164,7 @@ internal fun GitStatusSheet(
                 onLoadGitDiff = onLoadGitDiff,
                 onLoadGitLog = onLoadGitLog,
                 onLoadGitCommit = onLoadGitCommit,
+                onOpenFile = onOpenFile,
                 onPickCompare = { showPicker = true },
                 onNavigate = { next ->
                     // Going deeper opens a page fresh; only going back restores one.
@@ -196,6 +199,7 @@ private fun GitSheetPage(
     onLoadGitDiff: (path: String, commit: String?, oldPath: String?) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
     onLoadGitCommit: (sha: String) -> Unit,
+    onOpenFile: ((path: String, commit: String?, compare: String?, oldPath: String?) -> Unit)?,
     onPickCompare: () -> Unit,
     onNavigate: (GitSheetRoute) -> Unit,
 ) {
@@ -255,6 +259,19 @@ private fun GitSheetPage(
                     onBack = { onNavigate(target.parent) },
                     onRetry = { onLoadGitDiff(target.path, target.commit, target.oldPath) },
                     inCommit = target.commit != null,
+                    onOpenFile =
+                        onOpenFile?.let { open ->
+                            {
+                                // The file is read at the revision the diff came from, so the
+                                // whole file agrees with what the reader was just looking at.
+                                open(
+                                    target.path,
+                                    target.commit,
+                                    if (target.commit == null) compare.ref?.qualified else null,
+                                    target.oldPath,
+                                )
+                            }
+                        },
                 )
             }
     }

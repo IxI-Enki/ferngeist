@@ -21,6 +21,7 @@ import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatFileData
 import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
+import com.tamimarafat.ferngeist.core.model.ChatGitRefs
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatOperationError
@@ -286,7 +287,7 @@ class AcpChatSessionFacade(
      * has not minted its real session id (asking then would scope the read to whichever
      * session the gateway saw last).
      */
-    override suspend fun fetchGitStatus(): ChatGitStatus? {
+    override suspend fun fetchGitStatus(compare: String?): ChatGitStatus? {
         val connection = _gatewayWorkspaceConnection.value ?: return null
         val acpSessionId = liveSessionIdOrNull() ?: return null
         return gatewayRepository
@@ -296,6 +297,7 @@ class AcpChatSessionFacade(
                 gatewayCredential = connection.gatewayCredential,
                 runtimeId = connection.runtimeId,
                 acpSessionId = acpSessionId,
+                compare = compare,
             ).toChatGitStatus()
     }
 
@@ -307,6 +309,7 @@ class AcpChatSessionFacade(
         path: String,
         commit: String?,
         oldPath: String?,
+        compare: String?,
     ): List<ToolCallContent.Diff>? {
         val connection = _gatewayWorkspaceConnection.value ?: return null
         return gatewayRepository.fetchGitDiff(
@@ -318,12 +321,14 @@ class AcpChatSessionFacade(
             acpSessionId = liveSessionIdOrNull(),
             commit = commit,
             oldPath = oldPath,
+            compare = compare,
         )
     }
 
     override suspend fun fetchGitLog(
         head: String?,
         skip: Int,
+        compare: String?,
     ): ChatGitLogPage? {
         val connection = _gatewayWorkspaceConnection.value ?: return null
         val acpSessionId = liveSessionIdOrNull() ?: return null
@@ -338,9 +343,29 @@ class AcpChatSessionFacade(
                     skip = skip,
                     limit = GIT_LOG_PAGE_SIZE,
                     acpSessionId = acpSessionId,
+                    compare = compare,
+                    // Page 1 of a compare range also brings the target's tip, to show where it forks from.
+                    beyond = if (compare != null && skip == 0) 1 else 0,
                 ).toChatGitLogPage()
         } catch (error: GatewayRequestException) {
             throw gitLogFailure(error, pinnedHead = head != null)
+        }
+    }
+
+    override suspend fun fetchGitRefs(): ChatGitRefs? {
+        val connection = _gatewayWorkspaceConnection.value ?: return null
+        val acpSessionId = liveSessionIdOrNull() ?: return null
+        return try {
+            gatewayRepository
+                .fetchGitRefs(
+                    scheme = connection.scheme,
+                    host = connection.host,
+                    gatewayCredential = connection.gatewayCredential,
+                    runtimeId = connection.runtimeId,
+                    acpSessionId = acpSessionId,
+                ).toChatGitRefs()
+        } catch (error: GatewayRequestException) {
+            throw gitRefsFailure(error)
         }
     }
 

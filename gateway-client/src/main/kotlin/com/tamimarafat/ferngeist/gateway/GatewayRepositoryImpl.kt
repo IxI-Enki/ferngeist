@@ -331,6 +331,7 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             runtimeId: String,
             acpSessionId: String?,
+            compare: String?,
         ): GatewayGitStatus =
             httpClient.getJson(
                 json = json,
@@ -338,7 +339,7 @@ class GatewayRepositoryImpl
                 host = host,
                 credential = gatewayCredential,
                 segments = arrayOf("v1", "runtimes", runtimeId, "git", "status"),
-                query = acpSessionQuery(acpSessionId),
+                query = compareQuery(compare) + acpSessionQuery(acpSessionId),
             )
 
         override suspend fun fetchGitDiff(
@@ -350,12 +351,13 @@ class GatewayRepositoryImpl
             acpSessionId: String?,
             commit: String?,
             oldPath: String?,
+            compare: String?,
         ): List<ToolCallContent.Diff> {
             val segments = arrayOf("v1", "runtimes", runtimeId, "git", "diff")
             val pathQuery = path?.takeIf { it.isNotBlank() }?.let { mapOf("path" to it) } ?: emptyMap()
             val commitQuery =
                 listOfNotNull(commit?.let { "commit" to it }, oldPath?.let { "oldPath" to it }).toMap()
-            val query = pathQuery + commitQuery + acpSessionQuery(acpSessionId)
+            val query = pathQuery + commitQuery + compareQuery(compare) + acpSessionQuery(acpSessionId)
             return if (pathQuery.isEmpty()) {
                 // Whole-tree: gateway returns a JSON array of ToolCallContentDiff objects.
                 httpClient.getJson(
@@ -390,6 +392,8 @@ class GatewayRepositoryImpl
             skip: Int,
             limit: Int,
             acpSessionId: String?,
+            compare: String?,
+            beyond: Int,
         ): GatewayGitLog =
             httpClient.getJson(
                 json = json,
@@ -402,7 +406,23 @@ class GatewayRepositoryImpl
                         head?.let { "head" to it },
                         "skip" to skip.toString(),
                         "limit" to limit.toString(),
-                    ).toMap() + acpSessionQuery(acpSessionId),
+                    ).toMap() + compareQuery(compare) + beyondQuery(beyond) + acpSessionQuery(acpSessionId),
+            )
+
+        override suspend fun fetchGitRefs(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            acpSessionId: String?,
+        ): GatewayGitRefs =
+            httpClient.getJson(
+                json = json,
+                scheme = scheme,
+                host = host,
+                credential = gatewayCredential,
+                segments = arrayOf("v1", "runtimes", runtimeId, "git", "refs"),
+                query = acpSessionQuery(acpSessionId),
             )
 
         override suspend fun fetchGitCommit(
@@ -753,6 +773,12 @@ private fun GatewayRequestException.isTransientProofRejection(): Boolean =
 
 private fun acpSessionQuery(acpSessionId: String?): Map<String, String> =
     acpSessionId?.takeIf { it.isNotBlank() }?.let { mapOf("acpSessionId" to it) } ?: emptyMap()
+
+private fun compareQuery(compare: String?): Map<String, String> =
+    compare?.takeIf { it.isNotBlank() }?.let { mapOf("compare" to it) } ?: emptyMap()
+
+private fun beyondQuery(beyond: Int): Map<String, String> =
+    if (beyond > 0) mapOf("beyond" to beyond.toString()) else emptyMap()
 
 /** Thrown for any non-success gateway API response; carries the HTTP status code. */
 class GatewayRequestException(

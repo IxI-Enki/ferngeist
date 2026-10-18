@@ -3,6 +3,7 @@ package com.tamimarafat.ferngeist.feature.chat
 import com.tamimarafat.ferngeist.gateway.GatewayAgent
 import com.tamimarafat.ferngeist.gateway.GatewayGitCommitFiles
 import com.tamimarafat.ferngeist.gateway.GatewayGitLog
+import com.tamimarafat.ferngeist.gateway.GatewayGitRefs
 import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
 
@@ -132,6 +133,7 @@ class FakeGatewayRepository : GatewayRepository {
         gatewayCredential: String,
         runtimeId: String,
         acpSessionId: String?,
+        compare: String?,
     ): GatewayGitStatus = TODO()
 
     override suspend fun fetchGitDiff(
@@ -143,6 +145,7 @@ class FakeGatewayRepository : GatewayRepository {
         acpSessionId: String?,
         commit: String?,
         oldPath: String?,
+        compare: String?,
     ) = TODO()
 
     override suspend fun fetchGitLog(
@@ -154,7 +157,17 @@ class FakeGatewayRepository : GatewayRepository {
         skip: Int,
         limit: Int,
         acpSessionId: String?,
+        compare: String?,
+        beyond: Int,
     ): GatewayGitLog = TODO()
+
+    override suspend fun fetchGitRefs(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        acpSessionId: String?,
+    ): GatewayGitRefs = TODO()
 
     override suspend fun fetchGitCommit(
         scheme: String,

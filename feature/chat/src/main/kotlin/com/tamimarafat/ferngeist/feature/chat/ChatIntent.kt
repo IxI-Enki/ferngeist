@@ -3,6 +3,7 @@ package com.tamimarafat.ferngeist.feature.chat
 import com.tamimarafat.ferngeist.core.model.ChatConfigValue
 import com.tamimarafat.ferngeist.core.model.ChatElicitationValue
 import com.tamimarafat.ferngeist.core.model.ChatFileData
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 
 /** User intents emitted from the chat UI. */
@@ -88,6 +89,14 @@ sealed interface ChatIntent {
     /** Reload history from `HEAD`, keeping the current list until it lands, or append the next page ([more]). */
     data class LoadGitLog(
         val more: Boolean,
+    ) : ChatIntent
+
+    /** Load the refs the git sheet can compare against. */
+    data object LoadGitRefs : ChatIntent
+
+    /** Compare the git sheet against [ref]; null returns to the working tree. */
+    data class SelectCompareRef(
+        val ref: ChatGitRef?,
     ) : ChatIntent
 
     /** Load the files a commit changed. */

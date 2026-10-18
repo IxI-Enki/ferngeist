@@ -118,13 +118,18 @@ interface GatewayPushRepository {
 
 /** Workspace file and git operations. */
 interface GatewayWorkspaceRepository {
-    /** Returns the git branch, ahead/behind, and changed files for a runtime's project directory. */
+    /**
+     * Returns the git branch, ahead/behind, and changed files for a runtime's project directory.
+     * With [compare] (a fully-qualified ref) the files are the working tree against that ref's tip,
+     * and the response echoes it; a gateway that ignores the parameter omits the echo.
+     */
     suspend fun fetchGitStatus(
         scheme: String,
         host: String,
         gatewayCredential: String,
         runtimeId: String,
         acpSessionId: String? = null,
+        compare: String? = null,
     ): GatewayGitStatus
 
     /**
@@ -134,7 +139,8 @@ interface GatewayWorkspaceRepository {
      * the whole-tree array. [oldText] is null for new/untracked files.
      *
      * With [commit] set, [path] is diffed in that commit against its first parent; pass
-     * [oldPath] for a rename or the old side is missing.
+     * [oldPath] for a rename or the old side is missing. With [compare] the old side is that ref's
+     * tip instead of `HEAD`.
      */
     suspend fun fetchGitDiff(
         scheme: String,
@@ -145,6 +151,7 @@ interface GatewayWorkspaceRepository {
         acpSessionId: String? = null,
         commit: String? = null,
         oldPath: String? = null,
+        compare: String? = null,
     ): List<ToolCallContent.Diff>
 
     /**
@@ -152,7 +159,9 @@ interface GatewayWorkspaceRepository {
      * returned head back on later pages so new commits do not shift [skip].
      *
      * Throws [GatewayRequestException] with a 404 status and no `{"error"}` envelope on gateways
-     * that predate history, and 400 when a pinned [head] no longer names a commit.
+     * that predate history, and 400 when a pinned [head] no longer names a commit. With [compare]
+     * the page is the commits `HEAD` has that the qualified ref does not; [beyond] > 0 also returns that
+     * many commits of the ref's own history from its tip in [GatewayGitLog.target], so 1 is just the tip.
      */
     suspend fun fetchGitLog(
         scheme: String,
@@ -163,7 +172,21 @@ interface GatewayWorkspaceRepository {
         skip: Int,
         limit: Int,
         acpSessionId: String? = null,
+        compare: String? = null,
+        beyond: Int = 0,
     ): GatewayGitLog
+
+    /**
+     * The refs a compare can target. Throws [GatewayRequestException] with a 404 status and no
+     * `{"error"}` envelope on gateways that predate branch comparison.
+     */
+    suspend fun fetchGitRefs(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        acpSessionId: String? = null,
+    ): GatewayGitRefs
 
     /** The files [sha] changed under the project directory, against its first parent. */
     suspend fun fetchGitCommit(

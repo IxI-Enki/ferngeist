@@ -19,8 +19,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,6 +47,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -55,14 +60,21 @@ import com.tamimarafat.ferngeist.core.common.ui.ErrorStateCard
 import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.feature.chat.R
 
-/** The Changes tab: aggregate totals, then the per-file list, which owns the only scroll. */
+/**
+ * The Changes tab: aggregate totals, then the per-file list, which owns the only scroll. A
+ * comparison is [flat] with its own [emptyText]: its files are working tree against another
+ * branch, so staged and unstaged mean nothing there.
+ */
 @Composable
 internal fun ColumnScope.GitChangesBody(
     status: ChatGitStatus,
     onFileClick: (ChatChangedFile) -> Unit,
+    flat: Boolean = false,
+    emptyText: String = stringResource(R.string.chat_git_clean),
 ) {
     val additions = status.changed.sumOf { it.added }
     val deletions = status.changed.sumOf { it.removed }
@@ -77,7 +89,7 @@ internal fun ColumnScope.GitChangesBody(
     // Per-file list (own vertical scroll container, no nesting)
     if (status.changed.isEmpty()) {
         Text(
-            text = stringResource(R.string.chat_git_clean),
+            text = emptyText,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(16.dp),
@@ -99,7 +111,15 @@ internal fun ColumnScope.GitChangesBody(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 // Staged files lead; headings only appear when there is something to tell apart.
-                val (staged, unstaged) = status.changed.partition { it.staged }
+                val (staged, unstaged) =
+                    if (flat) {
+                        emptyList<ChatChangedFile>() to status.changed
+                    } else {
+                        status.changed
+                            .partition {
+                                it.staged
+                            }
+                    }
                 if (staged.isNotEmpty()) {
                     GitFileGroup(R.string.chat_git_staged, staged, onFileClick)
                     if (unstaged.isNotEmpty()) {
@@ -114,8 +134,49 @@ internal fun ColumnScope.GitChangesBody(
     }
 }
 
+/**
+ * The Changes tab against [target]: skeleton until its first answer, then the flat list. A failed
+ * fetch shows the error card rather than any working-tree data under the target's name.
+ */
 @Composable
-internal fun GitStatusHeader(status: ChatGitStatus) {
+internal fun ColumnScope.GitCompareChangesBody(
+    target: String,
+    status: ChatGitStatus?,
+    error: String?,
+    onRetry: () -> Unit,
+    onFileClick: (ChatChangedFile) -> Unit,
+) {
+    when {
+        status != null ->
+            GitChangesBody(
+                status = status,
+                onFileClick = onFileClick,
+                flat = true,
+                emptyText = stringResource(R.string.chat_git_compare_identical, target),
+            )
+        error != null ->
+            ErrorStateCard(
+                headline = stringResource(R.string.chat_git_compare_error_title),
+                body = error,
+                icon = Icons.Rounded.CloudOff,
+                medallionContainer = MaterialTheme.colorScheme.errorContainer,
+                medallionContent = MaterialTheme.colorScheme.onErrorContainer,
+                medallionShape = MaterialShapes.VerySunny.toShape(),
+                ctaLabel = stringResource(R.string.chat_retry),
+                onCta = onRetry,
+                modifier = Modifier.padding(vertical = 16.dp),
+            )
+        else -> GitFileListSkeleton()
+    }
+}
+
+@Composable
+internal fun GitStatusHeader(
+    status: ChatGitStatus,
+    compareRef: ChatGitRef?,
+    canCompare: Boolean,
+    onPickCompare: () -> Unit,
+) {
     // Header: title + branch pill + ahead/behind
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -127,14 +188,19 @@ internal fun GitStatusHeader(status: ChatGitStatus) {
                 text = stringResource(R.string.chat_git_status_title),
                 style = MaterialTheme.typography.titleLarge,
             )
-            GitStatusBranchMeta(status)
+            GitStatusBranchMeta(status, compareRef, canCompare, onPickCompare)
         }
     }
 }
 
 @Composable
-private fun GitStatusBranchMeta(status: ChatGitStatus) {
-    // Branch pill + ahead/behind (like git branch -v)
+private fun GitStatusBranchMeta(
+    status: ChatGitStatus,
+    compareRef: ChatGitRef?,
+    canCompare: Boolean,
+    onPickCompare: () -> Unit,
+) {
+    // Branch pill + ahead/behind (like git branch -v), or `vs <target>` while comparing
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -149,6 +215,15 @@ private fun GitStatusBranchMeta(status: ChatGitStatus) {
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
+        if (compareRef != null) {
+            Text(
+                text = stringResource(R.string.chat_git_compare_vs),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            GitCompareChip(name = compareRef.name, onClick = onPickCompare)
+            return@Row
+        }
         if (status.ahead > 0) {
             GitAheadBehindIndicator(
                 icon = Icons.Filled.ArrowUpward,
@@ -161,6 +236,55 @@ private fun GitStatusBranchMeta(status: ChatGitStatus) {
                 icon = Icons.Filled.ArrowDownward,
                 count = status.behind,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (canCompare) {
+            val label = stringResource(R.string.chat_git_compare_title)
+            GitTooltip(label) {
+                IconButton(onClick = onPickCompare, modifier = Modifier.size(32.dp).handCursor()) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.CompareArrows,
+                        contentDescription = label,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The chosen target; tapping reopens the picker. Its description names the target for screen readers. */
+@Composable
+private fun GitCompareChip(
+    name: String,
+    onClick: () -> Unit,
+) {
+    val description = stringResource(R.string.chat_git_compare_chip_desc, name)
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        modifier =
+            Modifier.handCursor().semantics {
+                role = Role.Button
+                contentDescription = description
+            },
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.MiddleEllipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Icon(
+                imageVector = Icons.Filled.ArrowDropDown,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
             )
         }
     }

@@ -3,6 +3,7 @@ package com.tamimarafat.ferngeist.acp.bridge.facade
 import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.GitHistoryHeadGoneException
 import com.tamimarafat.ferngeist.core.model.GitHistoryUnsupportedException
+import com.tamimarafat.ferngeist.core.model.GitRefsUnsupportedException
 import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
 import com.tamimarafat.ferngeist.gateway.GatewayGitCommit
 import com.tamimarafat.ferngeist.gateway.GatewayGitLog
@@ -68,6 +69,18 @@ class AcpChatSessionFacadeMappersTest {
     }
 
     @Test
+    fun `a log page keeps the target commits apart from the range`() {
+        val page =
+            GatewayGitLog(
+                commits = listOf(GatewayGitCommit("mine")),
+                target = listOf(GatewayGitCommit("tip")),
+            ).toChatGitLogPage()
+
+        assertEquals(listOf("mine"), page.commits.map { it.sha })
+        assertEquals(listOf("tip"), page.target.map { it.sha })
+    }
+
+    @Test
     fun `a log page maps seconds to millis, ref kinds, and blank head or remote to null`() {
         val page =
             GatewayGitLog(
@@ -119,5 +132,20 @@ class AcpChatSessionFacadeMappersTest {
         assertSame(noSession, gitLogFailure(noSession, pinnedHead = false))
         assertTrue(gitLogFailure(badRequest, pinnedHead = true) is GitHistoryHeadGoneException)
         assertSame(badRequest, gitLogFailure(badRequest, pinnedHead = false))
+    }
+
+    @Test
+    fun `gitRefsFailure treats only the plain-text unknown-route 404 as unsupported`() {
+        val unknownRoute = GatewayRequestException(404, "404", responseBody = "404 page not found")
+        val runtimeGone = GatewayRequestException(404, "404", responseBody = """{"error":"unknown runtime"}""")
+
+        assertTrue(gitRefsFailure(unknownRoute) is GitRefsUnsupportedException)
+        assertSame(runtimeGone, gitRefsFailure(runtimeGone))
+    }
+
+    @Test
+    fun `a status keeps the compare echo it was given`() {
+        assertEquals("refs/heads/main", GatewayGitStatus(compare = "refs/heads/main").toChatGitStatus().compare)
+        assertNull(GatewayGitStatus().toChatGitStatus().compare)
     }
 }

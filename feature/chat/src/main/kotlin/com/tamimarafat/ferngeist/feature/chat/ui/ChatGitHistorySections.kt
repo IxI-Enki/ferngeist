@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -140,6 +141,8 @@ internal fun GitHistoryList(
     onLoadMore: () -> Unit = {},
     /** A later page failed; the end of the list offers [onLoadMore] as a retry. */
     moreError: String? = null,
+    /** The compare target's tip, after the last commit; only given once every page is in. */
+    compareTip: ChatGitCommit? = null,
 ) {
     val listState = rememberLazyListState()
     val currentOnLoadMore by rememberUpdatedState(onLoadMore)
@@ -198,6 +201,25 @@ internal fun GitHistoryList(
                         laneCount = laneCount,
                         nowMillis = nowMillis,
                         onClick = { onCommitClick(commit) },
+                    )
+                }
+            }
+            if (compareTip != null && rows.isNotEmpty()) {
+                item(key = "compareTip") {
+                    // Carries on the last commit's lane, and on below the tip: the target's history goes on.
+                    val last = rows.last()
+                    val lane = listOf(GraphEdge(last.lane, last.lane, last.color))
+                    val tipRow = GraphRow(last.lane, last.color, isMerge = false, up = lane, down = lane)
+                    val tipStrokes = strokesFor(tipRow, null, null)
+                    GitCommitRow(
+                        commit = compareTip,
+                        row = tipRow,
+                        strokes = tipStrokes,
+                        reach = graphReach(listOf(tipStrokes)).first(),
+                        laneCount = laneCount,
+                        nowMillis = nowMillis,
+                        onClick = { onCommitClick(compareTip) },
+                        isTip = true,
                     )
                 }
             }
@@ -295,6 +317,8 @@ private fun GitCommitRow(
     laneCount: Int,
     nowMillis: Long,
     onClick: () -> Unit,
+    /** The compare target's tip: its connector is dotted, as it is not part of the range. */
+    isTip: Boolean = false,
 ) {
     val description = commitDescription(commit, nowMillis)
     Row(
@@ -312,6 +336,7 @@ private fun GitCommitRow(
             reach = reach,
             laneCount = laneCount,
             isHead = commit.refs.any { it.isHead || it.kind == ChatGitRef.Kind.HEAD },
+            dotted = isTip,
         )
         Spacer(Modifier.width(8.dp))
         // The card sits beside the graph so the lane lines run unbroken between rows.
@@ -392,6 +417,7 @@ private fun GitGraphCell(
     reach: Float,
     laneCount: Int,
     isHead: Boolean,
+    dotted: Boolean = false,
 ) {
     val palette = graphPalette()
     val nodeColor = palette[row.color % palette.size]
@@ -409,7 +435,13 @@ private fun GitGraphCell(
                     fun x(lane: Int) = (6.dp + LaneWidth * lane.coerceAtMost(laneCount - 1) + LaneWidth / 2).toPx()
                     val mid = size.height / 2
                     val stroke = 2.dp.toPx()
-                    val edgeStroke = Stroke(width = stroke, cap = StrokeCap.Round)
+                    // Zero-length dashes with round caps draw dots.
+                    val edgeStroke =
+                        Stroke(
+                            width = stroke,
+                            cap = StrokeCap.Round,
+                            pathEffect = if (dotted) PathEffect.dashPathEffect(floatArrayOf(0f, 5.dp.toPx())) else null,
+                        )
 
                     // S-curve: both control points sit at the vertical midpoint, so the bend leaves and
                     // lands vertically and joins the straight runs without a kink. Bends span a full

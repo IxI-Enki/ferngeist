@@ -1,7 +1,9 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import com.agentclientprotocol.model.ToolCallContent
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
+import com.tamimarafat.ferngeist.core.model.GitRefsUnsupportedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -21,6 +23,8 @@ internal class ChatGitDiffLoader(
     private val update: (ChatState.() -> ChatState) -> Unit,
     /** The ACP session this chat shows, scoping workspace calls to its cwd; null before it is minted. */
     private val acpSessionId: () -> String?,
+    /** The branch the git sheet compares against; null reads the working tree as is. */
+    private val compareRef: () -> ChatGitRef?,
 ) {
     /**
      * In-flight diff fetch. Cancelling it on a newer request (and checking it after the
@@ -42,6 +46,12 @@ internal class ChatGitDiffLoader(
     )
 
     private val turnInFlight = mutableMapOf<String, TurnFetch>()
+
+    /**
+     * Numbers compare-status fetches so only the newest lands. Superseded requests are left to
+     * finish rather than cancelled, for the same reason as in [ChatGitHistoryLoader].
+     */
+    private var compareRequest = 0
 
     /** Each loaded path's request (old path and revision), so a status refresh can re-read it. */
     private val turnLoaded = mutableMapOf<String, Pair<String?, String>>()
@@ -87,6 +97,60 @@ internal class ChatGitDiffLoader(
     }
 
     /**
+     * Fetches the working tree against the compare ref into the compare slots only, so the
+     * top-bar pill and the transcript's rows never see branch-relative data. Also called with no
+     * ref selected, to retire an in-flight request. A reply is dropped when a newer request
+     * superseded it, before anything else: otherwise a late `main` reply after the reader picked
+     * `dev` would show as an error. A reply that does not echo the ref this request sent means the
+     * gateway ignored the parameter, so there is nothing honest to render.
+     */
+    fun refreshCompare() {
+        val request = ++compareRequest
+        val ref = compareRef()?.qualified ?: return
+        if (acpSessionId() == null) return
+        update { copy(isCompareStatusLoading = true, compareStatusError = null) }
+        scope.launch {
+            val result = runCatching { facade.fetchGitStatus(ref) }
+            if (request != compareRequest) return@launch
+            val status = result.getOrNull()
+            val error =
+                when {
+                    result.isFailure -> result.exceptionOrNull()?.message?.takeIf { it.isNotBlank() } ?: COMPARE_FAILED
+                    status == null -> NO_COMPARE_WORKSPACE
+                    status.compare != ref -> COMPARE_NOT_HONOURED
+                    else -> null
+                }
+            update {
+                copy(
+                    compareStatus = status.takeIf { error == null },
+                    isCompareStatusLoading = false,
+                    compareStatusError = error,
+                )
+            }
+        }
+    }
+
+    /** Loads the compare picker's refs; a failed reload keeps the list already held. */
+    fun loadRefs() {
+        if (acpSessionId() == null) return
+        scope.launch {
+            runCatching { facade.fetchGitRefs() }
+                .onSuccess { refs ->
+                    if (refs == null) return@onSuccess
+                    update { copy(gitRefs = GitRefsState(default = refs.default, refs = refs.refs, isLoaded = true)) }
+                }.onFailure { throwable ->
+                    if (throwable is GitRefsUnsupportedException) {
+                        update {
+                            copy(
+                                gitRefs = gitRefs.copy(unsupported = true),
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    /**
      * Fetches the diff for a single file in the gateway-backed working tree, or in
      * [commit] against its first parent, and stores it in [ChatState.gitFileDiff] (the UI renders the first
      * item).
@@ -99,12 +163,15 @@ internal class ChatGitDiffLoader(
         commit: String? = null,
         oldPath: String? = null,
     ) {
+        // A commit's file is read against its own parent; only the working-tree side follows the target.
+        val compare = if (commit == null) compareRef()?.qualified else null
         mutex.withLock {
             job?.cancel()
             update {
                 copy(
                     gitFileDiffPath = path,
                     gitFileDiffCommit = commit,
+                    gitFileDiffCompare = compare,
                     isGitFileDiffLoading = true,
                     gitFileDiffError = null,
                     gitFileDiff = null,
@@ -113,7 +180,7 @@ internal class ChatGitDiffLoader(
             job =
                 scope.launch {
                     val currentJob = coroutineContext[Job]
-                    val result = runCatching { facade.fetchGitDiff(path, commit, oldPath) }
+                    val result = runCatching { facade.fetchGitDiff(path, commit, oldPath, compare) }
                     mutex.withLock {
                         if (currentJob != job) return@withLock
                         handleResult(result, path)
@@ -249,6 +316,12 @@ internal class ChatGitDiffLoader(
                 turnDirtyAtStart = gitStatus?.changed?.mapTo(HashSet()) { it.path },
             )
         }
+    }
+
+    private companion object {
+        const val COMPARE_FAILED = "Failed to load the comparison"
+        const val NO_COMPARE_WORKSPACE = "No gateway workspace connection to load the comparison"
+        const val COMPARE_NOT_HONOURED = "The gateway did not apply the comparison"
     }
 
     private fun noWorkspaceMessage(path: String) = "No gateway workspace connection to load git diff for $path"

@@ -155,6 +155,18 @@
     <string name="chat_git_history_empty">Коммитов пока нет</string>
     <string name="chat_git_history_error_title">Не удалось загрузить историю</string>
     <string name="chat_git_history_more_failed">Не удалось загрузить больше коммитов</string>
+    <string name="chat_git_compare_vs">vs</string>
+    <string name="chat_git_compare_working_tree">Рабочее дерево</string>
+    <string name="chat_git_compare_uncommitted">Незафиксированные изменения</string>
+    <string name="chat_git_compare_title">Сравнить с веткой</string>
+    <string name="chat_git_compare_local">Локальные</string>
+    <string name="chat_git_compare_remote">Удалённые</string>
+    <string name="chat_git_compare_tags">Теги</string>
+    <string name="chat_git_compare_chip_desc">Сравнение с %1$s. Сменить цель</string>
+    <string name="chat_git_compare_current">текущая</string>
+    <string name="chat_git_compare_error_title">Не удалось загрузить сравнение</string>
+    <string name="chat_git_compare_identical">Нет отличий от %1$s</string>
+    <string name="chat_git_compare_history_empty">Нет коммитов сверх %1$s</string>
     <string name="chat_load_earlier">Загрузить более ранние сообщения</string>
     <string-array name="chat_empty_titles">
         <item>Что будем строить сегодня?</item>

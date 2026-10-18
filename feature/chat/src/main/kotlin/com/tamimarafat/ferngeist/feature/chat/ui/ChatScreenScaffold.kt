@@ -256,13 +256,27 @@ private fun BoxScope.ChatScreenContentOverlays(
                 gitFileDiff = screenState.state.gitFileDiff,
                 gitFileDiffPath = screenState.state.gitFileDiffPath,
                 gitFileDiffCommit = screenState.state.gitFileDiffCommit,
+                gitFileDiffCompare = screenState.state.gitFileDiffCompare,
                 isGitFileDiffLoading = screenState.state.isGitFileDiffLoading,
                 gitFileDiffError = screenState.state.gitFileDiffError,
+                compare =
+                    GitCompareUi(
+                        ref = screenState.state.compareRef,
+                        refs = screenState.state.gitRefs,
+                        status = screenState.state.compareStatus,
+                        error = screenState.state.compareStatusError,
+                        onSelect = { ref -> viewModel.dispatch(ChatIntent.SelectCompareRef(ref)) },
+                        onRetry = { viewModel.dispatch(ChatIntent.RefreshGitStatus) },
+                    ),
                 onLoadGitDiff = { path, commit, oldPath ->
                     viewModel.dispatch(ChatIntent.LoadGitDiff(path, commit, oldPath))
                 },
                 onLoadGitLog = { more -> viewModel.dispatch(ChatIntent.LoadGitLog(more)) },
                 onLoadGitCommit = { sha -> viewModel.dispatch(ChatIntent.LoadGitCommit(sha)) },
+                onOpen = {
+                    viewModel.dispatch(ChatIntent.LoadGitRefs)
+                    viewModel.dispatch(ChatIntent.RefreshGitStatus)
+                },
                 onDismiss = { screenState.showGitStatusSheet.value = false },
             )
         }

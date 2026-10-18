@@ -8,6 +8,7 @@ import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatElicitationRequest
 import com.tamimarafat.ferngeist.core.model.ChatGitCommit
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
@@ -56,6 +57,8 @@ data class ChatState(
     val gitFileDiffError: String? = null,
     /** The commit [gitFileDiff] was read from; null for the working tree. */
     val gitFileDiffCommit: String? = null,
+    /** The qualified compare ref [gitFileDiff] was read against; null for the working tree or a commit. */
+    val gitFileDiffCompare: String? = null,
     /**
      * Working-tree diffs backing the latest turn's files whose tool calls reported
      * none, keyed by git-relative path. Read only for the newest turn: git
@@ -67,12 +70,32 @@ data class ChatState(
     /** Git paths already changed when the newest turn started; null when git was not known then. */
     val turnDirtyAtStart: Set<String>? = null,
     val gitHistory: GitHistoryState = GitHistoryState(),
+    /** The branch the git sheet compares against; null is `Working tree`. Lives for this view model only. */
+    val compareRef: ChatGitRef? = null,
+    val gitRefs: GitRefsState = GitRefsState(),
+    /**
+     * The working tree against [compareRef], kept apart from [gitStatus] and [gitDiffStats]: those
+     * feed the top-bar pill and the transcript's per-turn rows, which stay working-tree-relative.
+     */
+    val compareStatus: ChatGitStatus? = null,
+    val isCompareStatusLoading: Boolean = false,
+    val compareStatusError: String? = null,
     val error: String? = null,
     /**
      * Registry logo URL for this chat's agent, for identity marks like the
      * empty-session hero. Null for manual agents or when unresolved.
      */
     val iconUrl: String? = null,
+)
+
+/** What the compare picker lists. A failed reload keeps [refs]; [unsupported] hides the whole affordance. */
+data class GitRefsState(
+    /** The repo's main branch name, for sorting and labelling only; "" when unknown. */
+    val default: String = "",
+    val refs: List<ChatGitRef> = emptyList(),
+    /** `/git/refs` has answered at least once. */
+    val isLoaded: Boolean = false,
+    val unsupported: Boolean = false,
 )
 
 /** The git sheet's History tab and the commit it has open. */
@@ -96,6 +119,10 @@ data class GitHistoryState(
     val commitFiles: List<ChatChangedFile>? = null,
     val isCommitLoading: Boolean = false,
     val commitError: String? = null,
+    /** The qualified ref [commits] was read against; null for plain history. Later pages page with it. */
+    val compare: String? = null,
+    /** The compare target's tip (then any commits beyond it) from page 1; empty for plain history. */
+    val target: List<ChatGitCommit> = emptyList(),
 ) {
     /** A next page exists from a pinned head and no page is in flight. */
     val canLoadMore: Boolean get() = hasMore && head != null && !isLoading && !isLoadingMore

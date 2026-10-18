@@ -228,6 +228,15 @@ data class GatewayGitStatus(
     val ahead: Int = 0,
     val behind: Int = 0,
     val changed: List<GatewayChangedFile> = emptyList(),
+    /** The `compare=` the gateway honoured, verbatim; absent when none was requested or the gateway ignored it. */
+    val compare: String? = null,
+)
+
+/** `GET /git/refs`: the compare picker's entries. [default] is `""` when the gateway cannot name one. */
+@Serializable
+data class GatewayGitRefs(
+    val default: String = "",
+    val refs: List<GatewayGitRef> = emptyList(),
 )
 
 /** One page of `GET /git/log`. [head] is `""` for an empty repository; [remoteUrl] is `""` without `origin`. */
@@ -237,6 +246,8 @@ data class GatewayGitLog(
     val hasMore: Boolean = false,
     val remoteUrl: String = "",
     val commits: List<GatewayGitCommit> = emptyList(),
+    /** In compare mode, the target's tip followed by any commits beyond it; empty otherwise. */
+    val target: List<GatewayGitCommit> = emptyList(),
 )
 
 /** A commit of `GET /git/log`; times are Unix seconds. */

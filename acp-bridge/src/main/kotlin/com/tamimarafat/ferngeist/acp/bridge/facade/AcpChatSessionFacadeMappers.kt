@@ -28,16 +28,19 @@ import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatGitCommit
 import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
 import com.tamimarafat.ferngeist.core.model.ChatGitRef
+import com.tamimarafat.ferngeist.core.model.ChatGitRefs
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatSessionSnapshot
 import com.tamimarafat.ferngeist.core.model.GitHistoryHeadGoneException
 import com.tamimarafat.ferngeist.core.model.GitHistoryUnsupportedException
+import com.tamimarafat.ferngeist.core.model.GitRefsUnsupportedException
 import com.tamimarafat.ferngeist.core.model.UsageState
 import com.tamimarafat.ferngeist.gateway.GatewayChangedFile
 import com.tamimarafat.ferngeist.gateway.GatewayGitCommit
 import com.tamimarafat.ferngeist.gateway.GatewayGitLog
 import com.tamimarafat.ferngeist.gateway.GatewayGitRef
+import com.tamimarafat.ferngeist.gateway.GatewayGitRefs
 import com.tamimarafat.ferngeist.gateway.GatewayGitStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRequestException
 import com.tamimarafat.ferngeist.gateway.gatewayErrorMessage
@@ -247,6 +250,7 @@ internal fun GatewayGitStatus.toChatGitStatus(): ChatGitStatus =
         ahead = ahead,
         behind = behind,
         changed = changed.map { it.toChatChangedFile() },
+        compare = compare,
     )
 
 internal fun GatewayChangedFile.toChatChangedFile(): ChatChangedFile =
@@ -266,6 +270,7 @@ internal fun GatewayGitLog.toChatGitLogPage(): ChatGitLogPage =
     ChatGitLogPage(
         head = head.ifBlank { null },
         commits = commits.map { it.toChatGitCommit() },
+        target = target.map { it.toChatGitCommit() },
         hasMore = hasMore,
         remoteUrl = remoteUrl.ifBlank { null },
     )
@@ -283,6 +288,9 @@ internal fun GatewayGitCommit.toChatGitCommit(): ChatGitCommit =
         isPushed = pushed,
         commitTimeMillis = (commitTime.takeIf { it > 0 } ?: authorTime) * MILLIS_PER_SECOND,
     )
+
+internal fun GatewayGitRefs.toChatGitRefs(): ChatGitRefs =
+    ChatGitRefs(default = default, refs = refs.map { it.toChatGitRef() })
 
 /** An unknown kind from a newer gateway reads as a branch rather than failing the page. */
 internal fun GatewayGitRef.toChatGitRef(): ChatGitRef =
@@ -312,6 +320,14 @@ internal fun gitLogFailure(
             GitHistoryUnsupportedException()
         error.statusCode == HTTP_BAD_REQUEST && pinnedHead -> GitHistoryHeadGoneException(error)
         else -> error
+    }
+
+/** Same unknown-route test as [gitLogFailure]: a runtime-gone 404 carries an `{"error"}` envelope and stays ordinary. */
+internal fun gitRefsFailure(error: GatewayRequestException): Throwable =
+    if (error.statusCode == HTTP_NOT_FOUND && gatewayErrorMessage(error.responseBody) == null) {
+        GitRefsUnsupportedException()
+    } else {
+        error
     }
 
 private const val MILLIS_PER_SECOND = 1000L

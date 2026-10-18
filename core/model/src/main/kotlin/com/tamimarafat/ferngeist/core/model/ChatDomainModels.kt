@@ -218,6 +218,8 @@ data class ChatGitStatus(
     val ahead: Int = 0,
     val behind: Int = 0,
     val changed: List<ChatChangedFile> = emptyList(),
+    /** The ref the gateway compared against, echoed verbatim; null unless an explicit compare was honoured. */
+    val compare: String? = null,
 )
 
 /** A branch, remote branch, tag, or detached HEAD pointing at a commit. */
@@ -228,7 +230,26 @@ data class ChatGitRef(
     val isHead: Boolean = false,
 ) {
     enum class Kind { HEAD, BRANCH, REMOTE, TAG }
+
+    /**
+     * The fully-qualified ref sent as `compare=`: a tag and a branch can share a short name, and
+     * git resolves the short one tag-first. Null for a detached HEAD, which is not a target.
+     */
+    val qualified: String?
+        get() =
+            when (kind) {
+                Kind.BRANCH -> "refs/heads/$name"
+                Kind.REMOTE -> "refs/remotes/$name"
+                Kind.TAG -> "refs/tags/$name"
+                Kind.HEAD -> null
+            }
 }
+
+/** The compare picker's data; [default] is the repo's main branch name, or "" when unknown. */
+data class ChatGitRefs(
+    val default: String,
+    val refs: List<ChatGitRef>,
+)
 
 /** One commit of a gateway working tree's history, as `git log` reports it. */
 data class ChatGitCommit(
@@ -255,10 +276,15 @@ data class ChatGitLogPage(
     val commits: List<ChatGitCommit>,
     val hasMore: Boolean,
     val remoteUrl: String?,
+    /** In compare mode, the target's tip followed by any commits beyond it; empty otherwise. */
+    val target: List<ChatGitCommit> = emptyList(),
 )
 
 /** The gateway predates commit history, so the history view has nothing to read. */
 class GitHistoryUnsupportedException : IllegalStateException("This gateway does not support commit history")
+
+/** The gateway predates branch comparison, so the sheet hides the compare affordance. */
+class GitRefsUnsupportedException : IllegalStateException("This gateway does not support branch comparison")
 
 /** The pinned history head no longer names a commit (rewritten and collected); reload from page 1. */
 class GitHistoryHeadGoneException(
@@ -433,7 +459,7 @@ interface ChatSessionFacade {
      * has not minted its real session id (the gateway would scope the read to whichever
      * session it saw last).
      */
-    suspend fun fetchGitStatus(): ChatGitStatus? = null
+    suspend fun fetchGitStatus(compare: String? = null): ChatGitStatus? = null
 
     /**
      * Diff of one file in the chat's gateway working tree, or in [commit] against its first
@@ -443,17 +469,26 @@ interface ChatSessionFacade {
         path: String,
         commit: String? = null,
         oldPath: String? = null,
+        compare: String? = null,
     ): List<ToolCallContent.Diff>? = null
 
     /**
      * One page of history from [head] (`HEAD` when null), or null when the chat has no gateway
      * workspace. Throws [GitHistoryUnsupportedException] on a gateway without history and
-     * [GitHistoryHeadGoneException] when [head] no longer resolves.
+     * [GitHistoryHeadGoneException] when [head] no longer resolves. With [compare] set the page is
+     * the commits `HEAD` has that the qualified ref does not.
      */
     suspend fun fetchGitLog(
         head: String?,
         skip: Int,
+        compare: String? = null,
     ): ChatGitLogPage? = null
+
+    /**
+     * Branches, remote branches and tags to compare against, or null when the chat has no gateway
+     * workspace. Throws [GitRefsUnsupportedException] on a gateway without branch comparison.
+     */
+    suspend fun fetchGitRefs(): ChatGitRefs? = null
 
     /** Files [sha] changed against its first parent, or null when the chat has no gateway workspace. */
     suspend fun fetchGitCommitFiles(sha: String): List<ChatChangedFile>? = null

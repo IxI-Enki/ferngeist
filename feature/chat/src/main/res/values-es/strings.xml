@@ -151,6 +151,18 @@
     <string name="chat_git_history_empty">Aún no hay commits</string>
     <string name="chat_git_history_error_title">No se pudo cargar el historial</string>
     <string name="chat_git_history_more_failed">No se pudieron cargar más commits</string>
+    <string name="chat_git_compare_vs">vs</string>
+    <string name="chat_git_compare_working_tree">Árbol de trabajo</string>
+    <string name="chat_git_compare_uncommitted">Cambios sin confirmar</string>
+    <string name="chat_git_compare_title">Comparar con una rama</string>
+    <string name="chat_git_compare_local">Locales</string>
+    <string name="chat_git_compare_remote">Remotas</string>
+    <string name="chat_git_compare_tags">Etiquetas</string>
+    <string name="chat_git_compare_chip_desc">Comparando con %1$s. Cambiar destino</string>
+    <string name="chat_git_compare_current">actual</string>
+    <string name="chat_git_compare_error_title">No se pudo cargar la comparación</string>
+    <string name="chat_git_compare_identical">Sin diferencias con %1$s</string>
+    <string name="chat_git_compare_history_empty">No hay commits más allá de %1$s</string>
     <string name="chat_load_earlier">Cargar mensajes anteriores</string>
     <string-array name="chat_empty_titles">
         <item>¿Qué quieres construir hoy?</item>

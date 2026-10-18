@@ -151,6 +151,7 @@ class GatewaySessionModelsTest {
                     gatewayCredential: String,
                     runtimeId: String,
                     acpSessionId: String?,
+                    compare: String?,
                 ): GatewayGitStatus = TODO()
 
                 override suspend fun fetchGitDiff(
@@ -162,6 +163,7 @@ class GatewaySessionModelsTest {
                     acpSessionId: String?,
                     commit: String?,
                     oldPath: String?,
+                    compare: String?,
                 ): List<com.agentclientprotocol.model.ToolCallContent.Diff> = TODO()
 
                 override suspend fun fetchGitLog(
@@ -173,7 +175,17 @@ class GatewaySessionModelsTest {
                     skip: Int,
                     limit: Int,
                     acpSessionId: String?,
+                    compare: String?,
+                    beyond: Int,
                 ): GatewayGitLog = TODO()
+
+                override suspend fun fetchGitRefs(
+                    scheme: String,
+                    host: String,
+                    gatewayCredential: String,
+                    runtimeId: String,
+                    acpSessionId: String?,
+                ): GatewayGitRefs = TODO()
 
                 override suspend fun fetchGitCommit(
                     scheme: String,

@@ -13,6 +13,7 @@ import com.tamimarafat.ferngeist.gateway.GatewayAgent
 import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
 import com.tamimarafat.ferngeist.gateway.GatewayGitCommitFiles
 import com.tamimarafat.ferngeist.gateway.GatewayGitLog
+import com.tamimarafat.ferngeist.gateway.GatewayGitRefs
 import com.tamimarafat.ferngeist.gateway.GatewayProtocol
 import com.tamimarafat.ferngeist.gateway.GatewayRemoteStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
@@ -221,6 +222,7 @@ internal class FakeGatewayRepo : GatewayRepository {
         gatewayCredential: String,
         runtimeId: String,
         acpSessionId: String?,
+        compare: String?,
     ) = TODO("unused in these tests")
 
     override suspend fun fetchGitDiff(
@@ -232,6 +234,7 @@ internal class FakeGatewayRepo : GatewayRepository {
         acpSessionId: String?,
         commit: String?,
         oldPath: String?,
+        compare: String?,
     ) = TODO("unused in these tests")
 
     override suspend fun fetchGitLog(
@@ -243,7 +246,17 @@ internal class FakeGatewayRepo : GatewayRepository {
         skip: Int,
         limit: Int,
         acpSessionId: String?,
+        compare: String?,
+        beyond: Int,
     ): GatewayGitLog = TODO("unused in these tests")
+
+    override suspend fun fetchGitRefs(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        acpSessionId: String?,
+    ): GatewayGitRefs = TODO("unused in these tests")
 
     override suspend fun fetchGitCommit(
         scheme: String,

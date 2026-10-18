@@ -151,6 +151,18 @@
     <string name="chat_git_history_empty">এখনো কোনো কমিট নেই</string>
     <string name="chat_git_history_error_title">ইতিহাস লোড করা যায়নি</string>
     <string name="chat_git_history_more_failed">আরও কমিট লোড করা যায়নি</string>
+    <string name="chat_git_compare_vs">vs</string>
+    <string name="chat_git_compare_working_tree">কাজের ট্রি</string>
+    <string name="chat_git_compare_uncommitted">অকমিটেড পরিবর্তন</string>
+    <string name="chat_git_compare_title">ব্রাঞ্চের সাথে তুলনা করুন</string>
+    <string name="chat_git_compare_local">লোকাল</string>
+    <string name="chat_git_compare_remote">রিমোট</string>
+    <string name="chat_git_compare_tags">ট্যাগ</string>
+    <string name="chat_git_compare_chip_desc">%1$s-এর সাথে তুলনা চলছে। লক্ষ্য পরিবর্তন করুন</string>
+    <string name="chat_git_compare_current">বর্তমান</string>
+    <string name="chat_git_compare_error_title">তুলনা লোড করা যায়নি</string>
+    <string name="chat_git_compare_identical">%1$s থেকে কোনো পার্থক্য নেই</string>
+    <string name="chat_git_compare_history_empty">%1$s ছাড়িয়ে কোনো কমিট নেই</string>
     <string name="chat_load_earlier">আগের বার্তাগুলো লোড করুন</string>
     <string-array name="chat_empty_titles">
         <item>আজ কী বানাতে চাও?</item>

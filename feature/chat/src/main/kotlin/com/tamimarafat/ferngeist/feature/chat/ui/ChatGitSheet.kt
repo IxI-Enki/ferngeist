@@ -49,12 +49,27 @@ import com.tamimarafat.ferngeist.core.common.ui.dismissSheet
 import com.tamimarafat.ferngeist.core.common.ui.onEscapeKey
 import com.tamimarafat.ferngeist.core.common.ui.rememberEscapeFocusAnchor
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.feature.chat.GitHistoryState
+import com.tamimarafat.ferngeist.feature.chat.GitRefsState
 import com.tamimarafat.ferngeist.feature.chat.R
 import kotlinx.coroutines.delay
 
 private const val DATE_TICK_MILLIS = 60_000L
+
+/** What the git sheet compares against and the callbacks to change or retry it. */
+internal class GitCompareUi(
+    val ref: ChatGitRef?,
+    val refs: GitRefsState,
+    val status: ChatGitStatus?,
+    val error: String?,
+    val onSelect: (ChatGitRef?) -> Unit,
+    val onRetry: () -> Unit,
+) {
+    /** The picker needs the gateway to have answered `/git/refs`; an older one hides the whole affordance. */
+    val available: Boolean get() = refs.isLoaded && !refs.unsupported
+}
 
 /**
  * Modal bottom sheet for the chat's git working tree: a Changes tab (branch, totals, changed
@@ -70,11 +85,15 @@ internal fun GitStatusSheet(
     gitFileDiff: List<ToolCallContent.Diff>?,
     gitFileDiffPath: String?,
     gitFileDiffCommit: String?,
+    gitFileDiffCompare: String?,
     isGitFileDiffLoading: Boolean,
     gitFileDiffError: String?,
+    compare: GitCompareUi,
     onLoadGitDiff: (path: String, commit: String?, oldPath: String?) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
     onLoadGitCommit: (sha: String) -> Unit,
+    /** Sheet opened: refresh what it shows, including the refs the picker lists. */
+    onOpen: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
@@ -86,12 +105,16 @@ internal fun GitStatusSheet(
     ) { mutableStateOf<GitSheetRoute>(GitSheetRoute.Changes) }
     // Each page's scroll outlives its exit animation, so back lands where the reader left it.
     val pageStates = rememberSaveableStateHolder()
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { onOpen() }
 
     GitSheetRequests(
         route = route,
         history = history,
         gitFileDiffPath = gitFileDiffPath,
         gitFileDiffCommit = gitFileDiffCommit,
+        gitFileDiffCompare = gitFileDiffCompare,
+        compare = compare.ref?.qualified,
         onLoadGitDiff = onLoadGitDiff,
         onLoadGitLog = onLoadGitLog,
         onLoadGitCommit = onLoadGitCommit,
@@ -131,6 +154,7 @@ internal fun GitStatusSheet(
                 pageStates = pageStates,
                 status = status,
                 history = history,
+                compare = compare,
                 gitFileDiff = gitFileDiff,
                 gitFileDiffPath = gitFileDiffPath,
                 isGitFileDiffLoading = isGitFileDiffLoading,
@@ -138,6 +162,7 @@ internal fun GitStatusSheet(
                 onLoadGitDiff = onLoadGitDiff,
                 onLoadGitLog = onLoadGitLog,
                 onLoadGitCommit = onLoadGitCommit,
+                onPickCompare = { showPicker = true },
                 onNavigate = { next ->
                     // Going deeper opens a page fresh; only going back restores one.
                     if (next.depth > route.depth) pageStates.removeState(next.stateKey)
@@ -145,6 +170,14 @@ internal fun GitStatusSheet(
                 },
             )
         }
+    }
+    if (showPicker) {
+        GitComparePicker(
+            refs = compare.refs,
+            selected = compare.ref,
+            onSelect = compare.onSelect,
+            onDismiss = { showPicker = false },
+        )
     }
 }
 
@@ -155,6 +188,7 @@ private fun GitSheetPage(
     pageStates: SaveableStateHolder,
     status: ChatGitStatus,
     history: GitHistoryState,
+    compare: GitCompareUi,
     gitFileDiff: List<ToolCallContent.Diff>?,
     gitFileDiffPath: String?,
     isGitFileDiffLoading: Boolean,
@@ -162,6 +196,7 @@ private fun GitSheetPage(
     onLoadGitDiff: (path: String, commit: String?, oldPath: String?) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
     onLoadGitCommit: (sha: String) -> Unit,
+    onPickCompare: () -> Unit,
     onNavigate: (GitSheetRoute) -> Unit,
 ) {
     when (target) {
@@ -170,6 +205,7 @@ private fun GitSheetPage(
                 pageStates = pageStates,
                 status = status,
                 history = history,
+                compare = compare,
                 tab = if (target == GitSheetRoute.History) 1 else 0,
                 onSelectTab = { selected ->
                     if (selected == 1) onLoadGitLog(false)
@@ -186,6 +222,7 @@ private fun GitSheetPage(
                     onNavigate(GitSheetRoute.Commit(sha))
                 },
                 onLoadGitLog = onLoadGitLog,
+                onPickCompare = onPickCompare,
             )
         is GitSheetRoute.Commit ->
             pageStates.SaveableStateProvider(target.stateKey) {
@@ -205,8 +242,12 @@ private fun GitSheetPage(
                 GitDiffDetailContent(
                     path = target.path,
                     file =
-                        (if (target.commit == null) status.changed else history.commitFiles.orEmpty())
-                            .firstOrNull { it.path == target.path },
+                        when {
+                            target.commit != null -> history.commitFiles.orEmpty()
+                            // Target-only files exist in the comparison alone, not in the working-tree status.
+                            compare.ref != null -> compare.status?.changed.orEmpty()
+                            else -> status.changed
+                        }.firstOrNull { it.path == target.path },
                     diff = gitFileDiff,
                     diffPath = gitFileDiffPath,
                     isLoading = isGitFileDiffLoading,
@@ -229,6 +270,9 @@ private fun GitSheetRequests(
     history: GitHistoryState,
     gitFileDiffPath: String?,
     gitFileDiffCommit: String?,
+    gitFileDiffCompare: String?,
+    /** The qualified target the working-tree side is read against; null for the working tree itself. */
+    compare: String?,
     onLoadGitDiff: (path: String, commit: String?, oldPath: String?) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
     onLoadGitCommit: (sha: String) -> Unit,
@@ -239,9 +283,21 @@ private fun GitSheetRequests(
         if ((sha != null || route == GitSheetRoute.History) && !history.isLoaded) onLoadGitLog(false)
         if (sha != null && sha != history.commitSha) onLoadGitCommit(sha)
         if (route !is GitSheetRoute.FileDiff) return@LaunchedEffect
+        val wantedCompare = if (sha == null) compare else null
         when {
             sha == null && isDirectoryPath(route.path) -> onRedirect(GitSheetRoute.Changes)
-            route.path != gitFileDiffPath || sha != gitFileDiffCommit -> onLoadGitDiff(route.path, sha, route.oldPath)
+            // A diff read under one target is never shown under another.
+            route.path != gitFileDiffPath ||
+                sha != gitFileDiffCommit ||
+                (
+                    if (sha ==
+                        null
+                    ) {
+                        compare
+                    } else {
+                        null
+                    }
+                ) != gitFileDiffCompare -> onLoadGitDiff(route.path, sha, route.oldPath)
         }
     }
 }
@@ -267,11 +323,13 @@ private fun GitSheetTabsPage(
     pageStates: SaveableStateHolder,
     status: ChatGitStatus,
     history: GitHistoryState,
+    compare: GitCompareUi,
     tab: Int,
     onSelectTab: (Int) -> Unit,
     onFileClick: (ChatChangedFile) -> Unit,
     onCommitClick: (String) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
+    onPickCompare: () -> Unit,
 ) {
     Column(
         modifier =
@@ -279,7 +337,12 @@ private fun GitSheetTabsPage(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        GitStatusHeader(status = status)
+        GitStatusHeader(
+            status = status,
+            compareRef = compare.ref,
+            canCompare = compare.available,
+            onPickCompare = onPickCompare,
+        )
         if (!history.unsupported) {
             Spacer(modifier = Modifier.height(12.dp))
             GitSheetTabs(selected = tab, onSelect = onSelectTab)
@@ -294,10 +357,23 @@ private fun GitSheetTabsPage(
             val shownRoute = if (shown == 1) GitSheetRoute.History else GitSheetRoute.Changes
             pageStates.SaveableStateProvider(shownRoute.stateKey) {
                 Column {
-                    if (shown == 0) {
-                        GitChangesBody(status = status, onFileClick = onFileClick)
-                    } else {
-                        GitHistoryBody(history = history, onCommitClick = onCommitClick, onLoadGitLog = onLoadGitLog)
+                    when {
+                        shown == 1 ->
+                            GitHistoryBody(
+                                history = history,
+                                compareName = compare.ref?.name,
+                                onCommitClick = onCommitClick,
+                                onLoadGitLog = onLoadGitLog,
+                            )
+                        compare.ref != null ->
+                            GitCompareChangesBody(
+                                target = compare.ref.name,
+                                status = compare.status,
+                                error = compare.error,
+                                onRetry = compare.onRetry,
+                                onFileClick = onFileClick,
+                            )
+                        else -> GitChangesBody(status = status, onFileClick = onFileClick)
                     }
                 }
             }
@@ -310,6 +386,8 @@ private fun GitSheetTabsPage(
 @Composable
 private fun GitHistoryBody(
     history: GitHistoryState,
+    /** The compare target's short name, for the empty range's copy; null for plain history. */
+    compareName: String?,
     onCommitClick: (String) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
 ) {
@@ -336,7 +414,12 @@ private fun GitHistoryBody(
         !history.isLoaded -> GitHistorySkeleton()
         history.commits.isEmpty() ->
             Text(
-                text = stringResource(R.string.chat_git_history_empty),
+                text =
+                    if (compareName != null) {
+                        stringResource(R.string.chat_git_compare_history_empty, compareName)
+                    } else {
+                        stringResource(R.string.chat_git_history_empty)
+                    },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp),
@@ -349,6 +432,7 @@ private fun GitHistoryBody(
                 isLoadingMore = history.isLoadingMore,
                 onLoadMore = { onLoadGitLog(true) },
                 moreError = history.moreError,
+                compareTip = history.target.firstOrNull().takeIf { !history.hasMore },
             )
     }
 }
@@ -365,7 +449,7 @@ private fun GitCommitPage(
     onRetry: () -> Unit,
     onFileClick: (ChatChangedFile) -> Unit,
 ) {
-    val commit = history.commits.firstOrNull { it.sha == sha }
+    val commit = (history.commits + history.target).firstOrNull { it.sha == sha }
     if (commit == null) {
         // shortcut: a commit past page 1 is not reloaded after process death, so the page goes back to
         // History once page 1 lands without it; load pages until it appears if that ever matters.

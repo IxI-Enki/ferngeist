@@ -319,4 +319,82 @@ class GatewayWorkspaceTest {
                 assertTrue(e.message.orEmpty().contains("null"))
             }
         }
+
+    @Test
+    fun `compare is sent as a query param on status, diff and log, and the status echo decodes`() =
+        runTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val repo =
+                repoCapturing(
+                    responseBody = """{"branch":"feat","compare":"refs/heads/main","changed":[]}""",
+                ) { requests += it }
+            val ref = "refs/heads/main"
+
+            val status = repo.fetchGitStatus("http", "h", "t", "rt-1", compare = ref)
+            runCatching { repo.fetchGitDiff("http", "h", "t", "rt-1", path = "a.kt", compare = ref) }
+            runCatching {
+                repo.fetchGitLog(
+                    "http",
+                    "h",
+                    "t",
+                    "rt-1",
+                    head = null,
+                    skip = 0,
+                    limit = 50,
+                    compare = ref,
+                    beyond = 1,
+                )
+            }
+
+            assertEquals(ref, status.compare)
+            assertEquals(listOf(ref, ref, ref), requests.map { it.url.parameters["compare"] })
+            // Only the log asks for the target's commits.
+            assertEquals(listOf(null, null, "1"), requests.map { it.url.parameters["beyond"] })
+        }
+
+    @Test
+    fun `a log page decodes the target commits, and sends no beyond by default`() =
+        runTest {
+            var captured: HttpRequestData? = null
+            val repo =
+                repoCapturing(
+                    responseBody = """{"head":"h","commits":[],"target":[{"sha":"abc1234","subject":"tip"}]}""",
+                ) { captured = it }
+
+            val log = repo.fetchGitLog("http", "h", "t", "rt-1", head = null, skip = 0, limit = 50)
+
+            assertEquals(listOf("abc1234"), log.target.map { it.sha })
+            assertNull(requireNotNull(captured).url.parameters["beyond"])
+        }
+
+    @Test
+    fun `no compare param is sent, and no echo decodes, for a plain status`() =
+        runTest {
+            var captured: HttpRequestData? = null
+            val repo = repoCapturing(responseBody = """{"branch":"main"}""") { captured = it }
+
+            val status = repo.fetchGitStatus("http", "h", "t", "rt-1")
+
+            assertNull(requireNotNull(captured).url.parameters["compare"])
+            assertNull(status.compare)
+        }
+
+    @Test
+    fun `fetchGitRefs hits the refs endpoint and decodes the picker data`() =
+        runTest {
+            var captured: HttpRequestData? = null
+            val repo =
+                repoCapturing(
+                    responseBody =
+                        """{"default":"main","refs":[{"name":"main","kind":"branch","isHead":true},""" +
+                            """{"name":"origin/main","kind":"remote"}]}""",
+                ) { captured = it }
+
+            val refs = repo.fetchGitRefs("http", "h", "t", "rt-1")
+
+            assertEquals("/v1/runtimes/rt-1/git/refs", requireNotNull(captured).url.encodedPath)
+            assertEquals("main", refs.default)
+            assertEquals(listOf("main", "origin/main"), refs.refs.map { it.name })
+            assertTrue(refs.refs[0].isHead)
+        }
 }

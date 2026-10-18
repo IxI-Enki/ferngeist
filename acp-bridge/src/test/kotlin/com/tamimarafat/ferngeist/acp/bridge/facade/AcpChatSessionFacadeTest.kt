@@ -14,6 +14,7 @@ import com.tamimarafat.ferngeist.gateway.GatewayAgent
 import com.tamimarafat.ferngeist.gateway.GatewayConnectResponse
 import com.tamimarafat.ferngeist.gateway.GatewayGitCommitFiles
 import com.tamimarafat.ferngeist.gateway.GatewayGitLog
+import com.tamimarafat.ferngeist.gateway.GatewayGitRefs
 import com.tamimarafat.ferngeist.gateway.GatewayProtocol
 import com.tamimarafat.ferngeist.gateway.GatewayRemoteStatus
 import com.tamimarafat.ferngeist.gateway.GatewayRepository
@@ -247,6 +248,7 @@ class AcpChatSessionFacadeTest {
             gatewayCredential: String,
             runtimeId: String,
             acpSessionId: String?,
+            compare: String?,
         ) = TODO("unused in facade tests")
 
         override suspend fun fetchGitDiff(
@@ -258,6 +260,7 @@ class AcpChatSessionFacadeTest {
             acpSessionId: String?,
             commit: String?,
             oldPath: String?,
+            compare: String?,
         ) = TODO("unused in facade tests")
 
         override suspend fun fetchGitLog(
@@ -269,7 +272,17 @@ class AcpChatSessionFacadeTest {
             skip: Int,
             limit: Int,
             acpSessionId: String?,
+            compare: String?,
+            beyond: Int,
         ): GatewayGitLog = TODO("unused in facade tests")
+
+        override suspend fun fetchGitRefs(
+            scheme: String,
+            host: String,
+            gatewayCredential: String,
+            runtimeId: String,
+            acpSessionId: String?,
+        ): GatewayGitRefs = TODO("unused in facade attendance tests")
 
         override suspend fun fetchGitCommit(
             scheme: String,

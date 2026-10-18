@@ -9,6 +9,7 @@ import com.tamimarafat.ferngeist.core.model.ChatConnectionDiagnostics
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
 import com.tamimarafat.ferngeist.core.model.ChatFileData
 import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
+import com.tamimarafat.ferngeist.core.model.ChatGitRefs
 import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.core.model.ChatImageData
 import com.tamimarafat.ferngeist.core.model.ChatOperationError
@@ -243,8 +244,24 @@ open class FakeChatSessionFacade : ChatSessionFacade {
      * instead of asking a gateway, so a caller never sees a fake that reads a workspace it
      * does not have.
      */
-    override suspend fun fetchGitStatus(): ChatGitStatus? =
-        gitStatus.takeIf { gatewayWorkspaceConnectionFlow.value != null }
+    override suspend fun fetchGitStatus(compare: String?): ChatGitStatus? {
+        if (gatewayWorkspaceConnectionFlow.value == null) return null
+        if (compare == null) return gitStatus
+        gitCompareStatusRequests += compare
+        return gitCompareStatus(compare)
+    }
+
+    /** Answers a compare [fetchGitStatus] by its qualified ref; throw from it to fail the fetch. */
+    var gitCompareStatus: suspend (compare: String) -> ChatGitStatus? = { ref -> gitStatus?.copy(compare = ref) }
+
+    /** Qualified refs of each compare [fetchGitStatus] request, in order. */
+    val gitCompareStatusRequests: MutableList<String> = mutableListOf()
+
+    /** Answers [fetchGitRefs]; throw from it to fail the load. */
+    var gitRefs: suspend () -> ChatGitRefs? = { null }
+
+    /** The compare ref of each [fetchGitDiff] request, alongside [gitDiffRequests]. */
+    val gitDiffCompareRequests: MutableList<String?> = mutableListOf()
 
     /** Commit and old path of each [fetchGitDiff] request, alongside [gitDiffRequests]. */
     val gitDiffCommitRequests: MutableList<Pair<String?, String?>> = mutableListOf()
@@ -255,17 +272,25 @@ open class FakeChatSessionFacade : ChatSessionFacade {
     /** (head, skip) of each [fetchGitLog] request, in order. */
     val gitLogRequests: MutableList<Pair<String?, Int>> = mutableListOf()
 
+    /** The compare ref of each [fetchGitLog] request, parallel to [gitLogRequests]. */
+    val gitLogCompareRequests: MutableList<String?> = mutableListOf()
+
     /** Answers [fetchGitCommitFiles]; throw from it to fail the commit. */
     var gitCommitFiles: suspend (sha: String) -> List<ChatChangedFile>? = { null }
 
     override suspend fun fetchGitLog(
         head: String?,
         skip: Int,
+        compare: String?,
     ): ChatGitLogPage? {
         if (gatewayWorkspaceConnectionFlow.value == null) return null
         gitLogRequests += head to skip
+        gitLogCompareRequests += compare
         return gitLog(head, skip)
     }
+
+    override suspend fun fetchGitRefs(): ChatGitRefs? =
+        if (gatewayWorkspaceConnectionFlow.value == null) null else gitRefs()
 
     override suspend fun fetchGitCommitFiles(sha: String): List<ChatChangedFile>? =
         if (gatewayWorkspaceConnectionFlow.value == null) null else gitCommitFiles(sha)
@@ -274,10 +299,12 @@ open class FakeChatSessionFacade : ChatSessionFacade {
         path: String,
         commit: String?,
         oldPath: String?,
+        compare: String?,
     ): List<ToolCallContent.Diff>? {
         if (gatewayWorkspaceConnectionFlow.value == null) return null
         gitDiffRequests.add(path)
         gitDiffCommitRequests.add(commit to oldPath)
+        gitDiffCompareRequests.add(compare)
         fetchGitDiffGates[path]?.await()
         fetchGitDiffGate?.await()
         fetchGitDiffError?.let { throw it }

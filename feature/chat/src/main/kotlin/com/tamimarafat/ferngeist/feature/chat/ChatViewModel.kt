@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.tamimarafat.ferngeist.core.common.MviViewModel
 import com.tamimarafat.ferngeist.core.model.ChatAgentCapabilities
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
+import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatLoadState
 import com.tamimarafat.ferngeist.core.model.ChatMessage
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
@@ -257,6 +258,7 @@ class ChatViewModel
                 facade = sessionFacade,
                 update = { reducer -> updateState(reducer) },
                 acpSessionId = { trackedSessionId.takeIf { it != NEW_SESSION_ARG } },
+                compareRef = { state.value.compareRef },
             )
 
         /** Commit history and a commit's files for the git sheet's History tab. */
@@ -266,6 +268,7 @@ class ChatViewModel
                 facade = sessionFacade,
                 history = { state.value.gitHistory },
                 update = { reducer -> updateState { copy(gitHistory = gitHistory.reducer()) } },
+                compareRef = { state.value.compareRef },
             )
 
         /** Chat switcher rows and the close-session action behind them. */
@@ -731,6 +734,8 @@ class ChatViewModel
                 is ChatIntent.LoadTurnFileDiff,
                 is ChatIntent.LoadGitLog,
                 is ChatIntent.LoadGitCommit,
+                is ChatIntent.LoadGitRefs,
+                is ChatIntent.SelectCompareRef,
                 is ChatIntent.MarkSwitcherHintSeen,
                 is ChatIntent.CloseSession,
                 is ChatIntent.SubmitElicitation,
@@ -742,8 +747,31 @@ class ChatViewModel
 
         private fun refreshGit() {
             state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
+            // An agent turn changes the working tree, so a compare list read earlier is stale too.
+            if (state.value.compareRef != null) gitDiffLoader.refreshCompare()
             // A turn may have committed, so history once opened follows along.
             if (state.value.gitHistory.isLoaded) gitHistoryLoader.loadLog(more = false)
+        }
+
+        /** The git sheet's history, commit and compare intents. */
+        private fun handleGitSheetIntent(intent: ChatIntent) {
+            when (intent) {
+                is ChatIntent.LoadGitLog -> gitHistoryLoader.loadLog(intent.more)
+                is ChatIntent.LoadGitCommit -> gitHistoryLoader.loadCommit(intent.sha)
+                is ChatIntent.LoadGitRefs -> gitDiffLoader.loadRefs()
+                is ChatIntent.SelectCompareRef -> selectCompareRef(intent.ref)
+                else -> Unit
+            }
+        }
+
+        private fun selectCompareRef(ref: ChatGitRef?) {
+            if (ref == state.value.compareRef) return
+            // The previous target's rows are no stand-in for the new one's.
+            updateState {
+                copy(compareRef = ref, compareStatus = null, isCompareStatusLoading = false, compareStatusError = null)
+            }
+            gitDiffLoader.refreshCompare()
+            gitHistoryLoader.onCompareChanged()
         }
 
         /** One-shot intents outside the send/streaming core: diff fetch, hint flag, session close. */
@@ -758,8 +786,11 @@ class ChatViewModel
                         intent.oldPath,
                         intent.revision,
                     )
-                is ChatIntent.LoadGitLog -> gitHistoryLoader.loadLog(intent.more)
-                is ChatIntent.LoadGitCommit -> gitHistoryLoader.loadCommit(intent.sha)
+                is ChatIntent.LoadGitLog,
+                is ChatIntent.LoadGitCommit,
+                is ChatIntent.LoadGitRefs,
+                is ChatIntent.SelectCompareRef,
+                -> handleGitSheetIntent(intent)
                 is ChatIntent.MarkSwitcherHintSeen -> switcherHintStore.markSeen()
                 is ChatIntent.CloseSession -> switcherController.close(intent.serverId, intent.sessionId)
                 is ChatIntent.SubmitElicitation -> sessionCoordinator.submitElicitation(intent.key, intent.values)

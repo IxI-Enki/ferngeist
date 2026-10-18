@@ -90,7 +90,7 @@ data class ChatState(
 
 /** What the compare picker lists. A failed reload keeps [refs]; [unsupported] hides the whole affordance. */
 data class GitRefsState(
-    /** The repo's main branch name, for sorting and labelling only; "" when unknown. */
+    /** The repo's main branch name, sorting the picker and preselected from any other branch; "" when unknown. */
     val default: String = "",
     val refs: List<ChatGitRef> = emptyList(),
     /** `/git/refs` has answered at least once. */

@@ -10,6 +10,7 @@ import com.tamimarafat.ferngeist.core.model.GatewayWorkspaceConnection
 import com.tamimarafat.ferngeist.core.model.GitRefsUnsupportedException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -23,6 +24,7 @@ import org.junit.Test
 class ChatViewModelCompareTest : ChatViewModelTestBase() {
     private val main = ChatGitRef("main", ChatGitRef.Kind.BRANCH)
     private val dev = ChatGitRef("dev", ChatGitRef.Kind.BRANCH)
+    private val feat = ChatGitRef("feat", ChatGitRef.Kind.BRANCH, isHead = true)
 
     @Test
     fun `selecting a target fills only the compare slots`() =
@@ -378,6 +380,136 @@ class ChatViewModelCompareTest : ChatViewModelTestBase() {
                     .isEmpty(),
             )
         }
+
+    @Test
+    fun `a checkout on another branch opens against the default, in the compare slots only`() =
+        runTest {
+            val viewModel = openedOn("feat", ChatGitRefs("main", listOf(main, feat)))
+
+            val state = viewModel.state.value
+            assertEquals(main, state.compareRef)
+            assertEquals("refs/heads/main", state.compareStatus?.compare)
+            assertNull(state.gitStatus?.compare)
+        }
+
+    @Test
+    fun `a checkout on the default branch stays on the working tree`() =
+        runTest {
+            assertNull(
+                openedOn("main", ChatGitRefs("main", listOf(main.copy(isHead = true), dev))).state.value.compareRef,
+            )
+        }
+
+    @Test
+    fun `a detached HEAD stays on the working tree`() =
+        runTest {
+            assertNull(openedOn("(detached)", ChatGitRefs("main", listOf(main, dev))).state.value.compareRef)
+        }
+
+    @Test
+    fun `a blank default stays on the working tree`() =
+        runTest {
+            assertNull(openedOn("feat", ChatGitRefs("", listOf(main, feat))).state.value.compareRef)
+        }
+
+    @Test
+    fun `an unsupported refs endpoint stays on the working tree`() =
+        runTest {
+            val (viewModel, facade) =
+                gatewayViewModel {
+                    gitStatus = ChatGitStatus(branch = "feat")
+                    gitRefs = { throw GitRefsUnsupportedException() }
+                }
+            viewModel.dispatch(ChatIntent.RefreshGitStatus)
+            viewModel.dispatch(ChatIntent.LoadGitRefs)
+            advanceUntilIdle()
+
+            assertNull(viewModel.state.value.compareRef)
+            assertTrue(viewModel.state.value.gitRefs.unsupported)
+            assertEquals(0, facade.gitCompareStatusRequests.size)
+        }
+
+    @Test
+    fun `a default shared by a tag and a branch resolves to the branch`() =
+        runTest {
+            val tag = ChatGitRef("main", ChatGitRef.Kind.TAG)
+            assertEquals(main, openedOn("feat", ChatGitRefs("main", listOf(tag, feat, main))).state.value.compareRef)
+        }
+
+    @Test
+    fun `a default that only exists as a remote resolves to the remote`() =
+        runTest {
+            val remote = ChatGitRef("origin/main", ChatGitRef.Kind.REMOTE)
+            assertEquals(
+                remote,
+                openedOn("feat", ChatGitRefs("origin/main", listOf(feat, remote))).state.value.compareRef,
+            )
+        }
+
+    @Test
+    fun `choosing the working tree keeps later refreshes off the default`() =
+        runTest {
+            val viewModel = openedOn("feat", ChatGitRefs("main", listOf(main, feat)))
+
+            viewModel.dispatch(ChatIntent.SelectCompareRef(null))
+            viewModel.dispatch(ChatIntent.RefreshGitStatus)
+            viewModel.dispatch(ChatIntent.LoadGitRefs)
+            advanceUntilIdle()
+
+            assertNull(viewModel.state.value.compareRef)
+        }
+
+    @Test
+    fun `a pick made before refs land is left alone`() =
+        runTest {
+            val (viewModel, _) =
+                gatewayViewModel {
+                    gitStatus = ChatGitStatus(branch = "feat")
+                    gitRefs = { ChatGitRefs("main", listOf(main, dev, feat)) }
+                }
+            viewModel.dispatch(ChatIntent.SelectCompareRef(dev))
+            viewModel.dispatch(ChatIntent.RefreshGitStatus)
+            viewModel.dispatch(ChatIntent.LoadGitRefs)
+            advanceUntilIdle()
+
+            assertEquals(dev, viewModel.state.value.compareRef)
+        }
+
+    @Test
+    fun `refs landing after the status select the default exactly once`() =
+        runTest {
+            val (viewModel, facade) =
+                gatewayViewModel {
+                    gitStatus = ChatGitStatus(branch = "feat")
+                    gitRefs = { ChatGitRefs("main", listOf(main, feat)) }
+                }
+            viewModel.dispatch(ChatIntent.RefreshGitStatus)
+            advanceUntilIdle()
+            assertNull(viewModel.state.value.compareRef)
+
+            viewModel.dispatch(ChatIntent.LoadGitRefs)
+            advanceUntilIdle()
+            viewModel.dispatch(ChatIntent.LoadGitRefs)
+            advanceUntilIdle()
+
+            assertEquals(main, viewModel.state.value.compareRef)
+            assertEquals(listOf("refs/heads/main"), facade.gitCompareStatusRequests)
+        }
+
+    private suspend fun TestScope.openedOn(
+        branch: String,
+        refs: ChatGitRefs,
+    ): ChatViewModel {
+        val (viewModel, _) =
+            gatewayViewModel {
+                gitStatus = ChatGitStatus(branch = branch)
+                gitRefs = { refs }
+            }
+        viewModel.dispatch(ChatIntent.RefreshGitStatus)
+        viewModel.dispatch(ChatIntent.LoadGitRefs)
+        advanceUntilIdle()
+        return viewModel
+    }
 
     private fun page(
         head: String,

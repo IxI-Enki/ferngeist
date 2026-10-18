@@ -29,6 +29,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -271,6 +273,9 @@ class ChatViewModel
                 compareRef = { state.value.compareRef },
             )
 
+        /** The reader picked a compare target by hand, so [preselectDefaultCompare] stands down. */
+        private var compareChosenByReader = false
+
         /** Chat switcher rows and the close-session action behind them. */
         private val switcherController =
             ChatSwitcherController(
@@ -385,7 +390,15 @@ class ChatViewModel
                     // Retry the git-status fetch once the session is fully initialized,
                     // in case an earlier attempt raced session setup and failed.
                     state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
+                    // Known before the sheet opens, so its first frame already compares against the default.
+                    gitDiffLoader.loadRefs()
                 }
+            }
+            viewModelScope.launch {
+                state
+                    .map { it.gitStatus?.branch to it.gitRefs }
+                    .distinctUntilChanged()
+                    .collect { preselectDefaultCompare() }
             }
             viewModelScope.launch {
                 sessionFacade.diagnostics.collect { diagnostics ->
@@ -462,6 +475,7 @@ class ChatViewModel
         private fun refreshGitStatusOnceReady(wasReady: Boolean) {
             if (wasReady || !state.value.isSessionReady) return
             state.value.gatewayWorkspaceConnection?.let { gitDiffLoader.refresh() }
+            gitDiffLoader.loadRefs()
         }
 
         /**
@@ -759,9 +773,32 @@ class ChatViewModel
                 is ChatIntent.LoadGitLog -> gitHistoryLoader.loadLog(intent.more)
                 is ChatIntent.LoadGitCommit -> gitHistoryLoader.loadCommit(intent.sha)
                 is ChatIntent.LoadGitRefs -> gitDiffLoader.loadRefs()
-                is ChatIntent.SelectCompareRef -> selectCompareRef(intent.ref)
+                is ChatIntent.SelectCompareRef -> {
+                    compareChosenByReader = true
+                    selectCompareRef(intent.ref)
+                }
                 else -> Unit
             }
+        }
+
+        /**
+         * Compares against the repo's default branch when the checkout is on another local branch,
+         * until the reader picks any target by hand, `Working tree` included. Not persisted: a fresh
+         * process opens against the default again.
+         */
+        private fun preselectDefaultCompare() {
+            val current = state.value
+            val refs = current.gitRefs
+            val branch = current.gitStatus?.branch.orEmpty()
+            if (compareChosenByReader || current.compareRef != null || refs.unsupported) return
+            if (refs.default.isBlank() || branch == refs.default) return
+            // Status names a detached HEAD "(detached)", which matches no local branch.
+            if (refs.refs.none { it.kind == ChatGitRef.Kind.BRANCH && it.name == branch }) return
+            // A branch beats a same-named remote or tag, whatever order the gateway listed them in.
+            refs.refs
+                .filter { it.name == refs.default && it.qualified != null && !it.isHead }
+                .minByOrNull { it.kind.ordinal }
+                ?.let(::selectCompareRef)
         }
 
         private fun selectCompareRef(ref: ChatGitRef?) {

@@ -81,6 +81,12 @@ class AcpChatSessionFacadeMappersTest {
     }
 
     @Test
+    fun `a log page carries the walk's total, null when the gateway omits it`() {
+        assertEquals(7, GatewayGitLog(total = 7).toChatGitLogPage().total)
+        assertNull(GatewayGitLog().toChatGitLogPage().total)
+    }
+
+    @Test
     fun `a log page maps seconds to millis, ref kinds, and blank head or remote to null`() {
         val page =
             GatewayGitLog(

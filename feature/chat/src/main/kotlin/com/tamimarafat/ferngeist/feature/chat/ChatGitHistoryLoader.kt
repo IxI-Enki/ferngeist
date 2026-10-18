@@ -94,6 +94,9 @@ internal class ChatGitHistoryLoader(
                 commits = if (more) commits + page.commits else page.commits + tail,
                 hasMore = if (tail.isEmpty()) page.hasMore else hasMore,
                 remoteUrl = page.remoteUrl,
+                // Every page reports the whole walk, but a gateway that predates the field sends
+                // none: keep the number page one read rather than dropping the badge on a later page.
+                total = page.total ?: total,
                 compare = compare,
                 target = if (more) target else page.target,
                 isLoaded = true,

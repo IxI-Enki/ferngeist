@@ -105,6 +105,8 @@ data class GitHistoryState(
     val commits: List<ChatGitCommit> = emptyList(),
     val hasMore: Boolean = false,
     val remoteUrl: String? = null,
+    /** The whole walk's size, shown as the History tab's badge; null when the gateway predates it. */
+    val total: Int? = null,
     /** Page 1 has answered at least once, so an empty [commits] means an empty repository. */
     val isLoaded: Boolean = false,
     val isLoading: Boolean = false,

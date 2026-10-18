@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -101,6 +102,8 @@ internal fun GitSheetTabs(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** The walked history's size; null hides the History tab's badge. */
+    total: Int? = null,
 ) {
     val labels = listOf(stringResource(R.string.chat_git_tab_changes), stringResource(R.string.chat_git_tab_history))
     Row(
@@ -120,9 +123,37 @@ internal fun GitSheetTabs(
                 // Exactly one is on, so it reads as a choice rather than a pair of switches.
                 modifier = Modifier.weight(1f).handCursor().semantics { role = Role.RadioButton },
             ) {
-                Text(label)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(label)
+                    if (index == HISTORY_TAB && total != null) GitHistoryCountBadge(total)
+                }
             }
         }
+    }
+}
+
+/** The tab index of History, the second of the pair [GitSheetTabs] lays out. */
+private const val HISTORY_TAB = 1
+
+/**
+ * The whole walk's size beside the History label, so the list can be sized before it is paged to
+ * the end. Tinted from the tab's own content colour, which flips when the tab is the selected one.
+ */
+@Composable
+private fun GitHistoryCountBadge(total: Int) {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = LocalContentColor.current.copy(alpha = 0.15f),
+        contentColor = LocalContentColor.current,
+    ) {
+        Text(
+            text = total.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+        )
     }
 }
 
@@ -787,7 +818,7 @@ private fun GitHistoryPreviewFrame(commits: List<ChatGitCommit>) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(text = stringResource(R.string.chat_git_status_title), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(12.dp))
-            GitSheetTabs(selected = tab, onSelect = { tab = it })
+            GitSheetTabs(selected = tab, onSelect = { tab = it }, total = commits.size)
             Spacer(Modifier.height(8.dp))
             GitHistoryList(commits = commits, nowMillis = PREVIEW_NOW, onCommitClick = {})
         }

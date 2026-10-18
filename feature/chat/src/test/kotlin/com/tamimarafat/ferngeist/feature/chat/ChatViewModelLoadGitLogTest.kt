@@ -43,6 +43,35 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
         }
 
     @Test
+    fun `the walk's total reaches the tab badge and a later page cannot clear it`() =
+        runTest {
+            val (viewModel, _) =
+                gatewayViewModel {
+                    gitLog = { head, _ ->
+                        if (head == null) page("h", true, "a", total = 5) else page("h", false, "b")
+                    }
+                }
+
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
+            advanceUntilIdle()
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = true))
+            advanceUntilIdle()
+
+            assertEquals(5, viewModel.state.value.gitHistory.total)
+        }
+
+    @Test
+    fun `a gateway that omits the total leaves the badge off`() =
+        runTest {
+            val (viewModel, _) = gatewayViewModel { gitLog = { _, _ -> page("h", false, "a") } }
+
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
+            advanceUntilIdle()
+
+            assertNull(viewModel.state.value.gitHistory.total)
+        }
+
+    @Test
     fun `a refresh adds new commits on top and keeps the pages already loaded`() =
         runTest {
             var refreshed = false
@@ -245,6 +274,7 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
         head: String,
         hasMore: Boolean,
         vararg shas: String,
+        total: Int? = null,
     ) = ChatGitLogPage(
         head = head,
         commits =
@@ -260,6 +290,7 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
             },
         hasMore = hasMore,
         remoteUrl = null,
+        total = total,
     )
 
     private suspend fun gatewayViewModel(

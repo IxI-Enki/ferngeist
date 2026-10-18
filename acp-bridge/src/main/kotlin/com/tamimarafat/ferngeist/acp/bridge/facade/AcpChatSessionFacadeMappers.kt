@@ -273,6 +273,7 @@ internal fun GatewayGitLog.toChatGitLogPage(): ChatGitLogPage =
         target = target.map { it.toChatGitCommit() },
         hasMore = hasMore,
         remoteUrl = remoteUrl.ifBlank { null },
+        total = total,
     )
 
 internal fun GatewayGitCommit.toChatGitCommit(): ChatGitCommit =

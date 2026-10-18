@@ -345,7 +345,7 @@ private fun GitSheetTabsPage(
         )
         if (!history.unsupported) {
             Spacer(modifier = Modifier.height(12.dp))
-            GitSheetTabs(selected = tab, onSelect = onSelectTab)
+            GitSheetTabs(selected = tab, onSelect = onSelectTab, total = history.total)
         }
         Spacer(modifier = Modifier.height(16.dp))
         Crossfade(

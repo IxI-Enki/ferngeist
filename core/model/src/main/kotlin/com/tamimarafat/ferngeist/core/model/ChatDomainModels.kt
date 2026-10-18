@@ -276,6 +276,11 @@ data class ChatGitLogPage(
     val commits: List<ChatGitCommit>,
     val hasMore: Boolean,
     val remoteUrl: String?,
+    /**
+     * The size of the whole walk this page comes from, so the list can be sized before it is paged
+     * to the end. Null when the gateway predates the field.
+     */
+    val total: Int? = null,
     /** In compare mode, the target's tip followed by any commits beyond it; empty otherwise. */
     val target: List<ChatGitCommit> = emptyList(),
 )

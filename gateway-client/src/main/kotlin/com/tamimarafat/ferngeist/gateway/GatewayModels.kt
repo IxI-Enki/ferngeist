@@ -245,6 +245,8 @@ data class GatewayGitLog(
     val head: String = "",
     val hasMore: Boolean = false,
     val remoteUrl: String = "",
+    /** The whole walk's size; null when the gateway predates the field. */
+    val total: Int? = null,
     val commits: List<GatewayGitCommit> = emptyList(),
     /** In compare mode, the target's tip followed by any commits beyond it; empty otherwise. */
     val target: List<GatewayGitCommit> = emptyList(),

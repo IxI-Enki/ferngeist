@@ -480,7 +480,7 @@ internal data class DiffStats(
 
 // A final newline ends the last line rather than starting an empty one, as git counts it.
 // An empty text has no lines (a new or deleted file), and a final newline does not start one.
-private fun String.diffLines(): List<String> {
+internal fun String.diffLines(): List<String> {
     val lines = lines()
     return if (lines.last().isEmpty()) lines.dropLast(1) else lines
 }

@@ -492,7 +492,25 @@ interface ChatSessionFacade {
 
     /** Files [sha] changed against its first parent, or null when the chat has no gateway workspace. */
     suspend fun fetchGitCommitFiles(sha: String): List<ChatChangedFile>? = null
+
+    /**
+     * One file of the chat's gateway workspace, [path] relative to its project directory, or null
+     * when it has none. Transport failures propagate.
+     */
+    suspend fun fetchFile(path: String): ChatFileContents? = null
+
+    /**
+     * The workspace's files, relative to its project directory, or null when it has none. Possibly
+     * cut short on a huge repo. Throws on a gateway without the list, and on transport failures.
+     */
+    suspend fun fetchFileList(): List<String>? = null
 }
+
+/** A workspace file as the gateway read it: [text] is null for a binary file, cut at 1 MiB when [truncated]. */
+data class ChatFileContents(
+    val text: String?,
+    val truncated: Boolean,
+)
 
 /**
  * Session-presence and session-lifecycle operations a chat screen needs from the

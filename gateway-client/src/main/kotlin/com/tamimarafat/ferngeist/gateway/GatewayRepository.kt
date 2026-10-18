@@ -197,6 +197,25 @@ interface GatewayWorkspaceRepository {
         sha: String,
         acpSessionId: String? = null,
     ): GatewayGitCommitFiles
+
+    /** `GET /files`: one file of the project directory; [path] is relative to it. */
+    suspend fun fetchFile(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        path: String,
+        acpSessionId: String? = null,
+    ): GatewayFileContents
+
+    /** `GET /files/list`: every file of the project directory git doesn't ignore. */
+    suspend fun fetchFileList(
+        scheme: String,
+        host: String,
+        gatewayCredential: String,
+        runtimeId: String,
+        acpSessionId: String? = null,
+    ): GatewayFileList
 }
 
 /** Client-registered custom agent operations. */

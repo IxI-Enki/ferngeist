@@ -74,6 +74,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -122,6 +123,7 @@ import com.tamimarafat.ferngeist.feature.chat.MarkdownRenderedDocument
 import com.tamimarafat.ferngeist.feature.chat.R
 import com.tamimarafat.ferngeist.feature.chat.SegmentBlock
 import com.tamimarafat.ferngeist.feature.chat.displayBlocks
+import com.tamimarafat.ferngeist.feature.chat.markdown.LocalInlineChips
 import com.tamimarafat.ferngeist.feature.chat.markdown.MarkdownBlocks
 import com.tamimarafat.ferngeist.feature.chat.markdown.MarkdownTypography
 import com.tamimarafat.ferngeist.feature.chat.markdown.RunReveal
@@ -487,6 +489,7 @@ private fun AssistantMessageContent(
                 ?.id
                 .takeIf { message.isStreaming }
         val blocks = message.segments.displayBlocks()
+        val fileChips = rememberFileChips(message.segments, message.isStreaming)
         blocks.forEach { block ->
             if (!gateOpen) return@forEach
             key(block.key) {
@@ -515,7 +518,10 @@ private fun AssistantMessageContent(
                             val total = remember(document) { document?.blocks?.sumOf { it.revealLength() } ?: 0 }
                             val reveal = reveals.forRun(block.key, startHidden = message.isStreaming, total)
                             SideEffect { reveal.target = total }
-                            RenderedMarkdown(text = block.text, document = document, reveal = reveal)
+                            // Prose only: reasoning rows render through ToolCallGroup, outside this.
+                            CompositionLocalProvider(LocalInlineChips provides fileChips) {
+                                RenderedMarkdown(text = block.text, document = document, reveal = reveal)
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
                             val settled by remember(reveal) { derivedStateOf { reveal.isSettled } }
                             gateOpen = settled

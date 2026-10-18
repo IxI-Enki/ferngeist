@@ -24,6 +24,9 @@
     <string name="chat_plan_desc">পরিকল্পনা</string>
     <string name="chat_completed_desc">সম্পন্ন</string>
     <string name="chat_error_desc">ত্রুটি</string>
+    <string name="chat_file_binary">বাইনারি ফাইল, দেখানো হচ্ছে না</string>
+    <string name="chat_file_empty">খালি ফাইল</string>
+    <string name="chat_file_truncated">এই ফাইলের শুধু প্রথম 1 MiB দেখানো হচ্ছে</string>
     <string name="chat_tool_call">টুল কল</string>
     <string name="chat_tool_call_details_desc">টুল কলের বিবরণ দেখুন</string>
     <string name="chat_awaiting_permission">অনুমতির উত্তরের অপেক্ষায়</string>

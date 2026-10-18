@@ -24,6 +24,9 @@
     <string name="chat_plan_desc">Plano</string>
     <string name="chat_completed_desc">Concluído</string>
     <string name="chat_error_desc">Erro</string>
+    <string name="chat_file_binary">Arquivo binário, não exibido</string>
+    <string name="chat_file_empty">Arquivo vazio</string>
+    <string name="chat_file_truncated">Apenas o primeiro MiB deste arquivo é exibido</string>
     <string name="chat_tool_call">Chamada de ferramenta</string>
     <string name="chat_tool_call_details_desc">Mostrar detalhes da chamada de ferramenta</string>
     <string name="chat_awaiting_permission">Aguardando resposta de permissão</string>

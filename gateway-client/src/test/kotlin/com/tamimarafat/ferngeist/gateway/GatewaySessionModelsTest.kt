@@ -196,6 +196,23 @@ class GatewaySessionModelsTest {
                     acpSessionId: String?,
                 ): GatewayGitCommitFiles = TODO()
 
+                override suspend fun fetchFile(
+                    scheme: String,
+                    host: String,
+                    gatewayCredential: String,
+                    runtimeId: String,
+                    path: String,
+                    acpSessionId: String?,
+                ): GatewayFileContents = TODO()
+
+                override suspend fun fetchFileList(
+                    scheme: String,
+                    host: String,
+                    gatewayCredential: String,
+                    runtimeId: String,
+                    acpSessionId: String?,
+                ): GatewayFileList = TODO()
+
                 override suspend fun createCustomAgent(
                     scheme: String,
                     host: String,

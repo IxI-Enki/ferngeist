@@ -27,6 +27,9 @@
     <string name="chat_plan_desc">计划</string>
     <string name="chat_completed_desc">已完成</string>
     <string name="chat_error_desc">错误</string>
+    <string name="chat_file_binary">二进制文件，不显示</string>
+    <string name="chat_file_empty">空文件</string>
+    <string name="chat_file_truncated">仅显示此文件的前 1 MiB</string>
     <string name="chat_tool_call">工具调用</string>
     <string name="chat_tool_call_details_desc">显示工具调用详情</string>
     <string name="chat_awaiting_permission">等待权限响应</string>

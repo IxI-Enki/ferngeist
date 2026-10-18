@@ -29,6 +29,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -261,6 +265,20 @@ class ChatViewModel
                 compareRef = { state.value.compareRef },
             )
 
+        /** The file sheet's file, read from the gateway workspace. */
+        private val fileLoader =
+            ChatFileLoader(
+                scope = viewModelScope,
+                facade = sessionFacade,
+                update = { reducer -> updateState(reducer) },
+                cwd = cwd,
+                tree = {
+                    state.value.gitStatus
+                        ?.changed
+                        .orEmpty()
+                },
+            )
+
         /** Commit history and a commit's files for the git sheet's History tab. */
         private val gitHistoryLoader =
             ChatGitHistoryLoader(
@@ -397,6 +415,20 @@ class ChatViewModel
                     updateState { copy(gatewayWorkspaceConnection = connection) }
                     if (connection != null) gitDiffLoader.refresh()
                 }
+            }
+            viewModelScope.launch {
+                // Files only come and go when git status's path set changes, so list again then.
+                // A gateway without the list leaves it null, and chips fall back to the turn's files.
+                state
+                    .map { it.gitStatus }
+                    .distinctUntilChanged()
+                    .mapNotNull { status -> status?.changed?.mapTo(HashSet()) { it.path } }
+                    .distinctUntilChanged()
+                    .collectLatest {
+                        val files = runCatching { sessionFacade.fetchFileList() }.getOrNull() ?: return@collectLatest
+                        val byName = withContext(ioDispatcher) { files.groupBy { it.substringAfterLast('/') } }
+                        updateState { copy(workspaceFiles = byName) }
+                    }
             }
         }
 
@@ -732,6 +764,8 @@ class ChatViewModel
                 is ChatIntent.ForceSendMessage,
                 is ChatIntent.LoadGitDiff,
                 is ChatIntent.LoadTurnFileDiff,
+                is ChatIntent.OpenFile,
+                is ChatIntent.CloseFile,
                 is ChatIntent.LoadGitLog,
                 is ChatIntent.LoadGitCommit,
                 is ChatIntent.LoadGitRefs,
@@ -786,6 +820,8 @@ class ChatViewModel
                         intent.oldPath,
                         intent.revision,
                     )
+                is ChatIntent.OpenFile -> fileLoader.open(intent.path)
+                is ChatIntent.CloseFile -> fileLoader.close()
                 is ChatIntent.LoadGitLog,
                 is ChatIntent.LoadGitCommit,
                 is ChatIntent.LoadGitRefs,

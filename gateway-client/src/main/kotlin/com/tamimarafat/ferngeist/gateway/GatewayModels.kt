@@ -281,6 +281,24 @@ data class GatewayGitCommitFiles(
     val changed: List<GatewayChangedFile> = emptyList(),
 )
 
+/**
+ * `GET /files`: ACP's `TextResourceContents` or `BlobResourceContents` in one shape, [text] set for
+ * a text file and [blob] for a binary one. [truncated] (past 1 MiB) is a gateway extension.
+ */
+@Serializable
+data class GatewayFileContents(
+    val text: String? = null,
+    val blob: String? = null,
+    val truncated: Boolean = false,
+)
+
+/** `GET /files/list`: the project's files, relative to its directory, cut at the gateway's cap when [truncated]. */
+@Serializable
+data class GatewayFileList(
+    val files: List<String> = emptyList(),
+    val truncated: Boolean = false,
+)
+
 /** Body of `POST /v1/worktrees`. Null [base]/[branch] let the gateway apply its own defaults. */
 @Serializable
 data class GatewayCreateWorktreeRequest(

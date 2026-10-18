@@ -49,6 +49,10 @@ data class ChatState(
      */
     val resumedSession: Boolean = false,
     val gatewayWorkspaceConnection: GatewayWorkspaceConnection? = null,
+    /** The file a transcript chip opened; null while the file sheet is closed. */
+    val openFile: FileView? = null,
+    /** The workspace's files by file name, for chips on names no tool call touched; null until listed. */
+    val workspaceFiles: Map<String, List<String>>? = null,
     val gitStatus: ChatGitStatus? = null,
     val gitDiffStats: GitDiffStats? = null,
     val gitFileDiff: List<ToolCallContent.Diff>? = null,

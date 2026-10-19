@@ -11,10 +11,13 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.tamimarafat.ferngeist.core.common.ui.DarkGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.LightGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
+import com.tamimarafat.ferngeist.core.common.ui.LocalSyntaxColors
+import com.tamimarafat.ferngeist.core.common.ui.syntaxColorsFor
 
 private val DarkColorScheme =
     darkColorScheme(
@@ -58,8 +61,12 @@ fun FerngeistTheme(
             else -> LightColorScheme
         }
     val gitSemanticColors = if (darkTheme) DarkGitSemanticColors else LightGitSemanticColors
+    val syntaxColors = remember(colorScheme) { syntaxColorsFor(colorScheme) }
 
-    CompositionLocalProvider(LocalGitSemanticColors provides gitSemanticColors) {
+    CompositionLocalProvider(
+        LocalGitSemanticColors provides gitSemanticColors,
+        LocalSyntaxColors provides syntaxColors,
+    ) {
         MaterialExpressiveTheme(
             colorScheme = colorScheme,
             // Physics-based motion as the app-wide default (springs over fixed-duration easing).

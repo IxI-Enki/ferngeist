@@ -33,6 +33,12 @@ internal class ChatGitDiffLoader(
      */
     private var job: Job? = null
 
+    // Chat open asks for these from several places in a burst (workspace appearing, session ready,
+    // the load finishing); each ask is a git process on the gateway, so a burst becomes one fetch
+    // plus at most one rerun.
+    private val statusRefresh = Coalesced(scope) { fetchStatus() }
+    private val refsLoad = Coalesced(scope) { fetchRefs() }
+
     /**
      * The latest turn's inline fallback fetches, one per git-relative path and independent of the
      * sheet's single-file [job]. A path's in-flight fetch is replaced only by a request for a newer
@@ -76,24 +82,26 @@ internal class ChatGitDiffLoader(
     fun refresh() {
         // Nothing to scope to until create-on-arrival mints a session; sessionReady retries.
         if (acpSessionId() == null) return
-        scope.launch {
-            runCatching { facade.fetchGitStatus() }
-                .onSuccess { status ->
-                    if (status == null) return@onSuccess
-                    val stats =
-                        GitDiffStats(
-                            additions = status.changed.sumOf { it.added },
-                            deletions = status.changed.sumOf { it.removed },
-                        )
-                    update { copy(gitStatus = status, gitDiffStats = stats) }
-                    // Git's counts can stay put while the text changes, so every refresh re-reads
-                    // the turn's diffs already shown.
-                    turnLoaded.toMap().forEach { (path, request) ->
-                        turnLoaded.remove(path)
-                        loadTurnFile(path, request.first, request.second)
-                    }
+        statusRefresh.run()
+    }
+
+    private suspend fun fetchStatus() {
+        runCatching { facade.fetchGitStatus() }
+            .onSuccess { status ->
+                if (status == null) return@onSuccess
+                val stats =
+                    GitDiffStats(
+                        additions = status.changed.sumOf { it.added },
+                        deletions = status.changed.sumOf { it.removed },
+                    )
+                update { copy(gitStatus = status, gitDiffStats = stats) }
+                // Git's counts can stay put while the text changes, so every refresh re-reads
+                // the turn's diffs already shown.
+                turnLoaded.toMap().forEach { (path, request) ->
+                    turnLoaded.remove(path)
+                    loadTurnFile(path, request.first, request.second)
                 }
-        }
+            }
     }
 
     /**
@@ -133,21 +141,23 @@ internal class ChatGitDiffLoader(
     /** Loads the compare picker's refs; a failed reload keeps the list already held. */
     fun loadRefs() {
         if (acpSessionId() == null) return
-        scope.launch {
-            runCatching { facade.fetchGitRefs() }
-                .onSuccess { refs ->
-                    if (refs == null) return@onSuccess
-                    update { copy(gitRefs = GitRefsState(default = refs.default, refs = refs.refs, isLoaded = true)) }
-                }.onFailure { throwable ->
-                    if (throwable is GitRefsUnsupportedException) {
-                        update {
-                            copy(
-                                gitRefs = gitRefs.copy(unsupported = true),
-                            )
-                        }
+        refsLoad.run()
+    }
+
+    private suspend fun fetchRefs() {
+        runCatching { facade.fetchGitRefs() }
+            .onSuccess { refs ->
+                if (refs == null) return@onSuccess
+                update { copy(gitRefs = GitRefsState(default = refs.default, refs = refs.refs, isLoaded = true)) }
+            }.onFailure { throwable ->
+                if (throwable is GitRefsUnsupportedException) {
+                    update {
+                        copy(
+                            gitRefs = gitRefs.copy(unsupported = true),
+                        )
                     }
                 }
-        }
+            }
     }
 
     /**
@@ -330,4 +340,31 @@ internal class ChatGitDiffLoader(
         throwable: Throwable,
         path: String,
     ) = throwable.message?.takeIf { it.isNotBlank() } ?: "Failed to load git diff for $path"
+}
+
+/**
+ * Runs [block] one at a time. A [run] made while it is in flight does not start a second copy; it
+ * marks the result stale and reruns once after, so a late trigger (the session becoming ready after
+ * an early attempt raced its setup) is never dropped. Used on [scope]'s main thread only.
+ */
+internal class Coalesced(
+    private val scope: CoroutineScope,
+    private val block: suspend () -> Unit,
+) {
+    private var job: Job? = null
+    private var stale = false
+
+    fun run() {
+        if (job?.isActive == true) {
+            stale = true
+            return
+        }
+        job =
+            scope.launch {
+                do {
+                    stale = false
+                    block()
+                } while (stale)
+            }
+    }
 }

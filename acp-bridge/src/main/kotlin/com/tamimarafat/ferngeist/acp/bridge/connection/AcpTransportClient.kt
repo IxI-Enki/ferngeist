@@ -21,6 +21,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.url
 import io.ktor.websocket.Frame
+import io.ktor.websocket.WebSocketDeflateExtension
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -56,6 +57,9 @@ internal fun computeReconnectDelayMs(attempt: Int): Long {
 // this interval when no frames are exchanged.
 private const val WEB_SOCKET_PING_INTERVAL_MILLIS = 15_000L
 
+// Smaller frames (streamed deltas, acks) cost more to deflate than they save.
+private const val DEFLATE_MIN_FRAME_BYTES = 1024
+
 // Exponential backoff base: attempt N waits 1000 * 2^(N-1) ms before jitter,
 // capped at MAX_RECONNECT_DELAY_MS. Sequence: 1s, 2s, 4s, 8s, 16s, 30s, 30s, …
 // — snappy early retries, gentle long-term spacing.
@@ -82,6 +86,13 @@ private val sharedWebSocketClient: HttpClient by lazy {
     HttpClient(CIO) {
         install(WebSockets) {
             pingIntervalMillis = WEB_SOCKET_PING_INTERVAL_MILLIS
+            // Offered, not required: a gateway that does not negotiate permessage-deflate leaves the
+            // socket as it was. A session/load replay is hundreds of KB of repetitive JSON.
+            extensions {
+                install(WebSocketDeflateExtension) {
+                    compressIfBiggerThan(DEFLATE_MIN_FRAME_BYTES)
+                }
+            }
         }
     }
 }

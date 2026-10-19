@@ -6,6 +6,7 @@ Run Claude Code, Codex, Gemini CLI or another coding agent on your computer and 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?color=4DB6AC&style=flat-square)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/github/v/release/arafatamim/ferngeist?color=4DB6AC&style=flat-square)](https://github.com/arafatamim/ferngeist/releases/latest)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/arafatamim/Ferngeist)
 
 <a href="https://play.google.com/store/apps/details?id=com.tamimarafat.ferngeist"><img alt="Get it on Google Play" src="https://github.com/pioug/google-play-badges/raw/refs/heads/main/svg/en.svg" width="200" /></a>
 

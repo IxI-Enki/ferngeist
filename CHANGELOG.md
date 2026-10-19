@@ -1,4 +1,15 @@
 
+## [1.5.1] - 2026-10-19
+
+### Features
+
+- *(chat)* Open a read's whole file from its tool call sheet ([87c9534](https://github.com/arafatamim/Ferngeist/commit/87c953477953b028ae5354852f17406ed8aa53e6))
+
+### Fixes
+
+- *(chat)* Keep the file sheet header to one line for long names ([85be659](https://github.com/arafatamim/Ferngeist/commit/85be6595a6a21065cec00cb400f63a23d7040e66))
+- *(build)* Drop dependency metadata block from APKs for F-Droid ([d4046a0](https://github.com/arafatamim/Ferngeist/commit/d4046a08a8becafc6270aea39563400d119cc4f1))
+
 ## [1.5.0] - 2026-10-19
 
 ### Documentation

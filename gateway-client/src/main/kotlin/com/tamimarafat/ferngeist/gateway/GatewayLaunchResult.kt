@@ -88,9 +88,7 @@ private suspend fun launchRefreshedRuntime(
     }
 
     if (requireSupportedProtocol) {
-        gatewayRepository
-            .fetchStatus(refreshedSource.scheme, refreshedSource.host)
-            .requireSupportedProtocol()
+        gatewayRepository.verifyProtocol(refreshedSource.scheme, refreshedSource.host)
     }
 
     return attemptConnect(gatewayRepository, refreshedSource, agentId)

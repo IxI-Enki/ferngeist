@@ -9,6 +9,17 @@ interface GatewayPairingRepository {
         host: String,
     ): GatewayStatus
 
+    /**
+     * Fails unless the gateway speaks a supported protocol. Launch paths call this on every
+     * connect; an implementation may remember a pass, where [fetchStatus] always costs a round trip.
+     */
+    suspend fun verifyProtocol(
+        scheme: String,
+        host: String,
+    ) {
+        fetchStatus(scheme, host).requireSupportedProtocol()
+    }
+
     suspend fun startPairing(
         scheme: String,
         host: String,

@@ -3,7 +3,11 @@ package com.tamimarafat.ferngeist.gateway
 import com.agentclientprotocol.model.ToolCallContent
 import io.ktor.client.HttpClient
 import kotlinx.serialization.json.Json
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+
+private val PROTOCOL_VERIFIED_NANOS = TimeUnit.MINUTES.toNanos(5)
 
 @Suppress("TooManyFunctions") // one override per gateway endpoint
 class GatewayRepositoryImpl
@@ -46,6 +50,22 @@ class GatewayRepositoryImpl
                 gatewayClock.recordServerTime(host, serverSeconds)
             }
             return response
+        }
+
+        /** Hosts whose protocol check passed, with the [System.nanoTime] it stays good until. */
+        private val protocolVerifiedUntil = ConcurrentHashMap<String, Long>()
+
+        // A gateway upgrade inside the window surfaces as the gateway's own error on connect
+        // instead of the clear mismatch message; the window bounds how long that can last.
+        override suspend fun verifyProtocol(
+            scheme: String,
+            host: String,
+        ) {
+            val key = "$scheme://$host"
+            val now = System.nanoTime()
+            protocolVerifiedUntil[key]?.let { until -> if (until - now > 0) return }
+            fetchStatus(scheme, host)
+            protocolVerifiedUntil[key] = now + PROTOCOL_VERIFIED_NANOS
         }
 
         override suspend fun startPairing(

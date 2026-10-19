@@ -75,6 +75,17 @@ private const val MAX_RECONNECT_DELAY_MS = 30_000L
 // never get reached because they run after the handshake.
 private const val WEB_SOCKET_CONNECT_TIMEOUT_MS = 30_000L
 
+// One CIO client for every socket in the process. Each client builds its own engine and TLS
+// context, so a client per connection paid for both on every chat, listing and verification
+// socket, and no handshake could resume another's TLS session. Never closed, like the REST client.
+private val sharedWebSocketClient: HttpClient by lazy {
+    HttpClient(CIO) {
+        install(WebSockets) {
+            pingIntervalMillis = WEB_SOCKET_PING_INTERVAL_MILLIS
+        }
+    }
+}
+
 internal class AcpTransportClient(
     private val connectivityObserver: ConnectivityObserver,
     // Mints a fresh attachToken for a gateway session — the gateway resume call, in
@@ -114,37 +125,12 @@ internal class AcpTransportClient(
     private var reconnectAttempts = 0
     private var currentConfig: AcpConnectionConfig? = null
 
-    // Reused across all connect/reconnect attempts. CIO's HttpClient is heavyweight
-    // (coroutine machinery, thread pools, websocket engine), so creating one per
-    // session is wasteful. Initialized lazily on first use; nulled by [close].
-    private var sharedHttpClient: HttpClient? = null
-
     private var activeTransportGeneration: Long = 0L
     private var ignoreTransportCallbacks = false
     var sdkClient: Client? = null
         private set
 
     fun currentConnectionConfig(): AcpConnectionConfig? = currentConfig
-
-    /**
-     * Tears down the shared [HttpClient]. Intended for graceful shutdown of the
-     * owning connection manager; not called on normal disconnects (the client
-     * is reused across reconnects). Idempotent.
-     */
-    fun close() {
-        val client = sharedHttpClient ?: return
-        sharedHttpClient = null
-        runCatching { client.close() }
-    }
-
-    /** Returns the shared [HttpClient], creating it on first call. */
-    private fun acquireHttpClient(): HttpClient =
-        sharedHttpClient
-            ?: HttpClient(CIO) {
-                install(WebSockets) {
-                    pingIntervalMillis = WEB_SOCKET_PING_INTERVAL_MILLIS
-                }
-            }.also { sharedHttpClient = it }
 
     suspend fun connect(
         config: AcpConnectionConfig,
@@ -465,9 +451,6 @@ internal class AcpTransportClient(
     ): Boolean {
         diagnosticsStore.startConnect(diagnosticsUrl)
 
-        // Reuse the shared HttpClient rather than spinning up a new CIO
-        // engine + websocket plugin on every reconnect.
-        //
         // The handshake is bounded by WEB_SOCKET_CONNECT_TIMEOUT_MS. The
         // TimeoutCancellationException is converted into a plain IOException here so
         // connectInternal's catch treats it as a real connection failure (it rethrows
@@ -476,7 +459,7 @@ internal class AcpTransportClient(
         val webSocketSession =
             try {
                 withTimeout(WEB_SOCKET_CONNECT_TIMEOUT_MS) {
-                    acquireHttpClient().webSocketSession {
+                    sharedWebSocketClient.webSocketSession {
                         url(wsUrl)
                     }
                 }

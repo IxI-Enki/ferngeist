@@ -251,25 +251,12 @@ class AcpConnection(
     fun probeConnection() = transportClient.probe()
 
     /**
-     * Hard release: cancels any reconnect loop, wipes sessions and the SDK
-     * protocol via [disconnect], then frees the shared HttpClient via [close].
-     * The disconnect-then-close ordering is load-bearing (close alone would let
-     * an armed reconnect loop resurrect the transport), so it lives here rather
-     * than with callers. Idempotent.
+     * Hard release: cancels any reconnect loop and wipes sessions and the SDK
+     * protocol via [disconnect]. The WebSocket client is process-wide, so there is
+     * nothing further to free. Idempotent.
      */
     fun release() {
         disconnect()
-        close()
-    }
-
-    /**
-     * Tears down the transport and releases heavyweight resources (the shared
-     * CIO [io.ktor.client.HttpClient]). Called when the owning scope completes;
-     * [disconnect] alone only closes the SDK protocol and keeps the client for
-     * reconnect reuse. Idempotent.
-     */
-    fun close() {
-        transportClient.close()
     }
 
     /**

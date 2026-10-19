@@ -242,7 +242,10 @@ data class GatewayGitRefs(
     val refs: List<GatewayGitRef> = emptyList(),
 )
 
-/** One page of `GET /git/log`. [head] is `""` for an empty repository; [remoteUrl] is `""` without `origin`. */
+/**
+ * One page of `GET /git/log`. [head] is `""` for an empty repository; [remoteUrl] is `""` without
+ * `origin`. [baseCommit] is `""` when the workspace has no base to read against.
+ */
 @Serializable
 data class GatewayGitLog(
     val head: String = "",
@@ -251,8 +254,8 @@ data class GatewayGitLog(
     /** The whole walk's size; null when the gateway predates the field. */
     val total: Int? = null,
     val commits: List<GatewayGitCommit> = emptyList(),
-    /** In compare mode, the target's tip followed by any commits beyond it; empty otherwise. */
-    val target: List<GatewayGitCommit> = emptyList(),
+    /** The commit the workspace is read against, so the app can mark the branch's own commits. */
+    @SerialName("baseCommit") val baseCommit: String = "",
 )
 
 /** A commit of `GET /git/log`; times are Unix seconds. */

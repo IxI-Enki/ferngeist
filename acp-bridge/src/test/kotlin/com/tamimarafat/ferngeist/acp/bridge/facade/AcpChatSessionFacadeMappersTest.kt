@@ -69,21 +69,15 @@ class AcpChatSessionFacadeMappersTest {
     }
 
     @Test
-    fun `a log page keeps the target commits apart from the range`() {
-        val page =
-            GatewayGitLog(
-                commits = listOf(GatewayGitCommit("mine")),
-                target = listOf(GatewayGitCommit("tip")),
-            ).toChatGitLogPage()
-
-        assertEquals(listOf("mine"), page.commits.map { it.sha })
-        assertEquals(listOf("tip"), page.target.map { it.sha })
-    }
-
-    @Test
     fun `a log page carries the walk's total, null when the gateway omits it`() {
         assertEquals(7, GatewayGitLog(total = 7).toChatGitLogPage().total)
         assertNull(GatewayGitLog().toChatGitLogPage().total)
+    }
+
+    @Test
+    fun `a log page carries the base the workspace is read against, null when there is none`() {
+        assertEquals("feabf553", GatewayGitLog(baseCommit = "feabf553").toChatGitLogPage().base)
+        assertNull(GatewayGitLog().toChatGitLogPage().base)
     }
 
     @Test

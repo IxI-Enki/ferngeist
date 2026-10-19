@@ -265,15 +265,15 @@ internal fun GatewayChangedFile.toChatChangedFile(): ChatChangedFile =
         staged = staged,
     )
 
-/** A history page; the gateway's `""` for an empty repository or no `origin` becomes null. */
+/** A history page; the gateway's `""` for an empty repository, no `origin` or no base becomes null. */
 internal fun GatewayGitLog.toChatGitLogPage(): ChatGitLogPage =
     ChatGitLogPage(
         head = head.ifBlank { null },
         commits = commits.map { it.toChatGitCommit() },
-        target = target.map { it.toChatGitCommit() },
         hasMore = hasMore,
         remoteUrl = remoteUrl.ifBlank { null },
         total = total,
+        base = baseCommit.ifBlank { null },
     )
 
 internal fun GatewayGitCommit.toChatGitCommit(): ChatGitCommit =

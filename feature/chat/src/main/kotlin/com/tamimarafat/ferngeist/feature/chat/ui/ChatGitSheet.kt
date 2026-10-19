@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -54,6 +55,7 @@ import com.tamimarafat.ferngeist.core.model.ChatGitStatus
 import com.tamimarafat.ferngeist.feature.chat.GitHistoryState
 import com.tamimarafat.ferngeist.feature.chat.GitRefsState
 import com.tamimarafat.ferngeist.feature.chat.R
+import com.tamimarafat.ferngeist.feature.chat.gitBranchScope
 import kotlinx.coroutines.delay
 
 private const val DATE_TICK_MILLIS = 60_000L
@@ -378,7 +380,6 @@ private fun GitSheetTabsPage(
                         shown == 1 ->
                             GitHistoryBody(
                                 history = history,
-                                compareName = compare.ref?.name,
                                 onCommitClick = onCommitClick,
                                 onLoadGitLog = onLoadGitLog,
                             )
@@ -403,8 +404,6 @@ private fun GitSheetTabsPage(
 @Composable
 private fun GitHistoryBody(
     history: GitHistoryState,
-    /** The compare target's short name, for the empty range's copy; null for plain history. */
-    compareName: String?,
     onCommitClick: (String) -> Unit,
     onLoadGitLog: (more: Boolean) -> Unit,
 ) {
@@ -415,6 +414,12 @@ private fun GitHistoryBody(
             value = System.currentTimeMillis()
         }
     }
+    // A page still in flight may yet reach the base commit, so only the loaded pages can say
+    // where this branch's own work stops.
+    val scope =
+        remember(history.commits, history.hasMore, history.base) {
+            gitBranchScope(history.commits, history.base, history.hasMore)
+        }
     when {
         history.commits.isEmpty() && history.error != null ->
             ErrorStateCard(
@@ -431,12 +436,7 @@ private fun GitHistoryBody(
         !history.isLoaded -> GitHistorySkeleton()
         history.commits.isEmpty() ->
             Text(
-                text =
-                    if (compareName != null) {
-                        stringResource(R.string.chat_git_compare_history_empty, compareName)
-                    } else {
-                        stringResource(R.string.chat_git_history_empty)
-                    },
+                text = stringResource(R.string.chat_git_history_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp),
@@ -449,7 +449,7 @@ private fun GitHistoryBody(
                 isLoadingMore = history.isLoadingMore,
                 onLoadMore = { onLoadGitLog(true) },
                 moreError = history.moreError,
-                compareTip = history.target.firstOrNull().takeIf { !history.hasMore },
+                scope = scope,
             )
     }
 }
@@ -466,7 +466,7 @@ private fun GitCommitPage(
     onRetry: () -> Unit,
     onFileClick: (ChatChangedFile) -> Unit,
 ) {
-    val commit = (history.commits + history.target).firstOrNull { it.sha == sha }
+    val commit = history.commits.firstOrNull { it.sha == sha }
     if (commit == null) {
         // shortcut: a commit past page 1 is not reloaded after process death, so the page goes back to
         // History once page 1 lands without it; load pages until it appears if that ever matters.

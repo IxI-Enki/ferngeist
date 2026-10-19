@@ -260,6 +260,10 @@
     <string name="chat_git_history_empty">No commits yet</string>
     <string name="chat_git_history_error_title">Couldn\'t load history</string>
     <string name="chat_git_history_more_failed">Couldn\'t load more commits</string>
+    <plurals name="chat_git_day_commits">
+        <item quantity="one">%1$d commit that day</item>
+        <item quantity="other">%1$d commits that day</item>
+    </plurals>
     <string name="chat_git_compare_vs">vs</string>
     <string name="chat_git_compare_working_tree">Working tree</string>
     <string name="chat_git_compare_uncommitted">Uncommitted changes</string>
@@ -271,7 +275,6 @@
     <string name="chat_git_compare_current">current</string>
     <string name="chat_git_compare_error_title">Couldn\'t load the comparison</string>
     <string name="chat_git_compare_identical">No differences from %1$s</string>
-    <string name="chat_git_compare_history_empty">No commits beyond %1$s</string>
     <string name="chat_load_earlier">Load earlier messages</string>
     <string-array name="chat_empty_titles">
         <item>What do you want to build today?</item>

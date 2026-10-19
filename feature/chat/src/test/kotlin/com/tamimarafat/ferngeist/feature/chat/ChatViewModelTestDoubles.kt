@@ -272,22 +272,17 @@ open class FakeChatSessionFacade : ChatSessionFacade {
     /** (head, skip) of each [fetchGitLog] request, in order. */
     val gitLogRequests: MutableList<Pair<String?, Int>> = mutableListOf()
 
-    /** The compare ref of each [fetchGitLog] request, parallel to [gitLogRequests]. */
-    val gitLogCompareRequests: MutableList<String?> = mutableListOf()
-
-    /** Answers [fetchGitCommitFiles]; throw from it to fail the commit. */
-    var gitCommitFiles: suspend (sha: String) -> List<ChatChangedFile>? = { null }
-
     override suspend fun fetchGitLog(
         head: String?,
         skip: Int,
-        compare: String?,
     ): ChatGitLogPage? {
         if (gatewayWorkspaceConnectionFlow.value == null) return null
         gitLogRequests += head to skip
-        gitLogCompareRequests += compare
         return gitLog(head, skip)
     }
+
+    /** Answers [fetchGitCommitFiles]; throw from it to fail the commit. */
+    var gitCommitFiles: suspend (sha: String) -> List<ChatChangedFile>? = { null }
 
     override suspend fun fetchGitRefs(): ChatGitRefs? =
         if (gatewayWorkspaceConnectionFlow.value == null) null else gitRefs()

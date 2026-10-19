@@ -1,7 +1,6 @@
 package com.tamimarafat.ferngeist.feature.chat
 
 import com.tamimarafat.ferngeist.core.model.ChatGitLogPage
-import com.tamimarafat.ferngeist.core.model.ChatGitRef
 import com.tamimarafat.ferngeist.core.model.ChatSessionFacade
 import com.tamimarafat.ferngeist.core.model.GitHistoryHeadGoneException
 import com.tamimarafat.ferngeist.core.model.GitHistoryUnsupportedException
@@ -12,6 +11,9 @@ import kotlinx.coroutines.launch
  * Reads commit history and a commit's file list into [ChatState.gitHistory]. A newer request
  * supersedes an older one by number, so a stale page or file list can never overwrite it.
  *
+ * The walk is always `HEAD`'s own history; which commits belong to this chat's branch is the
+ * view's business, marked against [ChatState.gitBranchBase].
+ *
  * Superseded requests are left to finish rather than cancelled: cancelling one on the main
  * thread makes Ktor's Android engine close the response stream there, which Android rejects
  * with NetworkOnMainThreadException.
@@ -21,8 +23,6 @@ internal class ChatGitHistoryLoader(
     private val facade: ChatSessionFacade,
     private val history: () -> GitHistoryState,
     private val update: (GitHistoryState.() -> GitHistoryState) -> Unit,
-    /** The branch the git sheet compares against; page 1 reads `target..HEAD` when set. */
-    private val compareRef: () -> ChatGitRef?,
 ) {
     private var logRequest = 0
     private var commitRequest = 0
@@ -36,8 +36,6 @@ internal class ChatGitHistoryLoader(
         val current = history()
         if (if (more) !current.canLoadMore else current.isLoading) return
         val request = ++logRequest
-        // Later pages continue the list they extend, even if the live target has moved on.
-        val compare = if (more) current.compare else compareRef()?.qualified
         update {
             if (more) {
                 copy(
@@ -54,12 +52,11 @@ internal class ChatGitHistoryLoader(
                     facade.fetchGitLog(
                         if (more) current.head else null,
                         if (more) current.commits.size else 0,
-                        compare,
                     )
                 }
             if (request != logRequest) return@launch
             result
-                .onSuccess { page -> onPage(page, more, compare) }
+                .onSuccess { page -> onPage(page, more) }
                 .onFailure { error -> onLogFailure(error, more) }
         }
     }
@@ -67,7 +64,6 @@ internal class ChatGitHistoryLoader(
     private fun onPage(
         page: ChatGitLogPage?,
         more: Boolean,
-        compare: String?,
     ) {
         if (page == null) {
             onLogFailure(IllegalStateException(NO_WORKSPACE), more)
@@ -97,27 +93,14 @@ internal class ChatGitHistoryLoader(
                 // Every page reports the whole walk, but a gateway that predates the field sends
                 // none: keep the number page one read rather than dropping the badge on a later page.
                 total = page.total ?: total,
-                compare = compare,
-                target = if (more) target else page.target,
+                // Likewise the base, which marks this branch's own commits: a page without one
+                // (an unmanaged checkout) must not unmark a list already drawn.
+                base = page.base ?: base,
                 isLoaded = true,
                 isLoading = false,
                 isLoadingMore = false,
             )
         }
-    }
-
-    /**
-     * The target changed, so the list is for another range: start over rather than reload over it.
-     * A page-1 reload would be a no-op while one is in flight (the first target's range would show
-     * under the second label), and its join would keep the old list's tail when the new range's last
-     * commit sits in it, which `target..HEAD` always does against the full log. Loads page 1 again
-     * only if history had been opened; a page 1 still in flight counts, or a quick second pick
-     * would leave the list empty. That reload also supersedes any page still in flight.
-     */
-    fun onCompareChanged() {
-        val wasOpened = history().let { it.isLoaded || it.isLoading }
-        update { GitHistoryState(unsupported = unsupported) }
-        if (wasOpened) loadLog(more = false)
     }
 
     private fun onLogFailure(

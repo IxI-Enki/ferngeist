@@ -17,7 +17,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** [ChatIntent.LoadGitLog], [ChatIntent.LoadGitCommit], and commit-mode [ChatIntent.LoadGitDiff]. */
+/**
+ * [ChatIntent.LoadGitLog], [ChatIntent.LoadGitCommit], and commit-mode [ChatIntent.LoadGitDiff].
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
     @Test
@@ -246,6 +248,41 @@ class ChatViewModelLoadGitLogTest : ChatViewModelTestBase() {
             assertEquals(listOf(renamed), state.gitHistory.commitFiles)
             assertEquals("abc", state.gitFileDiffCommit)
             assertEquals(listOf("abc" to "a.kt"), facade.gitDiffCommitRequests)
+        }
+
+    @Test
+    fun `the page's base reaches state, so the list can mark this branch's own commits`() =
+        runTest {
+            val (viewModel, _) =
+                gatewayViewModel {
+                    gitLog = { _, _ -> page("h", false, "a").copy(base = "base123") }
+                }
+
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
+            advanceUntilIdle()
+
+            assertEquals("base123", viewModel.state.value.gitHistory.base)
+        }
+
+    @Test
+    fun `a page with no base leaves a base already known in place`() =
+        runTest {
+            var withBase = true
+            val (viewModel, _) =
+                gatewayViewModel {
+                    gitLog = { head, _ ->
+                        page("h", head == null, if (head == null) "a" else "b")
+                            .copy(base = if (withBase) "base123" else null)
+                    }
+                }
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
+            advanceUntilIdle()
+
+            withBase = false
+            viewModel.dispatch(ChatIntent.LoadGitLog(more = true))
+            advanceUntilIdle()
+
+            assertEquals("base123", viewModel.state.value.gitHistory.base)
         }
 
     @Test

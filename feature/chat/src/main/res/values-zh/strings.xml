@@ -165,6 +165,9 @@
     <string name="chat_git_history_empty">暂无提交</string>
     <string name="chat_git_history_error_title">无法加载历史记录</string>
     <string name="chat_git_history_more_failed">无法加载更多提交</string>
+    <plurals name="chat_git_day_commits">
+        <item quantity="other">当天 %1$d 个提交</item>
+    </plurals>
     <string name="chat_git_compare_vs">vs</string>
     <string name="chat_git_compare_working_tree">工作区</string>
     <string name="chat_git_compare_uncommitted">未提交的更改</string>
@@ -176,7 +179,6 @@
     <string name="chat_git_compare_current">当前</string>
     <string name="chat_git_compare_error_title">无法加载比较结果</string>
     <string name="chat_git_compare_identical">与 %1$s 没有差异</string>
-    <string name="chat_git_compare_history_empty">相比 %1$s 没有更多提交</string>
     <string name="chat_load_earlier">加载更早的消息</string>
     <string-array name="chat_empty_titles">
         <item>今天想构建什么？</item>

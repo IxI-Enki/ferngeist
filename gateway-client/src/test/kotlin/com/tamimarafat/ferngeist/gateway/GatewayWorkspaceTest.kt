@@ -353,17 +353,17 @@ class GatewayWorkspaceTest {
         }
 
     @Test
-    fun `a log page decodes the target commits, and sends no beyond by default`() =
+    fun `a log page decodes the base commit, and sends no beyond by default`() =
         runTest {
             var captured: HttpRequestData? = null
             val repo =
                 repoCapturing(
-                    responseBody = """{"head":"h","commits":[],"target":[{"sha":"abc1234","subject":"tip"}]}""",
+                    responseBody = """{"head":"h","commits":[],"baseCommit":"abc1234"}""",
                 ) { captured = it }
 
             val log = repo.fetchGitLog("http", "h", "t", "rt-1", head = null, skip = 0, limit = 50)
 
-            assertEquals(listOf("abc1234"), log.target.map { it.sha })
+            assertEquals("abc1234", log.baseCommit)
             assertNull(requireNotNull(captured).url.parameters["beyond"])
         }
 

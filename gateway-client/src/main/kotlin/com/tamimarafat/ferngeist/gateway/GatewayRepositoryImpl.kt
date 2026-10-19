@@ -245,8 +245,13 @@ class GatewayRepositoryImpl
                     "v1",
                     "sessions",
                 )
-            return response.sessions
+            // A session this client is deleting still reads "disconnected" until the DELETE lands;
+            // resuming it would attach to an agent that is about to be stopped.
+            return response.sessions.filterNot { it.sessionId in closingSessionIds }
         }
+
+        /** Sessions with a DELETE in flight from this client. */
+        private val closingSessionIds = ConcurrentHashMap.newKeySet<String>()
 
         override suspend fun closeSession(
             scheme: String,
@@ -254,14 +259,19 @@ class GatewayRepositoryImpl
             gatewayCredential: String,
             sessionId: String,
         ) {
-            http.deleteJsonUnit(
-                scheme = scheme,
-                host = host,
-                credential = gatewayCredential,
-                "v1",
-                "sessions",
-                sessionId,
-            )
+            closingSessionIds += sessionId
+            try {
+                http.deleteJsonUnit(
+                    scheme = scheme,
+                    host = host,
+                    credential = gatewayCredential,
+                    "v1",
+                    "sessions",
+                    sessionId,
+                )
+            } finally {
+                closingSessionIds -= sessionId
+            }
         }
 
         override suspend fun getPushConfig(

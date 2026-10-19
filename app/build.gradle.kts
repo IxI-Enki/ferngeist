@@ -92,6 +92,12 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        jniLibs {
+            // F-Droid's builder has no NDK and can't strip this, so strip it nowhere or reproducible builds diverge.
+            keepDebugSymbols += "**/libdatastore_shared_counter.so"
+        }
+    }
     lint {
         lintConfig = file("lint.xml")
     }

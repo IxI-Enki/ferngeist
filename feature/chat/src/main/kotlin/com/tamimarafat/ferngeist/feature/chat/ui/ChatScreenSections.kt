@@ -859,9 +859,8 @@ private fun ToolCallDetailsSheet(
 private fun ToolCallDetailsHeader(toolCall: ToolCallDisplay) {
     val defaultToolCallLabel = stringResource(R.string.chat_tool_call)
     val toolCallSheetTitle = toolCall.titleWithFile().ifBlank { defaultToolCallLabel }
-    // Only an edit names a file whose whole content says something the diff does not; a read's file
-    // is what the sheet already shows.
-    val openablePath = toolCall.filePath()?.takeIf { toolCall.kind == ToolKind.EDIT }
+    // An edit's diff and a read's slice both show only part of the file.
+    val openablePath = toolCall.filePath()?.takeIf { toolCall.kind == ToolKind.EDIT || toolCall.kind == ToolKind.READ }
     val openFile = LocalFileOpener.current
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.Top) {

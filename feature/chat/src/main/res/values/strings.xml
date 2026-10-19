@@ -266,7 +266,6 @@
     <string name="chat_git_compare_current">current</string>
     <string name="chat_git_compare_error_title">Couldn\'t load the comparison</string>
     <string name="chat_git_compare_identical">No differences from %1$s</string>
-    <string name="chat_git_compare_history_empty">No commits beyond %1$s</string>
     <string name="chat_load_earlier">Load earlier messages</string>
     <string-array name="chat_empty_titles">
         <item>What do you want to build today?</item>

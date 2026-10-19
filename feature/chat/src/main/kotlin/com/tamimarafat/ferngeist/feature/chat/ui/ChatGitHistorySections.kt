@@ -1,4 +1,7 @@
 @file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+// One row, header or skeleton per shape the history draws; splitting them would spread the
+// graph's geometry across files.
+@file:Suppress("TooManyFunctions")
 
 package com.tamimarafat.ferngeist.feature.chat.ui
 
@@ -49,11 +52,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -75,11 +79,14 @@ import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.model.ChatGitCommit
 import com.tamimarafat.ferngeist.core.model.ChatGitRef
+import com.tamimarafat.ferngeist.feature.chat.BandFade
+import com.tamimarafat.ferngeist.feature.chat.GitBranchScope
 import com.tamimarafat.ferngeist.feature.chat.GraphEdge
 import com.tamimarafat.ferngeist.feature.chat.GraphRow
 import com.tamimarafat.ferngeist.feature.chat.GraphStroke
 import com.tamimarafat.ferngeist.feature.chat.R
 import com.tamimarafat.ferngeist.feature.chat.graphReach
+import com.tamimarafat.ferngeist.feature.chat.historyBandFades
 import com.tamimarafat.ferngeist.feature.chat.layoutGraph
 import com.tamimarafat.ferngeist.feature.chat.strokesFor
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -172,8 +179,8 @@ internal fun GitHistoryList(
     onLoadMore: () -> Unit = {},
     /** A later page failed; the end of the list offers [onLoadMore] as a retry. */
     moreError: String? = null,
-    /** The compare target's tip, after the last commit; only given once every page is in. */
-    compareTip: ChatGitCommit? = null,
+    /** Which rows are this branch's own work: the lane colour says so, and nothing else does. */
+    scope: GitBranchScope = GitBranchScope.None,
 ) {
     val listState = rememberLazyListState()
     val currentOnLoadMore by rememberUpdatedState(onLoadMore)
@@ -191,6 +198,9 @@ internal fun GitHistoryList(
     }
     val rows = remember(commits) { layoutGraph(commits) }
     val days = remember(commits) { commits.map { localDay(it.commitTimeMillis) } }
+    // One mark per band: a band is a commit row, or the day header above one, which takes the same
+    // mark as the row it sits over.
+    val fades = remember(days, scope) { historyBandFades(days, scope) }
     // A date header sits between days, so bends never cross it.
     val strokes =
         remember(rows, days) {
@@ -211,8 +221,11 @@ internal fun GitHistoryList(
         }
     Box(modifier = modifier.fillMaxWidth()) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
+            // Read here rather than in the item content: those lambdas run after the loop is done.
+            var band = 0
             commits.forEachIndexed { index, commit ->
                 if (index == 0 || days[index - 1] != days[index]) {
+                    val fade = fades[band++]
                     item(key = "day-${commit.sha}") {
                         GitDayHeader(
                             dayMillis = commit.commitTimeMillis,
@@ -220,9 +233,11 @@ internal fun GitHistoryList(
                             // The lines running from the day above into this one.
                             through = rows.getOrNull(index - 1)?.down.orEmpty(),
                             laneCount = laneCount,
+                            fade = fade,
                         )
                     }
                 }
+                val fade = fades[band++]
                 item(key = commit.sha) {
                     GitCommitRow(
                         commit = commit,
@@ -232,25 +247,7 @@ internal fun GitHistoryList(
                         laneCount = laneCount,
                         nowMillis = nowMillis,
                         onClick = { onCommitClick(commit) },
-                    )
-                }
-            }
-            if (compareTip != null && rows.isNotEmpty()) {
-                item(key = "compareTip") {
-                    // Carries on the last commit's lane, and on below the tip: the target's history goes on.
-                    val last = rows.last()
-                    val lane = listOf(GraphEdge(last.lane, last.lane, last.color))
-                    val tipRow = GraphRow(last.lane, last.color, isMerge = false, up = lane, down = lane)
-                    val tipStrokes = strokesFor(tipRow, null, null)
-                    GitCommitRow(
-                        commit = compareTip,
-                        row = tipRow,
-                        strokes = tipStrokes,
-                        reach = graphReach(listOf(tipStrokes)).first(),
-                        laneCount = laneCount,
-                        nowMillis = nowMillis,
-                        onClick = { onCommitClick(compareTip) },
-                        isTip = true,
+                        fade = fade,
                     )
                 }
             }
@@ -348,8 +345,8 @@ private fun GitCommitRow(
     laneCount: Int,
     nowMillis: Long,
     onClick: () -> Unit,
-    /** The compare target's tip: its connector is dotted, as it is not part of the range. */
-    isTip: Boolean = false,
+    /** Inherited history below the base: the lane recedes to the muted colour, the row does not. */
+    fade: BandFade = BandFade.None,
 ) {
     val description = commitDescription(commit, nowMillis)
     Row(
@@ -367,7 +364,7 @@ private fun GitCommitRow(
             reach = reach,
             laneCount = laneCount,
             isHead = commit.refs.any { it.isHead || it.kind == ChatGitRef.Kind.HEAD },
-            dotted = isTip,
+            fade = fade,
         )
         Spacer(Modifier.width(8.dp))
         // The card sits beside the graph so the lane lines run unbroken between rows.
@@ -428,6 +425,10 @@ private val RefKindOrder =
 
 internal fun ChatGitRef.order(): Int = if (isHead) -1 else RefKindOrder.indexOf(kind)
 
+/**
+ * Lane colours for a branch's own commits, in the order lanes are handed out. Deliberately no grey:
+ * [fadedLaneColor] is the only grey the graph draws, so any colour here means the branch's own work.
+ */
 @Composable
 private fun graphPalette(): List<Color> {
     val colors = MaterialTheme.colorScheme
@@ -437,9 +438,15 @@ private fun graphPalette(): List<Color> {
         colors.secondary,
         LocalGitSemanticColors.current.added,
         colors.error,
-        colors.outline,
     )
 }
+
+/**
+ * Inherited history's lane: the outline grey thinned out, so the gap in weight against the palette
+ * above is what marks where this branch's own work stops.
+ */
+@Composable
+private fun fadedLaneColor(): Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
 
 @Composable
 private fun GitGraphCell(
@@ -448,10 +455,18 @@ private fun GitGraphCell(
     reach: Float,
     laneCount: Int,
     isHead: Boolean,
-    dotted: Boolean = false,
+    /** How far this row's lane has receded into the muted colour, edge to edge. */
+    fade: BandFade = BandFade.None,
 ) {
     val palette = graphPalette()
-    val nodeColor = palette[row.color % palette.size]
+    val faded = fadedLaneColor()
+
+    // Each lane keeps its own colour, mixed toward the muted grey by how far down the fade it is.
+    fun laneColor(
+        slot: Int,
+        at: Float,
+    ) = lerp(palette[slot % palette.size], faded, at)
+
     val background = MaterialTheme.colorScheme.surfaceContainerLow
     // Only as wide as this row's own lines, so its card sits right beside them.
     val lanes = reach.coerceAtMost(laneCount - 1f) + 1f
@@ -466,13 +481,7 @@ private fun GitGraphCell(
                     fun x(lane: Int) = (6.dp + LaneWidth * lane.coerceAtMost(laneCount - 1) + LaneWidth / 2).toPx()
                     val mid = size.height / 2
                     val stroke = 2.dp.toPx()
-                    // Zero-length dashes with round caps draw dots.
-                    val edgeStroke =
-                        Stroke(
-                            width = stroke,
-                            cap = StrokeCap.Round,
-                            pathEffect = if (dotted) PathEffect.dashPathEffect(floatArrayOf(0f, 5.dp.toPx())) else null,
-                        )
+                    val edgeStroke = Stroke(width = stroke, cap = StrokeCap.Round)
 
                     // S-curve: both control points sit at the vertical midpoint, so the bend leaves and
                     // lands vertically and joins the straight runs without a kink. Bends span a full
@@ -486,10 +495,22 @@ private fun GitGraphCell(
                                 moveTo(x(s.from), top)
                                 cubicTo(x(s.from), bend, x(s.to), bend, x(s.to), bottom)
                             }
-                        drawPath(path, color = palette[s.color % palette.size], style = edgeStroke)
+                        val from = laneColor(s.color, fade.top)
+                        val to = laneColor(s.color, fade.bottom)
+                        if (fade.isFlat) {
+                            drawPath(path, color = from, style = edgeStroke)
+                        } else {
+                            // Over the row's height, not the path's: a bend's bounds are not the row's.
+                            drawPath(
+                                path = path,
+                                brush = Brush.verticalGradient(listOf(from, to), startY = 0f, endY = size.height),
+                                style = edgeStroke,
+                            )
+                        }
                     }
                     val center = Offset(x(row.lane), mid)
                     val radius = (if (row.isMerge) 5.dp else 4.dp).toPx()
+                    val nodeColor = laneColor(row.color, fade.mid)
                     if (isHead) {
                         // Hollow ring: punch out the lines behind it, then stroke the ring.
                         drawCircle(color = background, radius = radius + stroke / 2, center = center)
@@ -508,8 +529,11 @@ private fun GitDayHeader(
     nowMillis: Long,
     through: List<GraphEdge>,
     laneCount: Int,
+    /** The rows below are inherited history, so their lines recede with them. */
+    fade: BandFade = BandFade.None,
 ) {
     val palette = graphPalette()
+    val faded = fadedLaneColor()
     val lanes = through.map { it.to }
     Row(
         modifier = Modifier.fillMaxWidth().height(DayHeaderHeight).padding(end = 12.dp),
@@ -523,12 +547,22 @@ private fun GitDayHeader(
                     .drawBehind {
                         through.forEach { e ->
                             val x = (6.dp + LaneWidth * e.to.coerceAtMost(laneCount - 1) + LaneWidth / 2).toPx()
-                            drawLine(
-                                color = palette[e.color % palette.size],
-                                start = Offset(x, 0f),
-                                end = Offset(x, size.height),
-                                strokeWidth = 2.dp.toPx(),
-                            )
+                            val start = Offset(x, 0f)
+                            val end = Offset(x, size.height)
+                            val width = 2.dp.toPx()
+                            val lane = palette[e.color % palette.size]
+                            val from = lerp(lane, faded, fade.top)
+                            val to = lerp(lane, faded, fade.bottom)
+                            if (fade.isFlat) {
+                                drawLine(color = from, start = start, end = end, strokeWidth = width)
+                            } else {
+                                drawLine(
+                                    brush = Brush.verticalGradient(listOf(from, to), startY = 0f, endY = size.height),
+                                    start = start,
+                                    end = end,
+                                    strokeWidth = width,
+                                )
+                            }
                         }
                     },
         )

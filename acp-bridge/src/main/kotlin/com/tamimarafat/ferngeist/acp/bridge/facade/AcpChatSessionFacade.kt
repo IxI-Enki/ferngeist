@@ -329,7 +329,6 @@ class AcpChatSessionFacade(
     override suspend fun fetchGitLog(
         head: String?,
         skip: Int,
-        compare: String?,
     ): ChatGitLogPage? {
         val connection = _gatewayWorkspaceConnection.value ?: return null
         val acpSessionId = liveSessionIdOrNull() ?: return null
@@ -344,9 +343,6 @@ class AcpChatSessionFacade(
                     skip = skip,
                     limit = GIT_LOG_PAGE_SIZE,
                     acpSessionId = acpSessionId,
-                    compare = compare,
-                    // Page 1 of a compare range also brings the target's tip, to show where it forks from.
-                    beyond = if (compare != null && skip == 0) 1 else 0,
                 ).toChatGitLogPage()
         } catch (error: GatewayRequestException) {
             throw gitLogFailure(error, pinnedHead = head != null)

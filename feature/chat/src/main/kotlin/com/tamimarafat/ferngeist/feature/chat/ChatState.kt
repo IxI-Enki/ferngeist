@@ -111,6 +111,8 @@ data class GitHistoryState(
     val remoteUrl: String? = null,
     /** The whole walk's size, shown as the History tab's badge; null when the gateway predates it. */
     val total: Int? = null,
+    /** The commit the gateway reads this workspace against, marking the branch's own commits; null when there is none. */
+    val base: String? = null,
     /** Page 1 has answered at least once, so an empty [commits] means an empty repository. */
     val isLoaded: Boolean = false,
     val isLoading: Boolean = false,
@@ -125,10 +127,6 @@ data class GitHistoryState(
     val commitFiles: List<ChatChangedFile>? = null,
     val isCommitLoading: Boolean = false,
     val commitError: String? = null,
-    /** The qualified ref [commits] was read against; null for plain history. Later pages page with it. */
-    val compare: String? = null,
-    /** The compare target's tip (then any commits beyond it) from page 1; empty for plain history. */
-    val target: List<ChatGitCommit> = emptyList(),
 ) {
     /** A next page exists from a pinned head and no page is in flight. */
     val canLoadMore: Boolean get() = hasMore && head != null && !isLoading && !isLoadingMore

@@ -165,7 +165,6 @@
     <string name="chat_git_compare_current">বর্তমান</string>
     <string name="chat_git_compare_error_title">তুলনা লোড করা যায়নি</string>
     <string name="chat_git_compare_identical">%1$s থেকে কোনো পার্থক্য নেই</string>
-    <string name="chat_git_compare_history_empty">%1$s ছাড়িয়ে কোনো কমিট নেই</string>
     <string name="chat_load_earlier">আগের বার্তাগুলো লোড করুন</string>
     <string-array name="chat_empty_titles">
         <item>আজ কী বানাতে চাও?</item>

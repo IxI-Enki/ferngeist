@@ -286,7 +286,6 @@ class ChatViewModel
                 facade = sessionFacade,
                 history = { state.value.gitHistory },
                 update = { reducer -> updateState { copy(gitHistory = gitHistory.reducer()) } },
-                compareRef = { state.value.compareRef },
             )
 
         /** The reader picked a compare target by hand, so [preselectDefaultCompare] stands down. */
@@ -840,7 +839,6 @@ class ChatViewModel
                 copy(compareRef = ref, compareStatus = null, isCompareStatusLoading = false, compareStatusError = null)
             }
             gitDiffLoader.refreshCompare()
-            gitHistoryLoader.onCompareChanged()
         }
 
         /** One-shot intents outside the send/streaming core: diff fetch, hint flag, session close. */

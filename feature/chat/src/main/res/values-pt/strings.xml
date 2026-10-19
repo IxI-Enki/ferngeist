@@ -165,7 +165,6 @@
     <string name="chat_git_compare_current">atual</string>
     <string name="chat_git_compare_error_title">Não foi possível carregar a comparação</string>
     <string name="chat_git_compare_identical">Sem diferenças em relação a %1$s</string>
-    <string name="chat_git_compare_history_empty">Nenhum commit além de %1$s</string>
     <string name="chat_load_earlier">Carregar mensagens anteriores</string>
     <string-array name="chat_empty_titles">
         <item>O que queres construir hoje?</item>

@@ -281,8 +281,12 @@ data class ChatGitLogPage(
      * to the end. Null when the gateway predates the field.
      */
     val total: Int? = null,
-    /** In compare mode, the target's tip followed by any commits beyond it; empty otherwise. */
-    val target: List<ChatGitCommit> = emptyList(),
+    /**
+     * The commit the gateway reads this workspace against: a managed worktree's base, so the
+     * history above it is this branch's own work even after it is merged and `HEAD` stops naming
+     * it. Null when the workspace has no base to name, and the list then draws unmarked.
+     */
+    val base: String? = null,
 )
 
 /** The gateway predates commit history, so the history view has nothing to read. */
@@ -480,13 +484,12 @@ interface ChatSessionFacade {
     /**
      * One page of history from [head] (`HEAD` when null), or null when the chat has no gateway
      * workspace. Throws [GitHistoryUnsupportedException] on a gateway without history and
-     * [GitHistoryHeadGoneException] when [head] no longer resolves. With [compare] set the page is
-     * the commits `HEAD` has that the qualified ref does not.
+     * [GitHistoryHeadGoneException] when [head] no longer resolves. Always the whole walk from
+     * `HEAD`, which [ChatGitLogPage.base] marks this branch's own work within.
      */
     suspend fun fetchGitLog(
         head: String?,
         skip: Int,
-        compare: String? = null,
     ): ChatGitLogPage? = null
 
     /**

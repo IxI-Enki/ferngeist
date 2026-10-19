@@ -169,7 +169,6 @@
     <string name="chat_git_compare_current">текущая</string>
     <string name="chat_git_compare_error_title">Не удалось загрузить сравнение</string>
     <string name="chat_git_compare_identical">Нет отличий от %1$s</string>
-    <string name="chat_git_compare_history_empty">Нет коммитов сверх %1$s</string>
     <string name="chat_load_earlier">Загрузить более ранние сообщения</string>
     <string-array name="chat_empty_titles">
         <item>Что будем строить сегодня?</item>

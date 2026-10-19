@@ -193,62 +193,30 @@ class ChatViewModelCompareTest : ChatViewModelTestBase() {
         }
 
     @Test
-    fun `changing the target restarts history on the new range instead of reloading over the old`() =
+    fun `changing the target leaves the loaded history alone`() =
         runTest {
-            val mainReply = CompletableDeferred<Unit>()
-            var calls = 0
             val (viewModel, facade) =
                 gatewayViewModel {
                     gitStatus = ChatGitStatus(branch = "feat")
-                    gitLog = { _, _ ->
-                        // Request 2 is the main range's page 1, held back while the reader picks dev.
-                        val call = ++calls
-                        if (call == 2) mainReply.await()
-                        page("h$call", false, "sha$call")
-                    }
+                    gitLog = { _, _ -> page("h", false, "a") }
                 }
             viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
             advanceUntilIdle()
 
             viewModel.dispatch(ChatIntent.SelectCompareRef(main))
-            advanceUntilIdle()
             viewModel.dispatch(ChatIntent.SelectCompareRef(dev))
             advanceUntilIdle()
-            mainReply.complete(Unit)
-            advanceUntilIdle()
 
-            val history = viewModel.state.value.gitHistory
-            // The held-back main reply never lands; dev's page 1 is shown, with none of the old list.
-            assertEquals("refs/heads/dev", history.compare)
-            assertEquals(listOf("sha3"), history.commits.map { it.sha })
-            assertEquals(listOf<String?>(null, "refs/heads/main", "refs/heads/dev"), facade.gitLogCompareRequests)
-        }
-
-    @Test
-    fun `later history pages use the compare ref the list was read with`() =
-        runTest {
-            val (viewModel, facade) =
-                gatewayViewModel {
-                    gitStatus = ChatGitStatus(branch = "feat")
-                    gitLog = { head, _ -> page("h", head == null, if (head == null) "a" else "b") }
-                }
-            viewModel.dispatch(ChatIntent.SelectCompareRef(main))
-            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
-            advanceUntilIdle()
-
-            viewModel.dispatch(ChatIntent.LoadGitLog(more = true))
-            advanceUntilIdle()
-
-            assertEquals(listOf<String?>("refs/heads/main", "refs/heads/main"), facade.gitLogCompareRequests)
-            assertEquals(
-                listOf("a", "b"),
+            // History is always HEAD's own walk, so a new target neither reloads nor filters it.
+            val shas =
                 viewModel.state.value.gitHistory.commits
-                    .map { it.sha },
-            )
+                    .map { it.sha }
+            assertEquals(listOf("a"), shas)
+            assertEquals(listOf(null to 0), facade.gitLogRequests)
         }
 
     @Test
-    fun `changing the target does not load history that was never opened`() =
+    fun `a target picked before history was opened does not load it`() =
         runTest {
             val (viewModel, facade) = gatewayViewModel { gitStatus = ChatGitStatus(branch = "feat") }
 
@@ -303,82 +271,6 @@ class ChatViewModelCompareTest : ChatViewModelTestBase() {
             advanceUntilIdle()
 
             assertTrue(viewModel.state.value.gitRefs.unsupported)
-        }
-
-    @Test
-    fun `page 1 of a compare range keeps the target's tip`() =
-        runTest {
-            val (viewModel, _) =
-                gatewayViewModel {
-                    gitStatus = ChatGitStatus(branch = "feat")
-                    gitLog = { _, _ -> page("h", false, "mine").copy(target = page("t", false, "tip").commits) }
-                }
-            viewModel.dispatch(ChatIntent.SelectCompareRef(main))
-            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
-            advanceUntilIdle()
-
-            val history = viewModel.state.value.gitHistory
-            assertEquals(listOf("mine"), history.commits.map { it.sha })
-            assertEquals(listOf("tip"), history.target.map { it.sha })
-        }
-
-    @Test
-    fun `later pages leave the tip from page 1 alone`() =
-        runTest {
-            val (viewModel, _) =
-                gatewayViewModel {
-                    gitStatus = ChatGitStatus(branch = "feat")
-                    gitLog = { head, _ ->
-                        if (head == null) {
-                            page("h", true, "a").copy(target = page("t", false, "tip").commits)
-                        } else {
-                            page("h", false, "b")
-                        }
-                    }
-                }
-            viewModel.dispatch(ChatIntent.SelectCompareRef(main))
-            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
-            advanceUntilIdle()
-
-            viewModel.dispatch(ChatIntent.LoadGitLog(more = true))
-            advanceUntilIdle()
-
-            assertEquals(
-                listOf("tip"),
-                viewModel.state.value.gitHistory.target
-                    .map { it.sha },
-            )
-        }
-
-    @Test
-    fun `a range without a target does not inherit the previous range's tip`() =
-        runTest {
-            var calls = 0
-            val (viewModel, _) =
-                gatewayViewModel {
-                    gitStatus = ChatGitStatus(branch = "feat")
-                    gitLog = { _, _ ->
-                        // Only the compare range has a target; plain history sends none.
-                        val page = page("h", false, "mine")
-                        if (++calls == 1) page.copy(target = page("t", false, "maintip").commits) else page
-                    }
-                }
-            viewModel.dispatch(ChatIntent.SelectCompareRef(main))
-            viewModel.dispatch(ChatIntent.LoadGitLog(more = false))
-            advanceUntilIdle()
-            assertEquals(
-                listOf("maintip"),
-                viewModel.state.value.gitHistory.target
-                    .map { it.sha },
-            )
-
-            viewModel.dispatch(ChatIntent.SelectCompareRef(null))
-            advanceUntilIdle()
-
-            assertTrue(
-                viewModel.state.value.gitHistory.target
-                    .isEmpty(),
-            )
         }
 
     @Test

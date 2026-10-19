@@ -154,7 +154,12 @@ private fun FileTitle(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FileChip(path, textStyle = MaterialTheme.typography.bodyMedium)
+            // Weighted so a long name ellipsizes instead of squeezing the badge into a letter-per-line column.
+            FileChip(
+                path,
+                modifier = Modifier.weight(1f, fill = false),
+                textStyle = MaterialTheme.typography.bodyMedium,
+            )
             origin?.let { FileOriginBadge(it) }
         }
         Text(
@@ -177,6 +182,8 @@ private fun FileOriginBadge(label: String) {
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
         )
     }

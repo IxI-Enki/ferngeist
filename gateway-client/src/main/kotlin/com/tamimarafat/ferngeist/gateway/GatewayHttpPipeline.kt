@@ -1,5 +1,6 @@
 package com.tamimarafat.ferngeist.gateway
 
+import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.request.accept
 import io.ktor.client.request.delete
@@ -19,6 +20,7 @@ import java.net.URLEncoder
 
 private const val HTTP_UNAUTHORIZED = 401
 private const val HTTP_FORBIDDEN = 403
+private const val NANOS_PER_MS = 1_000_000L
 
 /**
  * Every JSON call the gateway repository makes funnels through here: [getJson],
@@ -136,6 +138,19 @@ internal class GatewayHttpPipeline(
         }
     }
 
+    /** Wall-clock to the response head of one call, under the tag the chat open's step timer uses. */
+    private fun logTiming(
+        method: String,
+        endpoint: String,
+        response: HttpResponse,
+        startNanos: Long,
+    ) {
+        val millis = (System.nanoTime() - startNanos) / NANOS_PER_MS
+        // Path only: the query can carry file paths and refs.
+        val path = endpoint.substringBefore('?').substringAfter("://").substringAfter('/')
+        runCatching { Log.i("FerngeistLoad", "rest $method /$path ${response.status.value} ${millis}ms") }
+    }
+
     /**
      * Signs, sends, and on the first correctable proof rejection re-signs with a fresh
      * nonce and fresh timestamp and sends once more. Never resends the original
@@ -158,7 +173,9 @@ internal class GatewayHttpPipeline(
         send: suspend (GatewayAuthHeaders?) -> HttpResponse,
     ): HttpResponse {
         val proofCredential = credential?.takeIf { it.isNotBlank() }
+        val startNanos = System.nanoTime()
         var response = send(proofHeaders(host, proofCredential, method, endpoint, body))
+        logTiming(method, endpoint, response, startNanos)
         if (response.status.isSuccess()) {
             return response
         }
@@ -170,7 +187,9 @@ internal class GatewayHttpPipeline(
             response.status.value == HTTP_UNAUTHORIZED &&
             rejection.isTransientProofRejection(failure)
         ) {
+            val retryNanos = System.nanoTime()
             response = send(proofHeaders(host, proofCredential, method, endpoint, body))
+            logTiming(method, endpoint, response, retryNanos)
             if (response.status.isSuccess()) {
                 return response
             }

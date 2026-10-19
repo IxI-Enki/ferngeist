@@ -7,8 +7,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,8 +27,12 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,6 +51,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
@@ -468,7 +476,7 @@ private fun NavGraphBuilder.ServerListDestination(
     composable("server_list") {
         val viewModel: ServerListViewModel = hiltViewModel()
 
-        NotificationPermissionEffect()
+        StartupPermissionsEffect()
 
         val animatedContentScope = this
         val sharedTransitionScope: SharedTransitionScope = sharedTransitionLayout
@@ -641,22 +649,26 @@ private fun NavGraphBuilder.AddServerDestination(navController: NavHostControlle
                 },
             ),
     ) {
-        val viewModel: AddServerViewModel = hiltViewModel()
-        AddServerScreen(
-            onNavigateBack = { navController.popBackStack() },
-            viewModel = viewModel,
-        )
+        LocalNetworkPermissionGate {
+            val viewModel: AddServerViewModel = hiltViewModel()
+            AddServerScreen(
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = viewModel,
+            )
+        }
     }
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private fun NavGraphBuilder.AddGatewayDestination(navController: NavHostController) {
     composable("add_gateway") {
-        val viewModel: AddGatewayViewModel = hiltViewModel()
-        AddGatewayScreen(
-            onNavigateBack = { navController.popBackStack() },
-            viewModel = viewModel,
-        )
+        LocalNetworkPermissionGate {
+            val viewModel: AddGatewayViewModel = hiltViewModel()
+            AddGatewayScreen(
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = viewModel,
+            )
+        }
     }
 }
 
@@ -847,26 +859,108 @@ private fun NavGraphBuilder.ChatDestination(
 }
 
 /**
- * Requests the `POST_NOTIFICATIONS` permission (Android 13+) on first composition
- * if it has not been granted yet. Runs once via [LaunchedEffect].
+ * Apps targeting Android 17 get no LAN traffic without `ACCESS_LOCAL_NETWORK`, and the failure
+ * surfaces only as a connect timeout. Asks for it over the add screens, which stay usable either way.
  */
 @Composable
-private fun NotificationPermissionEffect() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        val context = LocalContext.current
-        val permission = Manifest.permission.POST_NOTIFICATIONS
-        val hasPermission =
-            remember {
-                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+private fun LocalNetworkPermissionGate(content: @Composable () -> Unit) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN) {
+        content()
+        return
+    }
+
+    val context = LocalContext.current
+    val activity = LocalActivity.current
+    val permission = Manifest.permission.ACCESS_LOCAL_NETWORK
+
+    fun isGranted() = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    var granted by remember { mutableStateOf(isGranted()) }
+    // Declining only hides the dialog: public HTTPS gateways need no LAN access and must stay pairable.
+    var dismissed by rememberSaveable { mutableStateOf(false) }
+    // After a second denial the system refuses without showing a dialog; only Settings can grant it.
+    var deniedForGood by rememberSaveable { mutableStateOf(false) }
+    // The system prompt only follows a tap on Allow: an unprompted re-ask after the launch request
+    // would spend the user's last denial before they know why it is asked.
+    val launcher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { result ->
+            granted = result
+            deniedForGood = !result && activity?.shouldShowRequestPermissionRationale(permission) == false
+        }
+
+    // Picks up a grant made in Settings when the user comes back.
+    LifecycleResumeEffect(Unit) {
+        granted = isGranted()
+        onPauseOrDispose { }
+    }
+
+    content()
+    if (granted || dismissed) return
+    AlertDialog(
+        onDismissRequest = { dismissed = true },
+        title = { Text(stringResource(R.string.local_network_title)) },
+        text = { Text(stringResource(R.string.local_network_body)) },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (deniedForGood) {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.fromParts("package", context.packageName, null),
+                            ),
+                        )
+                    } else {
+                        launcher.launch(permission)
+                    }
+                },
+            ) {
+                Text(
+                    stringResource(
+                        if (deniedForGood) R.string.local_network_open_settings else R.string.local_network_allow,
+                    ),
+                )
             }
-        if (!hasPermission) {
-            val launcher =
-                rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission(),
-                ) { }
-            LaunchedEffect(Unit) {
-                launcher.launch(permission)
+        },
+        dismissButton = {
+            TextButton(onClick = { dismissed = true }) {
+                Text(stringResource(R.string.local_network_not_now))
             }
+        },
+    )
+}
+
+/**
+ * Requests the home screen's missing runtime permissions on first composition, in one prompt:
+ * an activity runs one permission request at a time and rejects a second concurrent one.
+ * Local network access (Android 17+) covers gateways and servers paired before it was needed.
+ * Asks once per launch: saveable state survives rotation and returning to the home screen.
+ */
+@Composable
+private fun StartupPermissionsEffect() {
+    val context = LocalContext.current
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val missing =
+        remember {
+            buildList {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
+                    add(Manifest.permission.ACCESS_LOCAL_NETWORK)
+                }
+            }.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        }
+    if (missing.isEmpty()) return
+    val launcher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions(),
+        ) { }
+    LaunchedEffect(Unit) {
+        if (!asked) {
+            asked = true
+            launcher.launch(missing.toTypedArray())
         }
     }
 }

@@ -1,0 +1,6 @@
+• Compare your working tree against another branch, including the default branch
+• Commit history shows where a branch's own commits stop, with daily commit counts
+• Open files named in assistant replies, and a diff's whole file from the git panel
+• Fixed gateway connections failing when the phone's clock is off
+• Asks for local network permission on Android 17
+• Other fixes and polish

@@ -1,3 +1,33 @@
+
+## [1.5.0] - 2026-10-19
+
+### Documentation
+
+- *(readme)* Add DeepWiki badge ([1523daa](https://github.com/arafatamim/Ferngeist/commit/1523daaa60c0394f4d806ca07459b39026ca3c59))
+
+### Features
+
+- *(chat)* Compare the working tree against another branch ([7ae52c5](https://github.com/arafatamim/Ferngeist/commit/7ae52c5f369cdf93d7fd57cf363a8aca6d356ca3))
+- *(chat)* Show the walk's size on the History tab ([5103e3e](https://github.com/arafatamim/Ferngeist/commit/5103e3e8aea10aee4cd1b5e6db500f23c90aa797))
+- *(chat)* Open the git sheet comparing against the default branch ([1f715d5](https://github.com/arafatamim/Ferngeist/commit/1f715d599e803577d125f3da0882ad70aa07e2c8))
+- *(chat)* Open files named in assistant replies ([332a29f](https://github.com/arafatamim/Ferngeist/commit/332a29f2891d5604c3a4cc1d80303b4d076fa37f))
+- *(chat)* Open a diff's whole file from the git panel ([67e6d85](https://github.com/arafatamim/Ferngeist/commit/67e6d85c50bb4cd352196c87e201dcfc02894482))
+- *(chat)* Mark where a branch's own commits stop in history ([728f77c](https://github.com/arafatamim/Ferngeist/commit/728f77cc9e08c0f5e16292c3de82b6ef04080786))
+- *(chat)* Count a day's commits beside its history header ([13d7a09](https://github.com/arafatamim/Ferngeist/commit/13d7a09afa0b354173222a3fbae83a76eef4c574))
+
+### Fixes
+
+- *(chat)* Stop long file names pushing out the diff counts ([4ea42ee](https://github.com/arafatamim/Ferngeist/commit/4ea42ee85a6ea30f4f8a061517a303af1a4cfe69))
+- *(chat)* Re-read git status on sheet open, resume and re-entry ([ac06be4](https://github.com/arafatamim/Ferngeist/commit/ac06be4ba9e95ec885c319bb596a56641247e22c))
+- *(gateway)* Sign proofs against the gateway's clock to survive device skew ([e609fc8](https://github.com/arafatamim/Ferngeist/commit/e609fc8913c51920f9c76e3115c92860f2e0be00))
+- *(android)* Request local network permission on Android 17 (#8) ([42d7265](https://github.com/arafatamim/Ferngeist/commit/42d726524302df4e3d1aaae3b3a35b0264be6056))
+- *(gateway)* Keep the status handshake on the versioned path ([6aa5d06](https://github.com/arafatamim/Ferngeist/commit/6aa5d0685cfe73d88bebf893316d77643f3c4010))
+- *(build)* Keep datastore native lib unstripped for reproducible builds ([4c4b388](https://github.com/arafatamim/Ferngeist/commit/4c4b388a6732c52fbdef0af8fd33cd0e9a66620f))
+
+### Merge
+
+- *(chat)* Open files named in assistant replies ([49c4e46](https://github.com/arafatamim/Ferngeist/commit/49c4e46dc88445f77e3e2c3ce9779268caa244f3))
+- *(chat)* Mark a branch's own commits in history ([6754936](https://github.com/arafatamim/Ferngeist/commit/675493640675bd44cdd7590939957b5e3eecdf59))
 ## [1.4.0] - 2026-10-18
 
 ### Features

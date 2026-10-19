@@ -92,6 +92,10 @@ android {
     buildFeatures {
         compose = true
     }
+    dependenciesInfo {
+        // F-Droid rejects APKs carrying the extra "Dependency metadata" signing block; Play reads it from the AAB.
+        includeInApk = false
+    }
     packaging {
         jniLibs {
             // F-Droid's builder has no NDK and can't strip this, so strip it nowhere or reproducible builds diverge.

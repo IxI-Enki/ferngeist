@@ -158,6 +158,11 @@
     <string name="chat_git_history_empty">Коммитов пока нет</string>
     <string name="chat_git_history_error_title">Не удалось загрузить историю</string>
     <string name="chat_git_history_more_failed">Не удалось загрузить больше коммитов</string>
+    <plurals name="chat_git_day_commits">
+        <item quantity="one">%1$d коммит в этот день</item>
+        <item quantity="few">%1$d коммита в этот день</item>
+        <item quantity="many">%1$d коммитов в этот день</item>
+    </plurals>
     <string name="chat_git_compare_vs">vs</string>
     <string name="chat_git_compare_working_tree">Рабочее дерево</string>
     <string name="chat_git_compare_uncommitted">Незафиксированные изменения</string>

@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -85,6 +86,7 @@ import com.tamimarafat.ferngeist.feature.chat.GraphEdge
 import com.tamimarafat.ferngeist.feature.chat.GraphRow
 import com.tamimarafat.ferngeist.feature.chat.GraphStroke
 import com.tamimarafat.ferngeist.feature.chat.R
+import com.tamimarafat.ferngeist.feature.chat.dayGroupSizes
 import com.tamimarafat.ferngeist.feature.chat.graphReach
 import com.tamimarafat.ferngeist.feature.chat.historyBandFades
 import com.tamimarafat.ferngeist.feature.chat.layoutGraph
@@ -101,6 +103,9 @@ private const val MAX_LANES = 6
 private const val MAX_REF_CHARS = 12
 private const val LOADING_MORE_ROWS = 3
 private const val LOAD_MORE_AHEAD = 10
+
+/** A day's count only earns its badge past this many commits; a shorter day's rows are right there. */
+private const val DAY_COUNT_ABOVE = 3
 
 /** The git sheet's Changes | History switch. Siblings, so switching crossfades rather than slides. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -198,6 +203,7 @@ internal fun GitHistoryList(
     }
     val rows = remember(commits) { layoutGraph(commits) }
     val days = remember(commits) { commits.map { localDay(it.commitTimeMillis) } }
+    val daySizes = remember(days) { dayGroupSizes(days) }
     // One mark per band: a band is a commit row, or the day header above one, which takes the same
     // mark as the row it sits over.
     val fades = remember(days, scope) { historyBandFades(days, scope) }
@@ -234,6 +240,7 @@ internal fun GitHistoryList(
                             through = rows.getOrNull(index - 1)?.down.orEmpty(),
                             laneCount = laneCount,
                             fade = fade,
+                            commits = daySizes[index] ?: 0,
                         )
                     }
                 }
@@ -522,7 +529,7 @@ private fun GitGraphCell(
     )
 }
 
-/** The day's label beside the graph; [through] lines carry on beside it so the graph stays whole. */
+/** The day's label beside the graph, with how many commits that day holds; [through] lines carry on beside it so the graph stays whole. */
 @Composable
 private fun GitDayHeader(
     dayMillis: Long,
@@ -531,6 +538,8 @@ private fun GitDayHeader(
     laneCount: Int,
     /** The rows below are inherited history, so their lines recede with them. */
     fade: BandFade = BandFade.None,
+    /** Commits loaded under this header; the badge waits for [DAY_COUNT_ABOVE] of them, and later pages add to the last day's count as they land. */
+    commits: Int = 0,
 ) {
     val palette = graphPalette()
     val faded = fadedLaneColor()
@@ -572,7 +581,34 @@ private fun GitDayHeader(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            modifier = Modifier.weight(1f).semantics { heading() },
+            modifier = Modifier.semantics { heading() },
+        )
+        if (commits > DAY_COUNT_ABOVE) {
+            Spacer(Modifier.width(6.dp))
+            GitDayCountBadge(commits)
+        }
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+/** The day's commit count, beside its label. */
+@Composable
+private fun GitDayCountBadge(commits: Int) {
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    // Read out after the day's label, which the number alone could not explain.
+    val description = pluralStringResource(R.plurals.chat_git_day_commits, commits, commits)
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = color.copy(alpha = 0.15f),
+        contentColor = color,
+    ) {
+        Text(
+            text = commits.toString(),
+            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+            modifier =
+                Modifier
+                    .padding(horizontal = 8.dp, vertical = 1.dp)
+                    .semantics { contentDescription = description },
         )
     }
 }

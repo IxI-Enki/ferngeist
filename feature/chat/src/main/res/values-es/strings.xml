@@ -154,6 +154,11 @@
     <string name="chat_git_history_empty">Aún no hay commits</string>
     <string name="chat_git_history_error_title">No se pudo cargar el historial</string>
     <string name="chat_git_history_more_failed">No se pudieron cargar más commits</string>
+    <plurals name="chat_git_day_commits">
+        <item quantity="one">%1$d commit ese día</item>
+        <item quantity="other">%1$d commits ese día</item>
+        <item quantity="many">%1$d commits ese día</item>
+    </plurals>
     <string name="chat_git_compare_vs">vs</string>
     <string name="chat_git_compare_working_tree">Árbol de trabajo</string>
     <string name="chat_git_compare_uncommitted">Cambios sin confirmar</string>

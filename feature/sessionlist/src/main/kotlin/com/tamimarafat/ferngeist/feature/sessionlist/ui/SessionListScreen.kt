@@ -81,7 +81,8 @@ fun SessionListScreen(
     LaunchedEffect(lifecycle, viewModel) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
-                viewModel.refreshSessions()
+                // The server list's launch just listed; the first pass after it must not launch again.
+                viewModel.refreshSessions(reuseRecent = true)
                 delay(SESSION_LIST_POLL_MS)
             }
         }

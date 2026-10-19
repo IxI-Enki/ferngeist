@@ -17,6 +17,7 @@ import com.tamimarafat.ferngeist.acp.bridge.connection.logConnectionFailure
 import com.tamimarafat.ferngeist.acp.bridge.connection.persistEnvValues
 import com.tamimarafat.ferngeist.acp.bridge.connection.shortInitializeFailureMessage
 import com.tamimarafat.ferngeist.acp.bridge.connection.toConnectionConfig
+import com.tamimarafat.ferngeist.acp.bridge.facade.OpenStepTimer
 import com.tamimarafat.ferngeist.acp.bridge.facade.mapConnectionState
 import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
 import com.tamimarafat.ferngeist.core.model.ChatConnectionState
@@ -81,11 +82,12 @@ class AgentLauncher(
      * before the server list navigates, so the session list paints rows instantly
      * instead of showing a second spinner. Best-effort: any failure (including
      * auth challenges) still navigates — the session screen surfaces listing
-     * failures exactly as it does today.
+     * failures exactly as it does today. A launch that just listed over its own
+     * connection ([AgentLaunchSession.launch]) makes this a no-op.
      */
     suspend fun prewarmSessions(serverId: String) {
         runCatching {
-            sessionCatalog.listSessions(serverId, cwd = null)
+            sessionCatalog.listSessions(serverId, cwd = null, reuseRecent = true)
         }.onFailure { error ->
             if (error is CancellationException) throw error
         }
@@ -101,6 +103,7 @@ class AgentLauncher(
             gatewaySourceRepository = gatewaySourceRepository,
             launchableTargetRepository = launchableTargetRepository,
             authEnvValueStore = authEnvValueStore,
+            sessionCatalog = sessionCatalog,
         )
 }
 
@@ -116,6 +119,7 @@ class AgentLaunchSession internal constructor(
     private val gatewaySourceRepository: GatewaySourceRepository,
     private val launchableTargetRepository: LaunchableTargetRepository,
     private val authEnvValueStore: AuthEnvValueStore,
+    private val sessionCatalog: SessionCatalog,
 ) {
     /** The transport's lifecycle, in the feature layer's own vocabulary. */
     val connectionState: StateFlow<ChatConnectionState> =
@@ -140,6 +144,18 @@ class AgentLaunchSession internal constructor(
      */
     suspend fun launch(server: LaunchableTarget): AgentLaunchOutcome {
         pendingGateway = null
+        val timer = OpenStepTimer()
+        try {
+            return launchTimed(server, timer)
+        } finally {
+            connection.recordTiming("launch", timer.report(sessionId = server.id, label = "launch"))
+        }
+    }
+
+    private suspend fun launchTimed(
+        server: LaunchableTarget,
+        timer: OpenStepTimer,
+    ): AgentLaunchOutcome {
         val config =
             when (server) {
                 is LaunchableTarget.Manual -> server.toConnectionConfig()
@@ -154,13 +170,19 @@ class AgentLaunchSession internal constructor(
                     context.config
                 }
             }
+        timer.mark("gateway")
 
         val initialized = withContext(Dispatchers.IO) { connection.connectAndInitialize(config) }
+        timer.mark("connect")
         if (initialized == null) return connectFailure(server)
 
         authMethods = initialized.authMethods
         return when (initialized) {
             is AcpInitializeResult.Ready -> {
+                // The session screen this opens needs the rows: list them here, over the live
+                // connection, instead of letting it launch the whole agent again.
+                sessionCatalog.adoptListing(server.id, connection)
+                timer.mark("list")
                 hangUp(connection, false)
                 pendingGateway = null
                 AgentLaunchOutcome.Ready(

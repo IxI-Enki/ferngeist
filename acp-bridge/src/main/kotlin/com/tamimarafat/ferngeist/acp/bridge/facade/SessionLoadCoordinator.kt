@@ -93,7 +93,7 @@ internal class SessionLoadCoordinator(
 }
 
 /**
- * Wall-clock of each step of one chat open, logged as a single line under the
+ * Wall-clock of each step of one chat open (or server-list launch, or session listing), logged as a single line under the
  * `FerngeistLoad` tag and to the diagnostics RPC log, next to the per-attach timing. `launch` is the
  * protocol probe and the gateway connect; `load` is session/load.
  */
@@ -108,11 +108,14 @@ internal class OpenStepTimer {
         markNanos = now
     }
 
-    /** Logs the open and returns its summary for the diagnostics log. */
-    fun report(sessionId: String): String {
+    /** Logs the [label]led flow (a chat open by default) and returns its summary for the diagnostics log. */
+    fun report(
+        sessionId: String,
+        label: String = "open",
+    ): String {
         val total = (System.nanoTime() - startNanos) / NANOS_PER_MS
         val summary = "${steps}total=${total}ms"
-        runCatching { android.util.Log.i("FerngeistLoad", "open sid=$sessionId $summary") }
+        runCatching { android.util.Log.i("FerngeistLoad", "$label sid=$sessionId $summary") }
         return summary
     }
 

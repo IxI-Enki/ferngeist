@@ -240,7 +240,8 @@ class SessionListViewModel
         private var lastListingFailed = false
 
         init {
-            refreshSessions()
+            // The server list's launch has usually just listed over its own connection.
+            refreshSessions(reuseRecent = true)
             viewModelScope.launch {
                 // A listing that failed while the network was down is stale the
                 // moment the network returns: nothing else re-runs it, so the
@@ -290,8 +291,13 @@ class SessionListViewModel
          *
          * @param isUserInitiated true when triggered by pull-to-refresh gesture;
          *   sets [refreshing] so the pull indicator shows only on user drag.
+         * @param reuseRecent true to accept a listing the catalog finished moments ago instead
+         *   of launching the agent again.
          */
-        fun refreshSessions(isUserInitiated: Boolean = false) {
+        fun refreshSessions(
+            isUserInitiated: Boolean = false,
+            reuseRecent: Boolean = false,
+        ) {
             if (refreshJob?.isActive == true && !isUserInitiated) return // coalesce overlapping cold listings
             refreshJob?.cancel()
             val generation = ++refreshGeneration
@@ -304,7 +310,7 @@ class SessionListViewModel
                         // and an agent filtering by cwd matches it exactly, so a filtered
                         // listing would drop the repo's worktree chats (and every other
                         // directory). The cwd filter is applied locally by sessionRows.
-                        val result = sessionCatalog.listSessions(serverId, cwd = null)
+                        val result = sessionCatalog.listSessions(serverId, cwd = null, reuseRecent = reuseRecent)
                         when (result) {
                             is ListSessionsResult.Listed -> {
                                 lastListingFailed = false

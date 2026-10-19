@@ -89,6 +89,22 @@ class SessionCatalogTest {
         }
 
     @Test
+    fun `adoptListing on a transport that cannot list records nothing for reuse`() =
+        runTest {
+            val sessions = FakeSessionRepo()
+            val hub = newHub(sessionRepository = sessions)
+            val transport = hub.createBrowserManager(CoroutineScope(Dispatchers.Unconfined))
+            val catalog = newCatalog(sessionRepository = sessions, hub = hub)
+
+            catalog.adoptListing("srv", transport)
+            val result = catalog.listSessions("srv", cwd = null, reuseRecent = true)
+
+            // A failed adopt must not stand in for a listing: the call falls through to a real one.
+            assertEquals(0, sessions.replaceCount)
+            assertTrue(result is SessionCatalog.ListSessionsResult.Failed)
+        }
+
+    @Test
     fun `authenticateListing fails when no transport raised a challenge`() =
         runTest {
             val catalog = newCatalog()

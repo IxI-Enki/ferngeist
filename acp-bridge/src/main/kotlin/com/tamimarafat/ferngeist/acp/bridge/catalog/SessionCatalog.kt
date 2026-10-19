@@ -15,6 +15,7 @@ import com.tamimarafat.ferngeist.acp.bridge.connection.formatAcpErrorMessage
 import com.tamimarafat.ferngeist.acp.bridge.connection.loadPersistedEnvValues
 import com.tamimarafat.ferngeist.acp.bridge.connection.persistEnvValues
 import com.tamimarafat.ferngeist.acp.bridge.connection.toConnectionConfig
+import com.tamimarafat.ferngeist.acp.bridge.facade.OpenStepTimer
 import com.tamimarafat.ferngeist.acp.bridge.hub.ChatConnectionHub
 import com.tamimarafat.ferngeist.acp.bridge.hub.GatewayEndpoint
 import com.tamimarafat.ferngeist.acp.bridge.hub.chatIdFor
@@ -37,9 +38,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.ConcurrentHashMap
 
 /** Bounds the lease-reconciliation list call so a slow gateway cannot stall a refresh. */
 private const val RECONCILE_TIMEOUT_MS = 10_000L
+
+/**
+ * How long a finished listing still answers a [SessionCatalog.listSessions] that asks for reuse:
+ * the server list's launch lists before it navigates, and the session screen it opens must not
+ * run the whole launch again for the same rows.
+ */
+private const val REUSE_LISTING_MS = 15_000L
+private const val NANOS_PER_MS = 1_000_000L
 
 /**
  * Session listing for one server, and the listing transport that carries it.
@@ -126,6 +136,9 @@ class SessionCatalog(
 
     private val listingSessions = LinkedHashMap<String, ListingSession>()
 
+    /** The newest whole-directory listing per server, with the [System.nanoTime] it finished at. */
+    private val recentListings = ConcurrentHashMap<String, Pair<ListSessionsResult, Long>>()
+
     /**
      * Network availability, so the session list can re-run a listing that failed
      * while the device was offline.
@@ -155,7 +168,9 @@ class SessionCatalog(
     suspend fun listSessions(
         serverId: String,
         cwd: String?,
+        reuseRecent: Boolean = false,
     ): ListSessionsResult {
+        if (reuseRecent && cwd == null) recentListing(serverId)?.let { return it }
         val target =
             launchableTargetRepository.getTarget(serverId)
                 ?: return ListSessionsResult.Failed(
@@ -165,11 +180,61 @@ class SessionCatalog(
                 )
         val listing = listingSession(serverId)
         val warm = hub.warmManagerFor(serverId)
-        return if (warm != null) {
-            listViaWarmListing(listing, warm, serverId, cwd)
-        } else {
-            listViaBrowserListing(listing, target, serverId, cwd)
+        val timer = OpenStepTimer()
+        val result =
+            try {
+                if (warm != null) {
+                    listViaWarmListing(listing, warm, serverId, cwd)
+                } else {
+                    listViaBrowserListing(listing, target, serverId, cwd, timer)
+                }
+            } finally {
+                listing.browserTransport.recordTiming("list", timer.report(sessionId = serverId, label = "list"))
+            }
+        if (cwd == null) rememberListing(serverId, result)
+        return result
+    }
+
+    /**
+     * Records a whole-directory listing the caller just took over a verification connection it
+     * already initialized, so the launch that opened it is also the listing. Best-effort: a failure
+     * or an auth challenge leaves the session screen to list (and surface it) itself.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    @OptIn(UnstableApi::class)
+    suspend fun adoptListing(
+        serverId: String,
+        transport: AcpConnection,
+    ) {
+        val caps = transport.agentCapabilities.value
+        val result =
+            if (caps != null && caps.sessionCapabilities.list == null) {
+                ListSessionsResult.Unsupported(caps)
+            } else {
+                try {
+                    val sessions = transport.listSessions(cwd = null)
+                    sessionRepository.replaceSessions(serverId, sessions)
+                    ListSessionsResult.Listed(sessions = sessions, agentCapabilities = caps, viaWarmChat = false)
+                } catch (error: Throwable) {
+                    if (error is CancellationException) throw error
+                    return
+                }
+            }
+        rememberListing(serverId, result)
+    }
+
+    private fun rememberListing(
+        serverId: String,
+        result: ListSessionsResult,
+    ) {
+        if (result is ListSessionsResult.Listed || result is ListSessionsResult.Unsupported) {
+            recentListings[serverId] = result to System.nanoTime()
         }
+    }
+
+    private fun recentListing(serverId: String): ListSessionsResult? {
+        val (result, finishedAt) = recentListings[serverId] ?: return null
+        return result.takeIf { System.nanoTime() - finishedAt < REUSE_LISTING_MS * NANOS_PER_MS }
     }
 
     /**
@@ -287,6 +352,7 @@ class SessionCatalog(
         val known =
             hub.isTracked(serverId, sessionId) ||
                 sessionRepository.getSession(serverId, sessionId) != null
+        recentListings.remove(serverId)
         deleteOnAgentBestEffort(serverId, sessionId)
         val endpoint = gatewayEndpoint(serverId)
         when {
@@ -418,6 +484,7 @@ class SessionCatalog(
         target: LaunchableTarget,
         serverId: String,
         cwd: String?,
+        timer: OpenStepTimer,
     ): ListSessionsResult {
         val transport = listing.browserTransport
         val capabilities = transport.agentCapabilities.value
@@ -446,6 +513,7 @@ class SessionCatalog(
                     throw error
                 }
             }
+        timer.mark("connect")
         if (!connected) {
             // A failed attach still leaves the session the gateway just launched.
             hangUpListing(listing)
@@ -460,6 +528,7 @@ class SessionCatalog(
             try {
                 val sessions = transport.listSessions(cwd = cwd)
                 sessionRepository.replaceSessions(serverId, sessions)
+                timer.mark("list")
                 ListSessionsResult.Listed(
                     sessions = sessions,
                     agentCapabilities = transport.agentCapabilities.value ?: capabilities,

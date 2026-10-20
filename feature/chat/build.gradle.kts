@@ -75,6 +75,11 @@ dependencies {
     implementation(libs.compose.markdown.core)
     implementation(libs.compose.markdown.renderer)
 
+    // Syntax highlighting: pure-Kotlin tokenizer, no WebView/native/JS runtime. Only the
+    // tokenizer artifact — the Compose helper would drag in JetBrains Compose for a theme
+    // we resolve from the app palette ourselves.
+    implementation(libs.syntaxmp.tokenizer)
+
     // Diff
     implementation(libs.diff.kotlin)
 

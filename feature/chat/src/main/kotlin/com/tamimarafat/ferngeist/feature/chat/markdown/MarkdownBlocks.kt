@@ -57,6 +57,10 @@ import androidx.compose.ui.unit.sp
 import com.adamglin.compose.markdown.core.model.BlockNode
 import com.adamglin.compose.markdown.core.model.InlineNode
 import com.adamglin.compose.markdown.core.model.TaskState
+import com.tamimarafat.ferngeist.core.common.ui.LocalSyntaxColors
+import com.tamimarafat.ferngeist.feature.chat.syntax.SyntaxLanguageResolver
+import com.tamimarafat.ferngeist.feature.chat.syntax.rememberHighlightedCode
+import com.tamimarafat.ferngeist.feature.chat.syntax.styledCode
 
 /**
  * Renders parsed markdown blocks.
@@ -324,7 +328,13 @@ private fun CodeBlock(
     modifier: Modifier = Modifier,
     reveal: BlockReveal? = null,
 ) {
-    val annotatedCode = remember(block.literal) { AnnotatedString(block.literal) }
+    val language = SyntaxLanguageResolver.fromFence(block.languageHint ?: block.infoString)
+    val highlighted = rememberHighlightedCode(block.literal, language, streaming = !block.isClosed)
+    val colors = LocalSyntaxColors.current
+    val annotatedCode =
+        remember(block.literal, highlighted, language, colors) {
+            styledCode(block.literal, highlighted, language, colors)
+        }
 
     Column(
         modifier =

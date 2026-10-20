@@ -48,14 +48,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.agentclientprotocol.model.ToolCallContent
 import com.tamimarafat.ferngeist.core.common.ui.LocalGitSemanticColors
+import com.tamimarafat.ferngeist.core.common.ui.LocalSyntaxColors
 import com.tamimarafat.ferngeist.core.common.ui.handCursor
 import com.tamimarafat.ferngeist.core.common.ui.initialPassLongPress
 import com.tamimarafat.ferngeist.core.common.ui.onSecondaryClick
 import com.tamimarafat.ferngeist.core.model.ChatChangedFile
+import com.tamimarafat.ferngeist.feature.chat.syntax.SyntaxHighlighting
+import com.tamimarafat.ferngeist.feature.chat.syntax.SyntaxLanguageResolver
 import io.github.diff.DeltaType
 import io.github.diff.generatePatch
 import kotlinx.coroutines.Dispatchers
@@ -126,6 +131,19 @@ internal fun DiffRenderer(
                 }
         }
     val rows = rowsState.value
+    val language = remember(diff.path) { SyntaxLanguageResolver.fromPath(diff.path) }
+    val colors = LocalSyntaxColors.current
+    val rowText by
+        produceState<List<AnnotatedString>?>(null, rows, language, colors) {
+            value =
+                rows?.let { list ->
+                    SyntaxHighlighting.highlightLines(
+                        code = list.joinToString("\n") { it.text },
+                        label = language,
+                        colors = colors,
+                    )
+                }
+        }
 
     SelectionContainer {
         if (scrollable) {
@@ -146,8 +164,8 @@ internal fun DiffRenderer(
                     itemsIndexed(
                         items = rows,
                         key = { index, _ -> "row-$index" },
-                    ) { _, row ->
-                        DiffRowItem(row)
+                    ) { index, row ->
+                        DiffRowItem(row, rowText?.getOrNull(index))
                     }
                 }
             }
@@ -162,7 +180,7 @@ internal fun DiffRenderer(
                 if (rows == null) {
                     DiffLoadingRow()
                 } else {
-                    rows.forEach { row -> DiffRowItem(row) }
+                    rows.forEachIndexed { index, row -> DiffRowItem(row, rowText?.getOrNull(index)) }
                 }
             }
         }
@@ -195,7 +213,10 @@ private fun DiffLoadingRow() {
 }
 
 @Composable
-private fun DiffRowItem(row: LineDiffRow) {
+private fun DiffRowItem(
+    row: LineDiffRow,
+    highlighted: AnnotatedString?,
+) {
     val (prefix, bgColor, textColor) =
         when (row) {
             is LineDiffRow.Delete ->
@@ -233,8 +254,20 @@ private fun DiffRowItem(row: LineDiffRow) {
                 .background(bgColor)
                 .padding(horizontal = 4.dp, vertical = 1.dp),
     ) {
+        val syntax = highlighted.takeUnless { row is LineDiffRow.Omitted }
+        val text =
+            remember(prefix, row.text, syntax) {
+                if (syntax == null) {
+                    AnnotatedString("$prefix${row.text}")
+                } else {
+                    buildAnnotatedString {
+                        append(prefix)
+                        append(syntax)
+                    }
+                }
+            }
         Text(
-            text = "$prefix${row.text}",
+            text = text,
             style = MaterialTheme.typography.bodySmall,
             color = textColor,
             softWrap = false,

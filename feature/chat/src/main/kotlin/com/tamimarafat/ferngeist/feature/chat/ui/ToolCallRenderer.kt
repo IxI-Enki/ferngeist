@@ -26,7 +26,11 @@ import androidx.compose.ui.unit.dp
 import com.agentclientprotocol.model.ContentBlock
 import com.agentclientprotocol.model.EmbeddedResourceResource
 import com.agentclientprotocol.model.ToolCallContent
+import com.tamimarafat.ferngeist.core.common.ui.LocalSyntaxColors
 import com.tamimarafat.ferngeist.feature.chat.R
+import com.tamimarafat.ferngeist.feature.chat.syntax.SyntaxLanguageResolver
+import com.tamimarafat.ferngeist.feature.chat.syntax.rememberHighlightedCode
+import com.tamimarafat.ferngeist.feature.chat.syntax.styledCode
 
 private const val MAX_TEXT_CHARS = 5000
 
@@ -149,6 +153,16 @@ private fun ResourceLinkContentBlock(block: ContentBlock.ResourceLink) {
 private fun ResourceContentBlock(resource: EmbeddedResourceResource) {
     when (resource) {
         is EmbeddedResourceResource.TextResourceContents -> {
+            val label =
+                remember(resource.uri, resource.mimeType) {
+                    SyntaxLanguageResolver.fromPath(resource.uri) ?: mimeLabel(resource.mimeType)
+                }
+            val highlighted = rememberHighlightedCode(resource.text, label, streaming = false)
+            val colors = LocalSyntaxColors.current
+            val body =
+                remember(resource.text, highlighted, label, colors) {
+                    styledCode(resource.text, highlighted, label, colors)
+                }
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -163,7 +177,7 @@ private fun ResourceContentBlock(resource: EmbeddedResourceResource) {
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = resource.text,
+                        text = body,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -202,3 +216,42 @@ internal fun TerminalRenderer(terminal: ToolCallContent.Terminal) {
         modifier = Modifier.padding(vertical = 4.dp),
     )
 }
+
+/** Maps a resource MIME type to a SyntaxMP label when the URI has no usable extension. */
+private fun mimeLabel(mimeType: String?): String? = MIME_LABELS[mimeType?.substringBefore(';')?.trim()?.lowercase()]
+
+private val MIME_LABELS =
+    mapOf(
+        "application/json" to "json",
+        "text/json" to "json",
+        "application/yaml" to "yaml",
+        "text/yaml" to "yaml",
+        "application/x-yaml" to "yaml",
+        "application/toml" to "toml",
+        "text/toml" to "toml",
+        "text/markdown" to "markdown",
+        "text/html" to "html",
+        "text/css" to "css",
+        "application/xml" to "xml",
+        "text/xml" to "xml",
+        "application/sql" to "sql",
+        "text/x-sql" to "sql",
+        "application/javascript" to "javascript",
+        "text/javascript" to "javascript",
+        "application/typescript" to "typescript",
+        "text/typescript" to "typescript",
+        "text/x-java-source" to "java",
+        "text/x-kotlin" to "kotlin",
+        "text/x-python" to "python",
+        "application/x-python" to "python",
+        "text/x-shellscript" to "shell",
+        "application/x-sh" to "shell",
+        "text/x-rust" to "rust",
+        "text/x-go" to "go",
+        "text/x-ruby" to "ruby",
+        "text/x-php" to "php",
+        "text/x-swift" to "swift",
+        "text/x-csharp" to "csharp",
+        "text/x-c" to "c",
+        "text/x-c++src" to "cpp",
+    )

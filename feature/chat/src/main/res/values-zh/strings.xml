@@ -35,6 +35,8 @@
     <string name="chat_file_origin_compare">对比 %1$s</string>
     <string name="chat_file_open_full">打开完整文件</string>
     <string name="chat_file_truncated">仅显示此文件的前 1 MiB</string>
+    <string name="chat_file_soft_wrap">换行</string>
+    <string name="chat_file_markdown_preview">预览</string>
     <string name="chat_tool_call">工具调用</string>
     <string name="chat_tool_call_details_desc">显示工具调用详情</string>
     <string name="chat_awaiting_permission">等待权限响应</string>

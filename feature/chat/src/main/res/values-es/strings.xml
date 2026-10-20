@@ -32,6 +32,8 @@
     <string name="chat_file_origin_compare">vs %1$s</string>
     <string name="chat_file_open_full">Abrir archivo completo</string>
     <string name="chat_file_truncated">Solo se muestra el primer MiB de este archivo</string>
+    <string name="chat_file_soft_wrap">Ajustar</string>
+    <string name="chat_file_markdown_preview">Vista previa</string>
     <string name="chat_tool_call">Llamada a herramienta</string>
     <string name="chat_tool_call_details_desc">Mostrar detalles de la llamada a la herramienta</string>
     <string name="chat_awaiting_permission">Esperando respuesta de permiso</string>

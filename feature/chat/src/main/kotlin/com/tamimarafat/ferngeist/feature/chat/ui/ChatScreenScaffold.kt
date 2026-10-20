@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -231,6 +232,10 @@ private fun BoxScope.ChatScreenContentOverlays(
             ?.any { it.id == selected } == true
     // The files a chip's shared name could mean, while the reader picks one.
     var fileCandidates by remember { mutableStateOf<List<String>?>(null) }
+    // Reading preferences, not per-file: each keeps its choice for the next file. Markdown opens
+    // rendered; the toggle is the way back to its source.
+    var softWrapFile by rememberSaveable { mutableStateOf(false) }
+    var markdownPreview by rememberSaveable { mutableStateOf(true) }
     // Opening a file needs a workspace to read it from; without a gateway there is none.
     val hasWorkspace = screenState.state.gatewayWorkspaceConnection != null
     val openFile: ((List<String>) -> Unit)? =
@@ -344,7 +349,14 @@ private fun BoxScope.ChatScreenContentOverlays(
     // Last of the sheets so it stacks over whichever one opened it; the transcript chip opens it
     // over the chat, the tool call and git sheets open it over themselves.
     screenState.state.openFile?.let { file ->
-        FileSheet(file, onDismiss = { viewModel.dispatch(ChatIntent.CloseFile) })
+        FileSheet(
+            file = file,
+            softWrap = softWrapFile,
+            onSoftWrapChange = { softWrapFile = it },
+            markdownPreview = markdownPreview,
+            onMarkdownPreviewChange = { markdownPreview = it },
+            onDismiss = { viewModel.dispatch(ChatIntent.CloseFile) },
+        )
     }
 
     CompositionLocalProvider(

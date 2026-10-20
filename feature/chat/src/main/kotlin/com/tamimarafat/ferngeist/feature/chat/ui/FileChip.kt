@@ -27,6 +27,8 @@ internal fun FileChip(
     // Off where the chip already sits on a card: a pill inside a card reads as clutter.
     filled: Boolean = true,
     textStyle: TextStyle = MaterialTheme.typography.bodySmall,
+    maxLines: Int = 1,
+    overflow: TextOverflow = TextOverflow.MiddleEllipsis,
 ) {
     Row(
         modifier =
@@ -40,9 +42,10 @@ internal fun FileChip(
         Text(
             text = label,
             style = textStyle,
-            maxLines = 1,
-            // The extension is the part worth keeping.
-            overflow = TextOverflow.MiddleEllipsis,
+            maxLines = maxLines,
+            // The extension is the part worth keeping where a single line has to ellipsize.
+            overflow = overflow,
+            softWrap = maxLines > 1,
             modifier = Modifier.padding(start = 4.dp),
         )
     }

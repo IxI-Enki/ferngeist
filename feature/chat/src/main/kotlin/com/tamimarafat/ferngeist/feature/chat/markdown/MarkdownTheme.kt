@@ -74,6 +74,28 @@ internal object MarkdownTheme {
         @Composable get() = LocalMarkdownTypography.current
 }
 
+/**
+ * The compact document scale chat bubbles use; the file preview shares it so a README reads the
+ * same in both places.
+ */
+@Composable
+internal fun documentMarkdownTypography(): MarkdownTypography {
+    val typography = MaterialTheme.typography
+    return remember(typography) {
+        MarkdownTypography(
+            headlineLarge = typography.titleLarge,
+            headlineMedium = typography.titleMedium,
+            headlineSmall = typography.titleSmall,
+            titleLarge = typography.titleMedium,
+            titleMedium = typography.bodyMedium,
+            titleSmall = typography.bodySmall,
+            bodyLarge = typography.bodyMedium,
+            bodyMedium = typography.bodyMedium,
+            labelMedium = typography.labelSmall,
+        )
+    }
+}
+
 /** Provides [typography] and the Material-derived colours to the blocks inside. */
 @Composable
 internal fun ProvideMarkdownTheme(

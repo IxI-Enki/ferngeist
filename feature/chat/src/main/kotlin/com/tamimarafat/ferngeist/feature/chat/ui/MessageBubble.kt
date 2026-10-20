@@ -125,8 +125,8 @@ import com.tamimarafat.ferngeist.feature.chat.SegmentBlock
 import com.tamimarafat.ferngeist.feature.chat.displayBlocks
 import com.tamimarafat.ferngeist.feature.chat.markdown.LocalInlineChips
 import com.tamimarafat.ferngeist.feature.chat.markdown.MarkdownBlocks
-import com.tamimarafat.ferngeist.feature.chat.markdown.MarkdownTypography
 import com.tamimarafat.ferngeist.feature.chat.markdown.RunReveal
+import com.tamimarafat.ferngeist.feature.chat.markdown.documentMarkdownTypography
 import com.tamimarafat.ferngeist.feature.chat.markdown.rememberReducedMotion
 import com.tamimarafat.ferngeist.feature.chat.markdown.revealLength
 import kotlinx.collections.immutable.ImmutableMap
@@ -678,18 +678,7 @@ internal fun RenderedMarkdown(
             blocks = document.blocks,
             modifier = modifier.fillMaxWidth(),
             reveal = reveal?.takeIf { it.animates },
-            typography =
-                MarkdownTypography(
-                    headlineLarge = MaterialTheme.typography.titleLarge,
-                    headlineMedium = MaterialTheme.typography.titleMedium,
-                    headlineSmall = MaterialTheme.typography.titleSmall,
-                    titleLarge = MaterialTheme.typography.titleMedium,
-                    titleMedium = MaterialTheme.typography.bodyMedium,
-                    titleSmall = MaterialTheme.typography.bodySmall,
-                    bodyLarge = MaterialTheme.typography.bodyMedium,
-                    bodyMedium = MaterialTheme.typography.bodyMedium,
-                    labelMedium = MaterialTheme.typography.labelSmall,
-                ),
+            typography = documentMarkdownTypography(),
         )
     } else if (reveal == null || !reveal.animates) {
         // The parse has not landed yet. Render the text plainly so the bubble occupies its

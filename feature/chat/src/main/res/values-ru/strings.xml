@@ -35,6 +35,8 @@
     <string name="chat_file_origin_compare">с %1$s</string>
     <string name="chat_file_open_full">Открыть файл целиком</string>
     <string name="chat_file_truncated">Показан только первый 1 МиБ этого файла</string>
+    <string name="chat_file_soft_wrap">Перенос</string>
+    <string name="chat_file_markdown_preview">Просмотр</string>
     <string name="chat_tool_call">Вызов инструмента</string>
     <string name="chat_tool_call_details_desc">Детали вызова</string>
     <string name="chat_awaiting_permission">Ожидание разрешения</string>

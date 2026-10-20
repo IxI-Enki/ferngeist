@@ -1,10 +1,11 @@
 /*
  * Vendored from com.adamglin.compose.markdown:markdown-compose 0.1.5 (MIT, (c) 2026 Adam Glin).
  *
- * Modified from upstream in two functional ways: every block takes an optional [BlockReveal], so a
- * streaming run shows only what its reveal cursor has reached and fades the leading edge in (see
- * MarkdownReveal.kt and docs/adr/0001); and paragraphs and headings draw [LocalInlineChips]'
- * matches as inline content once their reveal settles (see InlineChips.kt). Upstream keeps every
+ * Modified from upstream in three functional ways: every block takes an optional [BlockReveal], so
+ * a streaming run shows only what its reveal cursor has reached and fades the leading edge in (see
+ * MarkdownReveal.kt and docs/adr/0001); paragraphs and headings draw [LocalInlineChips]' matches as
+ * inline content once their reveal settles (see InlineChips.kt); and [MarkdownBlocksLazy] renders a
+ * whole document for a screen that owns the scroll. Upstream keeps every
  * block renderer private and offers no per-block hook, so there was no way to do that without copying.
  */
 
@@ -25,6 +26,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -94,6 +99,44 @@ internal fun MarkdownBlocks(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Renders a whole document in a lazy list, for a screen that scrolls it as its own page.
+ *
+ * Chat bubbles keep [MarkdownBlocks]' column: they live inside the transcript's list, and a list
+ * inside a list would fight it for the scroll. A file preview owns the sheet, and a README can
+ * hold thousands of blocks, so composing only the visible ones is the difference between a
+ * readable file and a stall.
+ */
+@Composable
+internal fun MarkdownBlocksLazy(
+    blocks: List<BlockNode>,
+    typography: MarkdownTypography,
+    modifier: Modifier = Modifier,
+    state: LazyListState = rememberLazyListState(),
+    footer: (@Composable () -> Unit)? = null,
+) {
+    ProvideMarkdownTheme(typography) {
+        val styles = rememberMarkdownBlockStyles()
+        SelectionContainer {
+            LazyColumn(
+                modifier = modifier.fillMaxWidth(),
+                state = state,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(blocks, key = { it.id.raw }) { block ->
+                    MarkdownBlock(
+                        block = block,
+                        styles = styles,
+                    )
+                }
+                if (footer != null) {
+                    item { footer() }
                 }
             }
         }

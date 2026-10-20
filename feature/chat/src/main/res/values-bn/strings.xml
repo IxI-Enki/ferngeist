@@ -32,6 +32,8 @@
     <string name="chat_file_origin_compare">%1$s-এর সাথে</string>
     <string name="chat_file_open_full">সম্পূর্ণ ফাইল খুলুন</string>
     <string name="chat_file_truncated">এই ফাইলের শুধু প্রথম 1 MiB দেখানো হচ্ছে</string>
+    <string name="chat_file_soft_wrap">র‍্যাপ</string>
+    <string name="chat_file_markdown_preview">প্রিভিউ</string>
     <string name="chat_tool_call">টুল কল</string>
     <string name="chat_tool_call_details_desc">টুল কলের বিবরণ দেখুন</string>
     <string name="chat_awaiting_permission">অনুমতির উত্তরের অপেক্ষায়</string>
